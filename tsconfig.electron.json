@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": "./dist/electron",
+    "noEmit": false,
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["electron/**/*"],
+  "exclude": ["node_modules", "build", "dist", "src"]
+}

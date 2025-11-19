@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": "./dist/workers",
+    "noEmit": false,
+    "skipLibCheck": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["workers/**/*"],
+  "exclude": ["node_modules", "build", "dist", "src", "electron"]
+}
