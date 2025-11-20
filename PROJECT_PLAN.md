@@ -2,48 +2,60 @@
 
 ## Project Overview
 
-RangeForge is a professional audio dynamic range analysis and volume processing application built with Electron, React, and Node.js. This document outlines the project roadmap, features, and configuration settings.
+RangeForge is a Swiss army knife for losslessly processing audio files built with Electron, React, and Node.js. **Based on existing PowerShell workflows**, this application consolidates multiple audio utilities for CUE-based splitting, format conversion, and loudness leveling with professional LUFS/dBTP standards.
+
+**Core Mission**: Replace and enhance PowerShell-based audio processing scripts with a unified GUI application that automatically analyzes audio files (individual tracks and CUE-based albums), displays volume levels and dynamic range, and proposes optimal adjustments for user-defined workflow profiles.
 
 ---
 
 ## Core Features & Roadmap
 
-### Phase 1: Foundation (Current)
+### Phase 1: Core Audio Analysis (Current)
 
 - [x] Electron + React + TypeScript boilerplate
 - [x] Audio analysis service with FFmpeg integration
 - [x] Worker threads for multithreaded processing
 - [x] Memory-mapped file I/O support
 - [x] Cross-platform build configuration
-- [ ] Basic UI implementation
-- [ ] Core audio analysis functionality
+- [ ] **Table-based UI implementation (per concept image)**
+- [ ] **LUFS/dBTP measurement and display**
+- [ ] **Dynamic Range (DR) calculation**
+- [ ] **Batch file processing queue**
+- [ ] **Auto Mode toggle functionality**
 
-### Phase 2: Audio Processing Engine
+### Phase 2: Format Conversion & User-Defined Profiles
 
-- [ ] Volume level detection and analysis
-- [ ] Dynamic range (DR) measurement algorithms
-- [ ] EBU R128 loudness measurement implementation
-- [ ] Batch processing capabilities
-- [ ] Real-time progress monitoring
-- [ ] Audio normalization and limiting features
+- [ ] **User-defined profile system** (create profiles such as "iTunes", "Plex Stereo", etc. for specific use cases)
+- [ ] **Multi-format output support** (FLAC, WAV, ALAC, AAC, MP3) with **ALAC mandatory**
+- [ ] **Multi-format input support** (MP3, AAC, FLAC, WAV, ALAC, DSD, MLP)
+- [ ] **Metadata preservation across format changes**
+- [ ] **Universal CUE+audio splitting** (FLAC+CUE, WAV+CUE, ALAC+CUE support)
+- [ ] **Memory-mapped CUE processing** for efficient large file handling
+- [ ] **Automatic album vs. single track detection**
+- [ ] **Loudness targeting with LUFS precision**
+- [ ] **True Peak (dBTP) limiting**
+- [ ] **File naming strategies (serialize, rename, replace)**
 
-### Phase 3: Enhanced Features
+### Phase 3: Multichannel & Memory-Optimized Processing
+
+- [ ] **Memory-mapped multichannel audio processing** (SACD, DVD-A, BD-A sources)
+- [ ] **Memory-optimized FFmpeg/FFprobe operations** for large multichannel files
+- [ ] **DSD file handling** with efficient memory usage
+- [ ] **MLP (DVD-Audio) processing**
+- [ ] **TS (Transport Stream) audio extraction**
+- [ ] **Surround sound format preservation**
+- [ ] **Channel mapping and validation**
+- [ ] **Advanced loudness standards** (stereo vs multichannel)
+
+### Phase 4: Integration & Workflow Optimization
 
 - [ ] Last.fm API integration for metadata enrichment
-- [ ] Audio fingerprinting and identification
-- [ ] Playlist and library management
-- [ ] Export capabilities (reports, processed files)
-- [ ] Advanced filtering and search
-- [ ] Custom presets and profiles
-
-### Phase 4: Professional Tools
-
-- [ ] Advanced DR analysis algorithms
-- [ ] Professional mastering tools
-- [ ] Batch comparison reports
-- [ ] Quality assurance workflows
-- [ ] Integration with external tools
-- [ ] Plugin architecture
+- [ ] **iTunes/Music.app integration**
+- [ ] **Plex media server optimization**
+- [ ] **Batch export with progress monitoring**
+- [ ] **Quality assurance reports**
+- [ ] **Workflow automation and scripting**
+- [ ] **Plugin architecture for custom processors**
 
 ---
 
@@ -108,7 +120,6 @@ RangeForge is a professional audio dynamic range analysis and volume processing 
 - **Sample Rates**: 8 kHz to 192 kHz
 - **Bit Depths**: 8-bit to 32-bit (including floating point)
 - **Channels**: Mono, Stereo, Surround (up to 7.1)
-
 - **Input Format**: Anything Ffmpeg will dedode
 - **Fallback Parameters**: Fallbacks are supplied for output format, sample rate, bit depth, and channel downsampling for formats such as DSD
 
@@ -163,32 +174,108 @@ RangeForge is a professional audio dynamic range analysis and volume processing 
 
 ---
 
-## User Interface Design
+## User Interface Design (Based on Concept Image)
 
-### Main Application Layout
+### Main Window Structure
 
+#### Top Section: Audio Analysis Table
+
+- **Columns**: Name | Codec | Loudness (LUFS) | True Peak (dBTP) | Adjust (LUFS) | Range (DR) | Tags
+- **Row Data**: Track listing with color-coded genre tags (Radio=Blue, Funk=Purple, etc.)
+- **Analysis Results**: Real-time LUFS/dBTP measurements, dynamic range calculations
+- **Visual Feedback**: Color-coded values for quick quality assessment
+
+#### Bottom Section: Processing Controls
+
+##### Left Panel: Run Controls
+
+- **Run Button** with count indicator "(9)" showing queued files
+- **Auto Mode Toggle** for automatic processing
+- **Metadata API Toggle** for Last.fm integration
+- **Settings Gear** for advanced configuration
+
+##### Center Panel: Format Controls
+
+```text
+Format               Fallback Format
+┌─────────────┐     ┌─────────────┐
+│  ORIGINAL   │     │    Flac     │
+└─────────────┘     └─────────────┘
+
+Sample Rate          Fallback Sample Rate
+┌─────────────┐     ┌─────────────┐
+│  ORIGINAL   │     │  88.2 kHz   │
+└─────────────┘     └─────────────┘
+
+Bit Depth           Fallback Bit Depth
+┌─────────────┐     ┌─────────────┐
+│  ORIGINAL   │     │   24-bit    │
+└─────────────┘     └─────────────┘
+
+Channels            Fallback Channels
+┌─────────────┐     ┌─────────────┐
+│  ORIGINAL   │     │ 5.1 Surround│
+└─────────────┘     └─────────────┘
 ```
-┌─────────────────────────────────────────────────┐
-│ Menu Bar                                        │
-├─────────────────┬───────────────────────────────┤
-│ File Manager    │ Analysis Results              │
-│ - Drag & Drop   │ - Waveform Display           │
-│ - File List     │ - Metrics Table              │
-│ - Batch Queue   │ - Visual Charts              │
-├─────────────────┼───────────────────────────────┤
-│ Processing      │ Audio Player                  │
-│ Options         │ - Playback Controls           │
-│ - Presets       │ - A/B Comparison             │
-│ - Settings      │ - Real-time Monitoring       │
-└─────────────────┴───────────────────────────────┘
+
+##### Right Panel: Volume & Output Controls
+
+```text
+Volume Adjustment
+Target Loudness  ┌──┐ -22  LUFS
+                 └──┘
+
+☐ Peak Protection ┌──┐  0   dBTP
+                  └──┘
+
+File Strategy
+◉ Serialize new filename    ┌──┐ 00
+○ Rename old file          └──┘ _old
+○ Replace file
+○ Save to location  ┌─────────────┐ Browse
+                   │userFolder\Downloads\NewAudio │
+                   └─────────────┘
 ```
 
-### Key User Workflows
+### Professional Workflow Profiles
 
-1. **File Import**: Drag files → Auto-analysis → Results display
-2. **Batch Processing**: Select files → Choose preset → Monitor progress
-3. **Quality Assessment**: Load file → Visual analysis → Generate report
-4. **Audio Comparison**: Load multiple versions → Side-by-side analysis
+**iTunes Profile**:
+
+- Target: -16 LUFS (Apple Music standard)
+- Format: ALAC (lossless, iTunes compatible)
+- Peak Protection: -1.0 dBTP
+- Metadata: Full preservation with genre enhancement
+
+**Plex Stereo Profile**:
+
+- Target: -23 LUFS (broadcast standard)
+- Format: FLAC (lossless, universal)
+- Peak Protection: -1.0 dBTP
+- Channels: Downmix to stereo if needed
+
+**Plex Multichannel Profile**:
+
+- Target: -23 LUFS (with multichannel considerations)
+- Format: FLAC (supports multichannel)
+- Peak Protection: -1.0 dBTP
+- Channels: Preserve original surround configuration
+
+### Advanced Features Integration
+
+**SACD/DVD-A/BD-A Workflow**:
+
+- DSD to PCM conversion with appropriate sample rates
+- MLP extraction and conversion
+- TS file audio track extraction
+- Multichannel mapping preservation
+- High-resolution format optimization
+
+**Metadata Enhancement**:
+
+- Last.fm genre tagging with color coding
+- Popularity indicators (Radio tags for popular tracks)
+- Custom tag assignment based on analysis results
+- Metadata preservation across format conversions
 
 ---
 
@@ -436,13 +523,30 @@ RangeForge is a professional audio dynamic range analysis and volume processing 
 
 ### Processing Workflow
 
-1. **File Detection**: Identify individual tracks vs. album+CUE combinations
-2. **CUE Processing**: Split albums using CUE metadata when FILE field matches
-3. **Analysis**: Use FFmpeg to analyze dynamic range of all audio files
-4. **Export Options**: Manual or automatic export with selected parameters
-5. **Metadata Enhancement**: Apply Last.fm tags based on user preferences
+#### Example Scenario: Mixed Audio Drop
+
+**Files dropped**: Led Zeppelin's "Houses of the Holy" (album with CUE) + The Killers single track
+
+**Automatic Processing**:
+
+1. **File Detection**: Identify album+CUE combination vs. individual track
+2. **CUE-Based Splitting**: Memory-mapped processing of Houses of the Holy album
+3. **Volume Analysis**: FFmpeg analysis of all resulting tracks (8 Zeppelin + 1 Killers)
+4. **Dynamic Range Calculation**: DR measurement for each track
+5. **Table Population**: Display all 9 tracks with LUFS/dBTP measurements
+6. **Volume Adjustment Proposals**: Show recommended adjustments per active profile
+
+#### General Workflow Steps
+
+1. **File Detection**: Automatically identify individual tracks vs. album+CUE combinations
+2. **Memory-Mapped CUE Processing**: Efficiently split large albums using CUE metadata
+3. **Multi-Threaded Analysis**: Parallel FFmpeg analysis of dynamic range for all audio files
+4. **Real-Time Display**: Populate table with LUFS, dBTP, and DR measurements
+5. **Profile-Based Recommendations**: Calculate optimal adjustments for selected workflow
+6. **Export Options**: Manual or automatic export with user-defined parameters
+7. **Metadata Enhancement**: Apply Last.fm tags and metadata preservation
 
 ---
 
-_Last Updated: November 19, 2025_
-_Document Version: 1.1_
+_Last Updated: November 20, 2025_
+_Document Version: 1.2_
