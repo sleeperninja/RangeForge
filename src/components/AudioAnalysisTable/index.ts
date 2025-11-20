@@ -1,0 +1,1 @@
+export { AudioAnalysisTable } from "./AudioAnalysisTable";
