@@ -5,6 +5,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Settings file (user-specific)
+settings.ini
+
 # Runtime data
 pids
 *.pid

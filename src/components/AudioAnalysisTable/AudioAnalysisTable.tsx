@@ -7,6 +7,7 @@ interface AudioAnalysisTableProps {
   onTrackSelect: (trackId: string) => void;
   selectedTrackIds: string[];
   onRemoveTrack: (trackId: string) => void;
+  selectedProfile: any; // Add selectedProfile to get target format
 }
 
 export const AudioAnalysisTable: React.FC<AudioAnalysisTableProps> = ({
@@ -14,6 +15,7 @@ export const AudioAnalysisTable: React.FC<AudioAnalysisTableProps> = ({
   onTrackSelect,
   selectedTrackIds,
   onRemoveTrack,
+  selectedProfile,
 }) => {
   const formatLufs = (lufs?: number): string => {
     if (lufs === undefined) return "--";
@@ -27,7 +29,7 @@ export const AudioAnalysisTable: React.FC<AudioAnalysisTableProps> = ({
 
   const formatDr = (dr?: number): string => {
     if (dr === undefined) return "--";
-    return `DR${dr}`;
+    return `${Math.round(dr)}`;
   };
 
   const formatAdjustment = (adjustmentDb?: number): string => {
@@ -88,7 +90,10 @@ export const AudioAnalysisTable: React.FC<AudioAnalysisTableProps> = ({
               {track.name}
             </div>
 
-            <div className="cell codec">{track.codec.toUpperCase()}</div>
+            <div className="cell codec">
+              {selectedProfile?.outputFormat?.toUpperCase() ||
+                track.codec.toUpperCase()}
+            </div>
 
             <div
               className={`cell loudness ${getLufsColorClass(

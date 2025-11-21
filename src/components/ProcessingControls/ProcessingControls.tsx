@@ -15,6 +15,8 @@ interface ProcessingControlsProps {
   onProfileChange: (profile: Partial<ProcessingProfile>) => void;
   onSettingsClick: () => void;
   isProcessing: boolean;
+  targetLufs: number;
+  onTargetLufsChange: (lufs: number) => void;
 }
 
 export const ProcessingControls: React.FC<ProcessingControlsProps> = ({
@@ -30,11 +32,22 @@ export const ProcessingControls: React.FC<ProcessingControlsProps> = ({
   onProfileChange,
   onSettingsClick,
   isProcessing,
+  targetLufs,
+  onTargetLufsChange,
 }) => {
   const [customLocation, setCustomLocation] = useState("");
 
   const formatOptions = [
     { value: "original", label: "ORIGINAL" },
+    { value: "flac", label: "FLAC" },
+    { value: "wav", label: "WAV" },
+    { value: "alac", label: "ALAC" },
+    { value: "aac", label: "AAC" },
+    { value: "mp3", label: "MP3" },
+  ];
+
+  // Fallback format options (no "original" option)
+  const fallbackFormatOptions = [
     { value: "flac", label: "FLAC" },
     { value: "wav", label: "WAV" },
     { value: "alac", label: "ALAC" },
@@ -134,9 +147,11 @@ export const ProcessingControls: React.FC<ProcessingControlsProps> = ({
             <div className="format-group">
               <label>Fallback Format</label>
               <select className="format-select fallback">
-                <option value="flac">FLAC</option>
-                <option value="wav">WAV</option>
-                <option value="alac">ALAC</option>
+                {fallbackFormatOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -251,10 +266,8 @@ export const ProcessingControls: React.FC<ProcessingControlsProps> = ({
               <span>Target Loudness</span>
               <input
                 type="number"
-                value={selectedProfile?.targetLufs || -22}
-                onChange={(e) =>
-                  onProfileChange({ targetLufs: Number(e.target.value) })
-                }
+                value={targetLufs}
+                onChange={(e) => onTargetLufsChange(Number(e.target.value))}
                 step="0.1"
                 min="-60"
                 max="0"
