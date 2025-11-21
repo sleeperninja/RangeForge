@@ -2,7 +2,7 @@ import React, { useState, useCallback } from "react";
 import "./App.css";
 import { AudioAnalysisTable } from "./components/AudioAnalysisTable";
 import { ProcessingControls } from "./components/ProcessingControls";
-import { AudioTrack, ProcessingProfile } from "./types/audio";
+import { AudioTrack, ProcessingProfile, GenreTag } from "./types/audio";
 
 function App() {
   const [tracks, setTracks] = useState<AudioTrack[]>([]);
@@ -75,6 +75,79 @@ function App() {
     console.log("Settings clicked");
   }, []);
 
+  // File handling functions
+  const handleFilesLoaded = useCallback((newTracks: AudioTrack[]) => {
+    setTracks((prev) => [...prev, ...newTracks]);
+  }, []);
+
+  const handleFileError = useCallback((error: string) => {
+    console.error("File loading error:", error);
+    // TODO: Show user-friendly error message
+  }, []);
+
+  // Simple file drop functionality
+  const handleFilesDrop = useCallback(
+    (files: FileList) => {
+      const validTracks = Array.from(files)
+        .map((file, index) => {
+          const fileName = file.name;
+          const fileExt = fileName.split(".").pop()?.toLowerCase() || "";
+
+          // Basic codec detection from extension
+          const codecMap: Record<string, string> = {
+            flac: "FLAC",
+            wav: "WAV",
+            mp3: "MP3",
+            m4a: "ALAC/AAC",
+            aac: "AAC",
+            ogg: "OGG Vorbis",
+            opus: "Opus",
+            ape: "Monkey's Audio",
+            wv: "WavPack",
+          };
+
+          const codec = codecMap[fileExt];
+          if (!codec) return null;
+
+          // Create basic genre tags
+          const tags: GenreTag[] = [
+            {
+              name: fileExt.toUpperCase(),
+              color: "blue",
+              source: "metadata",
+            },
+          ];
+
+          const track: AudioTrack = {
+            id: `file_${Date.now()}_${index}`,
+            name: fileName,
+            path: fileName, // In Electron this would be file.path
+            codec,
+            fileSize: file.size,
+            sampleRate: undefined,
+            bitDepth: undefined,
+            channels: undefined,
+            duration: undefined,
+            analysis: undefined,
+            tags,
+            isProcessing: false,
+            error: undefined,
+            isCueTrack: false,
+          };
+
+          return track;
+        })
+        .filter((track): track is AudioTrack => track !== null);
+
+      if (validTracks.length > 0) {
+        handleFilesLoaded(validTracks);
+      } else {
+        handleFileError("No supported audio files found");
+      }
+    },
+    [handleFilesLoaded, handleFileError]
+  );
+
   return (
     <div className="App">
       <header className="App-header">
@@ -83,7 +156,43 @@ function App() {
       </header>
 
       <main className="App-main">
-        <div className="analysis-section">
+        {tracks.length === 0 && (
+          <div
+            className="file-drop-zone"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (e.dataTransfer.files) {
+                handleFilesDrop(e.dataTransfer.files);
+              }
+            }}
+          >
+            <div className="drop-zone-content">
+              <div className="drop-zone-icon">📁</div>
+              <div className="drop-zone-text">
+                <h3>Drop Audio Files Here</h3>
+                <p>
+                  Drag & drop audio files to get started
+                  <br />
+                  <span className="supported-formats">
+                    Supports: FLAC, WAV, MP3, M4A, AAC, OGG, Opus, APE, WavPack
+                  </span>
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div
+          className="analysis-section"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            if (e.dataTransfer.files) {
+              handleFilesDrop(e.dataTransfer.files);
+            }
+          }}
+        >
           <AudioAnalysisTable
             tracks={tracks}
             onTrackSelect={handleTrackSelect}

@@ -45,6 +45,59 @@
   flex: 0 0 auto;
 }
 
+/* File Drop Zone Styles */
+.file-drop-zone {
+  border: 2px dashed #cbd5e1;
+  border-radius: 12px;
+  padding: 60px 20px;
+  text-align: center;
+  background: #f8fafc;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 40px;
+}
+
+.file-drop-zone:hover {
+  border-color: #3b82f6;
+  background: #f1f5f9;
+}
+
+.drop-zone-content {
+  width: 100%;
+}
+
+.drop-zone-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.6;
+}
+
+.drop-zone-text h3 {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.drop-zone-text p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  opacity: 0.8;
+}
+
+.supported-formats {
+  font-size: 14px;
+  opacity: 0.6;
+  font-style: italic;
+}
+
 .app-container {
   display: flex;
   gap: 20px;

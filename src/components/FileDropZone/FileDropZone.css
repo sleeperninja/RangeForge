@@ -1,0 +1,161 @@
+.file-drop-zone {
+  border: 2px dashed #3a3a3a;
+  border-radius: 12px;
+  padding: 40px 20px;
+  text-align: center;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 20px 0;
+}
+
+.file-drop-zone:hover:not(.disabled) {
+  border-color: #007acc;
+  background: #252525;
+}
+
+.file-drop-zone.drag-over {
+  border-color: #007acc;
+  background: rgba(0, 122, 204, 0.1);
+  border-style: solid;
+}
+
+.file-drop-zone.processing {
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+.file-drop-zone.disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  border-color: #555;
+}
+
+.drop-zone-content {
+  width: 100%;
+}
+
+.processing-state,
+.idle-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.drop-zone-icon {
+  font-size: 48px;
+  opacity: 0.6;
+  margin-bottom: 8px;
+}
+
+.drop-zone-text h3 {
+  margin: 0 0 8px 0;
+  font-size: 24px;
+  font-weight: 600;
+  color: #e0e0e0;
+}
+
+.drop-zone-text p {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  opacity: 0.8;
+}
+
+.supported-formats {
+  font-size: 14px;
+  opacity: 0.6;
+  font-style: italic;
+}
+
+.browse-button {
+  margin-top: 16px;
+  padding: 12px 24px;
+  background: #007acc;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.browse-button:hover {
+  background: #005a9e;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #3a3a3a;
+  border-top: 3px solid #007acc;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.drop-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 122, 204, 0.2);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(2px);
+}
+
+.drop-overlay-text {
+  font-size: 20px;
+  font-weight: 600;
+  color: #007acc;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 16px 32px;
+  border-radius: 8px;
+  border: 2px solid #007acc;
+}
+
+/* Empty state when no files are loaded */
+.file-drop-zone-empty {
+  min-height: 300px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .file-drop-zone {
+    padding: 30px 15px;
+    min-height: 150px;
+  }
+
+  .drop-zone-text h3 {
+    font-size: 20px;
+  }
+
+  .drop-zone-text p {
+    font-size: 14px;
+  }
+
+  .browse-button {
+    padding: 10px 20px;
+    font-size: 14px;
+  }
+}

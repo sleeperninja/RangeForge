@@ -39,6 +39,13 @@ export interface AudioTrack extends AudioFileInfo {
   tags: GenreTag[];
   isProcessing: boolean;
   error?: string;
+  // CUE-related fields for tracks extracted from CUE sheets
+  isCueTrack?: boolean;
+  cueTrackNumber?: number;
+  cueStartTime?: number; // in seconds
+  cueDuration?: number; // in seconds
+  parentCueFile?: string;
+  parentAudioFile?: string;
 }
 
 export interface CueFile {
