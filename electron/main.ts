@@ -2,11 +2,12 @@ import { app, BrowserWindow, ipcMain, Menu, dialog } from "electron";
 import { join } from "path";
 import * as fs from "fs";
 import { CueParser } from "./services/cueParser";
+import { CueIntegrationService } from "./services/cueIntegration";
 import { AudioProcessor } from "./services/audioProcessor";
 import { MemoryMappedAudioFile } from "./services/mmapAudioFile";
 
 // Get directory name for CommonJS compatibility
-const __dirname = __filename ? join(__filename, '..') : process.cwd();
+const __dirname = __filename ? join(__filename, "..") : process.cwd();
 
 class ElectronApp {
   private mainWindow: BrowserWindow | null = null;
@@ -227,11 +228,28 @@ class ElectronApp {
 
     ipcMain.handle("cue:detectAndProcess", async (_, filePaths: string[]) => {
       try {
-        // TODO: Implement CUE integration service
-        return { success: false, error: "CUE integration not yet implemented" };
+        const allTracks: any[] = [];
+        const cueFiles = filePaths.filter((path) =>
+          path.toLowerCase().endsWith(".cue")
+        );
+
+        for (const cueFile of cueFiles) {
+          const result = await CueIntegrationService.processCueFile(cueFile);
+          if (result.success) {
+            allTracks.push(...result.tracks);
+          }
+        }
+
+        return {
+          success: allTracks.length > 0,
+          tracks: allTracks,
+          error:
+            allTracks.length === 0 ? "No valid CUE tracks found" : undefined,
+        };
       } catch (error) {
         return {
           success: false,
+          tracks: [],
           error: error instanceof Error ? error.message : "Unknown error",
         };
       }

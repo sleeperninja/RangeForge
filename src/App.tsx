@@ -322,32 +322,37 @@ function App() {
     setShowSettings(false);
   }, []);
 
-  // File handling functions
-  const handleFilesLoaded = useCallback((newTracks: AudioTrack[]) => {
-    setTracks((prev) => [...prev, ...newTracks]);
-    setShowLogWindow(true);
+  // Real audio analysis using Electron API
+  const analyzeTrackAudio = useCallback(
+    async (track: AudioTrack) => {
+      addToLog(`🔍 Starting audio analysis: ${track.name}`);
 
-    // Log file loading
-    const loadMessage = `Loaded ${newTracks.length} audio file(s) for analysis`;
-    setProcessingLogs((prev) => [
-      ...prev,
-      `[${new Date().toLocaleTimeString()}] ${loadMessage}`,
-    ]);
+      try {
+        let analysisResult;
 
-    // Start simulated analysis for each new track
-    newTracks.forEach((track, index) => {
-      // Log start of analysis
-      const startMessage = `Starting audio analysis: ${track.name} (${track.codec})`;
-      setProcessingLogs((prev) => [
-        ...prev,
-        `[${new Date().toLocaleTimeString()}] ${startMessage}`,
-      ]);
+        if (track.isCueTrack && track.cueData) {
+          // For CUE tracks, analyze the specific segment
+          const mmapResult = await window.electronAPI?.mmap.openFile(
+            track.path.split("#")[0]
+          );
+          if (mmapResult?.success) {
+            const duration = track.cueData.endTime
+              ? track.cueData.endTime - track.cueData.startTime
+              : 60; // Default 60 seconds if no end time
+            analysisResult = await window.electronAPI?.audio.analyzeSegment(
+              mmapResult.fileId!,
+              track.cueData.startTime,
+              duration
+            );
+            await window.electronAPI?.mmap.closeFile(mmapResult.fileId!);
+          }
+        } else {
+          // For regular files, analyze the whole file
+          analysisResult = await window.electronAPI?.audio.analyze(track.path);
+        }
 
-      if (track.codec === "FLAC" || track.codec === "WAV") {
-        setTimeout(() => {
-          const lufs = -18.5 + Math.random() * 10;
-          const truePeak = -0.5 - Math.random() * 2;
-          const dr = 8 + Math.random() * 6;
+        if (analysisResult?.success) {
+          const { lufs, truePeak, dynamicRange } = analysisResult.analysis;
           const adjustmentDb = targetLufs - lufs;
 
           setTracks((prevTracks) =>
@@ -359,57 +364,72 @@ function App() {
                       fileId: t.id,
                       loudness: {
                         lufs: lufs,
-                        range: dr, // Use DR as loudness range for now
+                        range: dynamicRange,
                       },
                       truePeak: {
                         dbtp: truePeak,
                       },
                       dynamicRange: {
-                        dr: dr,
+                        dr: dynamicRange,
                       },
                       adjustment: {
                         targetLufs: targetLufs,
                         adjustmentDb: adjustmentDb,
                       },
                     },
+                    isProcessing: false,
                   }
                 : t
             )
           );
 
-          // Log analysis results
-          const resultsMessage = `Analysis complete: ${track.name}`;
-          setProcessingLogs((prev) => [
-            ...prev,
-            `[${new Date().toLocaleTimeString()}] ${resultsMessage}`,
-          ]);
-
-          const lufsMessage = `  LUFS: ${lufs.toFixed(
-            1
-          )}, True Peak: ${truePeak.toFixed(2)} dBTP, DR: ${Math.round(dr)}`;
-          setProcessingLogs((prev) => [
-            ...prev,
-            `[${new Date().toLocaleTimeString()}] ${lufsMessage}`,
-          ]);
-
-          const adjustMessage = `  Volume adjustment: ${
-            adjustmentDb >= 0 ? "+" : ""
-          }${adjustmentDb.toFixed(1)} dB (target: ${targetLufs} LUFS)`;
-          setProcessingLogs((prev) => [
-            ...prev,
-            `[${new Date().toLocaleTimeString()}] ${adjustMessage}`,
-          ]);
-        }, 1000 + Math.random() * 2000 + index * 500); // Stagger analysis timing
-      } else {
-        // Log unsupported format
-        const unsupportedMessage = `Unsupported format for analysis: ${track.codec}`;
-        setProcessingLogs((prev) => [
-          ...prev,
-          `[${new Date().toLocaleTimeString()}] ${unsupportedMessage}`,
-        ]);
+          addToLog(`✅ Analysis complete: ${track.name}`);
+          addToLog(
+            `   LUFS: ${lufs.toFixed(1)}, True Peak: ${truePeak.toFixed(
+              2
+            )} dBTP, DR: ${Math.round(dynamicRange)}`
+          );
+          addToLog(
+            `   Adjustment needed: ${
+              adjustmentDb >= 0 ? "+" : ""
+            }${adjustmentDb.toFixed(1)} dB`
+          );
+        } else {
+          throw new Error(analysisResult?.error || "Analysis failed");
+        }
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        addToLog(`❌ Analysis failed: ${track.name} - ${errorMessage}`);
+        setTracks((prevTracks) =>
+          prevTracks.map((t) =>
+            t.id === track.id
+              ? { ...t, isProcessing: false, error: errorMessage }
+              : t
+          )
+        );
       }
-    });
-  }, []);
+    },
+    [targetLufs, addToLog]
+  );
+
+  // File handling functions
+  const handleFilesLoaded = useCallback(
+    (newTracks: AudioTrack[]) => {
+      setTracks((prev) => [...prev, ...newTracks]);
+      setShowLogWindow(true);
+
+      addToLog(`📁 Loaded ${newTracks.length} audio file(s) for analysis`);
+
+      // Start real analysis for each new track (staggered to prevent overload)
+      newTracks.forEach((track, index) => {
+        setTimeout(async () => {
+          await analyzeTrackAudio(track);
+        }, index * 200); // Stagger analysis calls
+      });
+    },
+    [analyzeTrackAudio, addToLog]
+  );
 
   // CUE file processing helper
   const processCueFileForAudio = useCallback(async (audioFile: File) => {
@@ -456,13 +476,73 @@ function App() {
 
   const handleFileError = useCallback((error: string) => {
     console.error("File loading error:", error);
-    // TODO: Show user-friendly error message
+    addToLog(`❌ File loading error: ${error}`);
   }, []);
 
-  // Enhanced file drop functionality with comprehensive CUE processing
+  // Enhanced file drop functionality with comprehensive CUE processing using Electron API
   const handleFilesDrop = useCallback(
     async (files: FileList) => {
       const fileArray = Array.from(files);
+      const filePaths = fileArray.map((file: any) => file.path || file.name);
+
+      addToLog(`📁 Processing ${filePaths.length} dropped files...`);
+
+      try {
+        // Use Electron API to detect and process CUE files with associated audio
+        const cueResult = await window.electronAPI?.cue.detectAndProcess(
+          filePaths
+        );
+
+        if (
+          cueResult?.success &&
+          cueResult.tracks &&
+          cueResult.tracks.length > 0
+        ) {
+          addToLog(
+            `🎵 Found ${cueResult.tracks.length} tracks from CUE processing`
+          );
+
+          // Convert CUE tracks to AudioTrack format and analyze
+          const cueBasedTracks: AudioTrack[] = [];
+
+          for (const track of cueResult.tracks) {
+            addToLog(`📝 Processing CUE track: ${track.name}`);
+
+            // Create AudioTrack from CUE track data
+            const audioTrack: AudioTrack = {
+              id: track.id,
+              name: track.name,
+              path: track.path,
+              codec: track.codec,
+              fileSize: track.fileSize,
+              sampleRate: track.sampleRate,
+              bitDepth: track.bitDepth,
+              channels: track.channels,
+              duration: track.duration,
+              analysis: undefined,
+              tags: track.tags || [],
+              isProcessing: true,
+              isCueTrack: track.isCueTrack || true,
+              cueData: {
+                startTime: track.cueData?.startTime || 0,
+                endTime: track.cueData?.endTime,
+                trackNumber: track.cueData?.trackNumber || "1",
+                performer: track.cueData?.performer || "Unknown",
+                title: track.cueData?.title || track.name,
+              },
+            };
+
+            cueBasedTracks.push(audioTrack);
+          }
+
+          handleFilesLoaded(cueBasedTracks);
+          return;
+        }
+      } catch (error) {
+        addToLog(`❌ Error processing CUE files: ${error}`);
+      }
+
+      // Fallback: Process individual audio files
       const audioFiles = fileArray.filter((file) => {
         const ext = file.name.split(".").pop()?.toLowerCase();
         return [
@@ -477,127 +557,6 @@ function App() {
           "wv",
         ].includes(ext || "");
       });
-
-      const cueFiles = fileArray.filter((file) =>
-        file.name.toLowerCase().endsWith(".cue")
-      );
-
-      if (cueFiles.length > 0) {
-        for (const cueFile of cueFiles) {
-          try {
-            const cueContent = await cueFile.text();
-            const cueMetadata = parseCueFile(cueContent);
-
-            addToLog(`📄 CUE file detected: ${cueFile.name}`);
-            addToLog(
-              `🎵 Album: ${cueMetadata.performer} - ${cueMetadata.title}`
-            );
-            addToLog(`💿 Target audio file: ${cueMetadata.file}`);
-
-            if (cueMetadata.genre) addToLog(`🏷️ Genre: ${cueMetadata.genre}`);
-            if (cueMetadata.date) addToLog(`📅 Date: ${cueMetadata.date}`);
-            if (cueMetadata.discId)
-              addToLog(`💿 Disc ID: ${cueMetadata.discId}`);
-
-            // Check if the referenced audio file is in our dropped files
-            const matchingAudio = audioFiles.find(
-              (af) =>
-                af.name === cueMetadata.file ||
-                af.name.includes(cueMetadata.file.replace(/\.[^.]+$/, ""))
-            );
-
-            if (matchingAudio) {
-              addToLog(`✅ Found matching audio file: ${matchingAudio.name}`);
-              addToLog(
-                `🎵 Found ${cueMetadata.tracks.length} tracks to extract`
-              );
-
-              // Process each track
-              for (const track of cueMetadata.tracks) {
-                const fileName = applyNamingConvention(
-                  settings.namingConvention,
-                  {
-                    artist: track.performer,
-                    album: cueMetadata.title,
-                    trackName: track.title,
-                    trackNumber: track.number,
-                  }
-                );
-
-                const startTime =
-                  Math.floor(track.startTime / 60)
-                    .toString()
-                    .padStart(2, "0") +
-                  ":" +
-                  Math.floor(track.startTime % 60)
-                    .toString()
-                    .padStart(2, "0");
-                const endTime = track.endTime
-                  ? Math.floor(track.endTime / 60)
-                      .toString()
-                      .padStart(2, "0") +
-                    ":" +
-                    Math.floor(track.endTime % 60)
-                      .toString()
-                      .padStart(2, "0")
-                  : "END";
-
-                addToLog(`📝 Track ${track.number}: ${fileName}`);
-                addToLog(`   ⏱️ Time: ${startTime} → ${endTime}`);
-              }
-
-              addToLog(
-                `🔄 Ready to process CUE tracks (processing logic pending)`
-              );
-
-              // TODO: Create AudioTrack entries for each CUE track
-              // This would involve:
-              // 1. Using FFmpeg to split the audio file based on time ranges
-              // 2. Creating individual AudioTrack objects for each split
-              // 3. Applying proper metadata from CUE file
-            } else {
-              addToLog(
-                `❌ Audio file not found in dropped files: ${cueMetadata.file}`
-              );
-              addToLog(
-                `   Available files: ${audioFiles
-                  .map((f) => f.name)
-                  .join(", ")}`
-              );
-            }
-          } catch (error) {
-            addToLog(`❌ Error reading CUE file: ${error}`);
-          }
-        }
-
-        // Don't process audio files separately if they're part of CUE files
-        const cueAudioFiles = new Set<string>();
-        for (const cueFile of cueFiles) {
-          try {
-            const cueContent = await cueFile.text();
-            const cueMetadata = parseCueFile(cueContent);
-            cueAudioFiles.add(cueMetadata.file);
-          } catch (error) {
-            // Ignore parsing errors here, already handled above
-          }
-        }
-
-        // Filter out audio files that are referenced by CUE files
-        const standAloneAudioFiles = audioFiles.filter(
-          (file) =>
-            !Array.from(cueAudioFiles).some(
-              (cueFile) =>
-                file.name === cueFile ||
-                file.name.includes(cueFile.replace(/\.[^.]+$/, ""))
-            )
-        );
-
-        if (standAloneAudioFiles.length > 0) {
-          addToLog(
-            `🎵 Processing ${standAloneAudioFiles.length} standalone audio files`
-          );
-        }
-      }
 
       const validTracks = audioFiles
         .map((file, index) => {
@@ -632,7 +591,7 @@ function App() {
           const track: AudioTrack = {
             id: `file_${Date.now()}_${index}`,
             name: fileName,
-            path: fileName, // In Electron this would be file.path
+            path: (file as any).path || fileName, // Use actual file path in Electron
             codec,
             fileSize: file.size,
             sampleRate: undefined,
@@ -650,15 +609,8 @@ function App() {
         })
         .filter((track): track is AudioTrack => track !== null);
 
-      if (validTracks.length > 0 || cueFiles.length > 0) {
-        if (validTracks.length > 0) {
-          handleFilesLoaded(validTracks);
-        }
-        if (cueFiles.length > 0) {
-          addToLog(
-            `📂 CUE file processing complete. Individual track extraction pending implementation.`
-          );
-        }
+      if (validTracks.length > 0) {
+        handleFilesLoaded(validTracks);
       } else {
         handleFileError("No supported audio files found");
       }

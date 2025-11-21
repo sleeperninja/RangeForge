@@ -46,6 +46,13 @@ export interface AudioTrack extends AudioFileInfo {
   cueDuration?: number; // in seconds
   parentCueFile?: string;
   parentAudioFile?: string;
+  cueData?: {
+    startTime: number;
+    endTime?: number;
+    trackNumber: string;
+    performer: string;
+    title: string;
+  };
 }
 
 export interface CueFile {

@@ -34,7 +34,7 @@ export interface ElectronAPI {
     parseFile: (cueFilePath: string) => Promise<any>;
     detectAndProcess: (
       filePaths: string[]
-    ) => Promise<{ success: boolean; result?: any; error?: string }>;
+    ) => Promise<{ success: boolean; tracks?: any[]; error?: string }>;
   };
 
   // Audio processing operations

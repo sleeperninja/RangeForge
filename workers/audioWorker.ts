@@ -1,9 +1,12 @@
 import { parentPort, workerData } from "worker_threads";
-import { AudioProcessor } from "../electron/services/audioProcessor";
+import {
+  AudioProcessor,
+  ProcessingOptions,
+} from "../electron/services/audioProcessor";
 
 interface WorkerData {
   filePath: string;
-  options: any;
+  options: ProcessingOptions;
 }
 
 async function processAudio() {
@@ -15,18 +18,6 @@ async function processAudio() {
   const audioProcessor = new AudioProcessor();
 
   try {
-    // Set up progress forwarding
-    audioProcessor.on("progress", (progressData) => {
-      parentPort?.postMessage({
-        type: "progress",
-        data: {
-          ...progressData,
-          workerId: process.pid,
-          file: filePath,
-        },
-      });
-    });
-
     // Analyze the audio file
     const analysisResult = await audioProcessor.analyzeFile(filePath);
 
@@ -35,20 +26,28 @@ async function processAudio() {
       data: analysisResult,
     });
 
-    // If volume adjustment is requested, perform it
-    if (options.adjustVolume) {
-      const outputPath = await audioProcessor.adjustVolume(
-        filePath,
-        options.volumeOptions || {}
-      );
+    // If processing options are provided, process the track
+    if (options.outputPath) {
+      const processingOptions = {
+        ...options,
+        inputPath: filePath,
+        onProgress: (progress: number) => {
+          parentPort?.postMessage({
+            type: "progress",
+            data: {
+              progress,
+              workerId: process.pid,
+              file: filePath,
+            },
+          });
+        },
+      };
+
+      const result = await audioProcessor.processTrack(processingOptions);
 
       parentPort.postMessage({
-        type: "volume-adjusted",
-        data: {
-          inputPath: filePath,
-          outputPath,
-          options: options.volumeOptions,
-        },
+        type: "processing-complete",
+        data: result,
       });
     }
 
@@ -65,8 +64,6 @@ async function processAudio() {
       error: error instanceof Error ? error.message : String(error),
       filePath,
     });
-  } finally {
-    audioProcessor.dispose();
   }
 }
 
