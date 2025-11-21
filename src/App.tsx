@@ -4,6 +4,153 @@ import { AudioAnalysisTable } from "./components/AudioAnalysisTable";
 import { ProcessingControls } from "./components/ProcessingControls";
 import { AudioTrack, ProcessingProfile, GenreTag } from "./types/audio";
 
+// CUE file metadata interfaces
+interface CueMetadata {
+  genre?: string;
+  date?: string;
+  discId?: string;
+  comment?: string;
+  performer: string;
+  title: string;
+  file: string;
+  tracks: CueTrack[];
+}
+
+interface CueTrack {
+  number: string;
+  title: string;
+  performer: string;
+  indexPositions: string[];
+  startTime: number; // in seconds
+  endTime?: number; // in seconds
+}
+
+interface Settings {
+  targetLufs: number;
+  autoMode: boolean;
+  metadataApi: boolean;
+  selectedProfile: string;
+  namingConvention: string;
+}
+
+// Convert CUE time format (MM:SS:FF) to seconds
+const parseTimeToSeconds = (timeStr: string): number => {
+  const [minutes, seconds, frames] = timeStr.split(":").map(Number);
+  return minutes * 60 + seconds + frames / 75;
+};
+
+// Parse CUE file content into structured metadata
+const parseCueFile = (content: string): CueMetadata => {
+  const lines = content.split("\n").map((line) => line.trim());
+  const metadata: CueMetadata = {
+    performer: "",
+    title: "",
+    file: "",
+    tracks: [],
+  };
+
+  let currentTrack: Partial<CueTrack> | null = null;
+
+  for (const line of lines) {
+    // Global metadata
+    if (line.startsWith("REM GENRE")) {
+      metadata.genre = line.match(/REM GENRE (.+)/)?.[1];
+    } else if (line.startsWith("REM DATE")) {
+      metadata.date = line.match(/REM DATE (.+)/)?.[1];
+    } else if (line.startsWith("REM DISCID")) {
+      metadata.discId = line.match(/REM DISCID (.+)/)?.[1];
+    } else if (line.startsWith("REM COMMENT")) {
+      metadata.comment = line.match(/REM COMMENT "([^"]+)"/)?.[1];
+    } else if (line.startsWith("PERFORMER") && !currentTrack) {
+      metadata.performer = line.match(/PERFORMER "([^"]+)"/)?.[1] || "";
+    } else if (line.startsWith("TITLE") && !currentTrack) {
+      metadata.title = line.match(/TITLE "([^"]+)"/)?.[1] || "";
+    } else if (line.startsWith("FILE")) {
+      metadata.file = line.match(/FILE "([^"]+)"/)?.[1] || "";
+    }
+
+    // Track parsing
+    if (line.match(/TRACK \\d+ AUDIO/)) {
+      // Save previous track if exists
+      if (currentTrack && currentTrack.number) {
+        metadata.tracks.push(currentTrack as CueTrack);
+      }
+
+      const trackNumber = line.match(/TRACK (\\d+)/)?.[1];
+      currentTrack = {
+        number: trackNumber || "",
+        title: "",
+        performer: metadata.performer,
+        indexPositions: [],
+        startTime: 0,
+      };
+    } else if (currentTrack) {
+      if (line.startsWith("TITLE")) {
+        currentTrack.title = line.match(/TITLE "([^"]+)"/)?.[1] || "";
+      } else if (line.startsWith("PERFORMER")) {
+        currentTrack.performer =
+          line.match(/PERFORMER "([^"]+)"/)?.[1] || metadata.performer;
+      } else if (line.startsWith("INDEX")) {
+        const indexMatch = line.match(/INDEX (\\d+) ([\\d:]+)/);
+        if (indexMatch) {
+          currentTrack.indexPositions?.push(indexMatch[2]);
+          if (indexMatch[1] === "01") {
+            // INDEX 01 is the track start
+            currentTrack.startTime = parseTimeToSeconds(indexMatch[2]);
+          }
+        }
+      }
+    }
+  }
+
+  // Add the last track
+  if (currentTrack && currentTrack.number) {
+    metadata.tracks.push(currentTrack as CueTrack);
+  }
+
+  // Calculate end times
+  for (let i = 0; i < metadata.tracks.length; i++) {
+    if (i < metadata.tracks.length - 1) {
+      metadata.tracks[i].endTime = metadata.tracks[i + 1].startTime;
+    }
+    // Last track end time will be determined during processing
+  }
+
+  return metadata;
+};
+
+// Apply naming convention with variable substitution
+const applyNamingConvention = (
+  convention: string,
+  variables: {
+    artist: string;
+    album: string;
+    trackName: string;
+    trackNumber: string;
+  }
+): string => {
+  let result = convention;
+
+  // Handle padded track numbers like {trackNumber:02d}
+  const trackNumberPadMatch = result.match(/\\{trackNumber:(\\d+)d\\}/);
+  if (trackNumberPadMatch) {
+    const padding = parseInt(trackNumberPadMatch[1]);
+    const paddedNumber = variables.trackNumber.padStart(padding, "0");
+    result = result.replace(trackNumberPadMatch[0], paddedNumber);
+  }
+
+  // Replace simple variables
+  result = result.replace("{artist}", variables.artist);
+  result = result.replace("{album}", variables.album);
+  result = result.replace("{trackName}", variables.trackName);
+  result = result.replace("{trackNumber}", variables.trackNumber);
+
+  // Clean up any remaining brackets or invalid characters
+  result = result.replace(/[<>:"/\\\\|?*]/g, "_"); // Windows-safe filename
+
+  return result;
+};
+
 function App() {
   const [tracks, setTracks] = useState<AudioTrack[]>([]);
   const [selectedTrackIds, setSelectedTrackIds] = useState<string[]>([]);
@@ -13,6 +160,16 @@ function App() {
   const [showLogWindow, setShowLogWindow] = useState(false);
   const [processingLogs, setProcessingLogs] = useState<string[]>([]);
   const [targetLufs, setTargetLufs] = useState(-18); // Default to -18 LUFS
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Settings state
+  const [settings, setSettings] = useState<Settings>({
+    targetLufs: -18,
+    autoMode: false,
+    metadataApi: false,
+    selectedProfile: "ALAC",
+    namingConvention: "{trackNumber:02d} - {artist} - {trackName}",
+  });
 
   // Default profile
   const [selectedProfile, setSelectedProfile] = useState<ProcessingProfile>({
@@ -32,11 +189,20 @@ function App() {
     const savedSettings = localStorage.getItem("rangeforge-settings");
     if (savedSettings) {
       try {
-        const settings = JSON.parse(savedSettings);
-        setTargetLufs(settings.targetLufs || -18);
-        setAutoMode(settings.autoMode || false);
-        setMetadataApi(settings.metadataApi || false);
-        setSelectedProfile((prev) => ({ ...prev, ...settings.profile }));
+        const loadedSettings = JSON.parse(savedSettings);
+        setSettings({
+          targetLufs: loadedSettings.targetLufs || -18,
+          autoMode: loadedSettings.autoMode || false,
+          metadataApi: loadedSettings.metadataApi || false,
+          selectedProfile: loadedSettings.selectedProfile || "ALAC",
+          namingConvention:
+            loadedSettings.namingConvention ||
+            "{trackNumber:02d} - {artist} - {trackName}",
+        });
+        setTargetLufs(loadedSettings.targetLufs || -18);
+        setAutoMode(loadedSettings.autoMode || false);
+        setMetadataApi(loadedSettings.metadataApi || false);
+        setSelectedProfile((prev) => ({ ...prev, ...loadedSettings.profile }));
       } catch (error) {
         console.log("Error loading settings:", error);
       }
@@ -45,19 +211,29 @@ function App() {
 
   // Save settings when they change
   useEffect(() => {
-    const settings = {
-      targetLufs,
-      autoMode,
-      metadataApi,
+    const settingsToSave = {
+      targetLufs: settings.targetLufs,
+      autoMode: settings.autoMode,
+      metadataApi: settings.metadataApi,
+      selectedProfile: settings.selectedProfile,
+      namingConvention: settings.namingConvention,
       profile: selectedProfile,
     };
-    localStorage.setItem("rangeforge-settings", JSON.stringify(settings));
-  }, [targetLufs, autoMode, metadataApi, selectedProfile]);
+    localStorage.setItem("rangeforge-settings", JSON.stringify(settingsToSave));
+  }, [settings, selectedProfile]);
 
   // Sync targetLufs with profile
   useEffect(() => {
     setSelectedProfile((prev) => ({ ...prev, targetLufs: targetLufs }));
   }, [targetLufs]);
+
+  // Helper to add timestamped logs
+  const addToLog = useCallback((message: string) => {
+    setProcessingLogs((prev) => [
+      ...prev,
+      `[${new Date().toLocaleTimeString()}] ${message}`,
+    ]);
+  }, []);
 
   const profiles: ProcessingProfile[] = [selectedProfile];
 
@@ -135,8 +311,15 @@ function App() {
   );
 
   const handleSettingsClick = useCallback(() => {
-    // TODO: Open settings dialog
-    console.log("Settings clicked");
+    setShowSettings(true);
+  }, []);
+
+  const handleNamingConventionChange = useCallback((newConvention: string) => {
+    setSettings((prev) => ({ ...prev, namingConvention: newConvention }));
+  }, []);
+
+  const handleSettingsClose = useCallback(() => {
+    setShowSettings(false);
   }, []);
 
   // File handling functions
@@ -276,7 +459,7 @@ function App() {
     // TODO: Show user-friendly error message
   }, []);
 
-  // Enhanced file drop functionality with CUE processing
+  // Enhanced file drop functionality with comprehensive CUE processing
   const handleFilesDrop = useCallback(
     async (files: FileList) => {
       const fileArray = Array.from(files);
@@ -299,70 +482,120 @@ function App() {
         file.name.toLowerCase().endsWith(".cue")
       );
 
-      // Process each audio file
-      for (const audioFile of audioFiles) {
-        let matchingCue: File | null = null;
+      if (cueFiles.length > 0) {
+        for (const cueFile of cueFiles) {
+          try {
+            const cueContent = await cueFile.text();
+            const cueMetadata = parseCueFile(cueContent);
 
-        if (cueFiles.length > 0) {
-          const cueCheckMessage = `Found ${cueFiles.length} CUE file(s), checking for matches with ${audioFile.name}`;
-          setProcessingLogs((prev) => [
-            ...prev,
-            `[${new Date().toLocaleTimeString()}] ${cueCheckMessage}`,
-          ]);
+            addToLog(`📄 CUE file detected: ${cueFile.name}`);
+            addToLog(
+              `🎵 Album: ${cueMetadata.performer} - ${cueMetadata.title}`
+            );
+            addToLog(`💿 Target audio file: ${cueMetadata.file}`);
 
-          // Check each CUE file to see if it references this audio file
-          for (const cueFile of cueFiles) {
-            try {
-              const cueContent = await cueFile.text();
+            if (cueMetadata.genre) addToLog(`🏷️ Genre: ${cueMetadata.genre}`);
+            if (cueMetadata.date) addToLog(`📅 Date: ${cueMetadata.date}`);
+            if (cueMetadata.discId)
+              addToLog(`💿 Disc ID: ${cueMetadata.discId}`);
 
-              // Parse FILE directive from CUE
-              const fileMatch = cueContent.match(
-                /FILE\\s+[\"']?([^\"'\\r\\n]+)[\"']?\\s+/i
+            // Check if the referenced audio file is in our dropped files
+            const matchingAudio = audioFiles.find(
+              (af) =>
+                af.name === cueMetadata.file ||
+                af.name.includes(cueMetadata.file.replace(/\.[^.]+$/, ""))
+            );
+
+            if (matchingAudio) {
+              addToLog(`✅ Found matching audio file: ${matchingAudio.name}`);
+              addToLog(
+                `🎵 Found ${cueMetadata.tracks.length} tracks to extract`
               );
-              if (fileMatch) {
-                const cueReferencedFile = fileMatch[1].trim();
-                const cueFileName =
-                  cueReferencedFile.split(/[/\\\\]/).pop() || cueReferencedFile;
 
-                const parseMessage = `CUE file ${cueFile.name} references: ${cueFileName}`;
-                setProcessingLogs((prev) => [
-                  ...prev,
-                  `[${new Date().toLocaleTimeString()}] ${parseMessage}`,
-                ]);
+              // Process each track
+              for (const track of cueMetadata.tracks) {
+                const fileName = applyNamingConvention(
+                  settings.namingConvention,
+                  {
+                    artist: track.performer,
+                    album: cueMetadata.title,
+                    trackName: track.title,
+                    trackNumber: track.number,
+                  }
+                );
 
-                // Check if the CUE references our audio file
-                if (
-                  cueFileName.toLowerCase() === audioFile.name.toLowerCase()
-                ) {
-                  matchingCue = cueFile;
-                  const matchMessage = `✓ Match found! ${cueFile.name} references ${audioFile.name}`;
-                  setProcessingLogs((prev) => [
-                    ...prev,
-                    `[${new Date().toLocaleTimeString()}] ${matchMessage}`,
-                  ]);
-                  break;
-                }
+                const startTime =
+                  Math.floor(track.startTime / 60)
+                    .toString()
+                    .padStart(2, "0") +
+                  ":" +
+                  Math.floor(track.startTime % 60)
+                    .toString()
+                    .padStart(2, "0");
+                const endTime = track.endTime
+                  ? Math.floor(track.endTime / 60)
+                      .toString()
+                      .padStart(2, "0") +
+                    ":" +
+                    Math.floor(track.endTime % 60)
+                      .toString()
+                      .padStart(2, "0")
+                  : "END";
+
+                addToLog(`📝 Track ${track.number}: ${fileName}`);
+                addToLog(`   ⏱️ Time: ${startTime} → ${endTime}`);
               }
-            } catch (error) {
-              const errorMessage = `Error reading CUE file ${cueFile.name}: ${error}`;
-              setProcessingLogs((prev) => [
-                ...prev,
-                `[${new Date().toLocaleTimeString()}] ${errorMessage}`,
-              ]);
+
+              addToLog(
+                `🔄 Ready to process CUE tracks (processing logic pending)`
+              );
+
+              // TODO: Create AudioTrack entries for each CUE track
+              // This would involve:
+              // 1. Using FFmpeg to split the audio file based on time ranges
+              // 2. Creating individual AudioTrack objects for each split
+              // 3. Applying proper metadata from CUE file
+            } else {
+              addToLog(
+                `❌ Audio file not found in dropped files: ${cueMetadata.file}`
+              );
+              addToLog(
+                `   Available files: ${audioFiles
+                  .map((f) => f.name)
+                  .join(", ")}`
+              );
             }
+          } catch (error) {
+            addToLog(`❌ Error reading CUE file: ${error}`);
           }
         }
 
-        if (matchingCue) {
-          // Process as CUE + Audio combination
-          const cueProcessMessage = `Processing ${audioFile.name} with CUE sheet ${matchingCue.name}`;
-          setProcessingLogs((prev) => [
-            ...prev,
-            `[${new Date().toLocaleTimeString()}] ${cueProcessMessage}`,
-          ]);
+        // Don't process audio files separately if they're part of CUE files
+        const cueAudioFiles = new Set<string>();
+        for (const cueFile of cueFiles) {
+          try {
+            const cueContent = await cueFile.text();
+            const cueMetadata = parseCueFile(cueContent);
+            cueAudioFiles.add(cueMetadata.file);
+          } catch (error) {
+            // Ignore parsing errors here, already handled above
+          }
+        }
 
-          // TODO: Extract individual tracks from CUE sheet
-          // For now, just process the main audio file and note CUE presence
+        // Filter out audio files that are referenced by CUE files
+        const standAloneAudioFiles = audioFiles.filter(
+          (file) =>
+            !Array.from(cueAudioFiles).some(
+              (cueFile) =>
+                file.name === cueFile ||
+                file.name.includes(cueFile.replace(/\.[^.]+$/, ""))
+            )
+        );
+
+        if (standAloneAudioFiles.length > 0) {
+          addToLog(
+            `🎵 Processing ${standAloneAudioFiles.length} standalone audio files`
+          );
         }
       }
 
@@ -417,8 +650,15 @@ function App() {
         })
         .filter((track): track is AudioTrack => track !== null);
 
-      if (validTracks.length > 0) {
-        handleFilesLoaded(validTracks);
+      if (validTracks.length > 0 || cueFiles.length > 0) {
+        if (validTracks.length > 0) {
+          handleFilesLoaded(validTracks);
+        }
+        if (cueFiles.length > 0) {
+          addToLog(
+            `📂 CUE file processing complete. Individual track extraction pending implementation.`
+          );
+        }
       } else {
         handleFileError("No supported audio files found");
       }
@@ -539,6 +779,62 @@ function App() {
           )}
         </div>
       </main>
+
+      {/* Settings Dialog */}
+      {showSettings && (
+        <div className="settings-overlay" onClick={handleSettingsClose}>
+          <div className="settings-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="settings-header">
+              <h3>Settings</h3>
+              <button className="close-btn" onClick={handleSettingsClose}>
+                ×
+              </button>
+            </div>
+            <div className="settings-content">
+              <div className="setting-group">
+                <label htmlFor="naming-convention">
+                  File Naming Convention:
+                </label>
+                <input
+                  id="naming-convention"
+                  type="text"
+                  value={settings.namingConvention}
+                  onChange={(e) => handleNamingConventionChange(e.target.value)}
+                  className="naming-input"
+                />
+                <div className="naming-help">
+                  <p>Available variables:</p>
+                  <ul>
+                    <li>
+                      <code>{"{artist}"}</code> - PERFORMER from CUE file
+                    </li>
+                    <li>
+                      <code>{"{album}"}</code> - TITLE from CUE file
+                    </li>
+                    <li>
+                      <code>{"{trackName}"}</code> - Track TITLE
+                    </li>
+                    <li>
+                      <code>{"{trackNumber}"}</code> - Track number
+                    </li>
+                    <li>
+                      <code>{"{trackNumber:02d}"}</code> - Zero-padded track
+                      number
+                    </li>
+                  </ul>
+                  <p>
+                    Example:{" "}
+                    <code>{"{trackNumber:02d} - {artist} - {trackName}"}</code>
+                  </p>
+                  <p>
+                    Result: <code>01 - Ministry - Reload</code>
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
