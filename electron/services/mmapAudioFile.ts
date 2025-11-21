@@ -2,6 +2,9 @@ import * as mmap from "mmap-io";
 import * as fs from "fs";
 import { randomUUID } from "crypto";
 
+// Type assertion for mmap-io (TypeScript definitions may be incomplete)
+const mmapLib = mmap as any;
+
 /**
  * Memory-mapped audio file handler
  * Provides efficient access to large audio files without loading into RAM
@@ -33,14 +36,14 @@ export class MemoryMappedAudioFile {
       this.fileSize = stats.size;
 
       // Open file descriptor
-      this.fileDescriptor = await fs.promises.open(this.filePath, "r");
+      this.fileDescriptor = fs.openSync(this.filePath, "r");
 
       // Create memory mapping
-      this.mappedBuffer = mmap.map(
+      this.mappedBuffer = (mmap as any).map(
         this.fileSize,
-        mmap.PROT_READ,
-        mmap.MAP_SHARED,
-        this.fileDescriptor.fd,
+        (mmap as any).PROT_READ,
+        (mmap as any).MAP_SHARED,
+        this.fileDescriptor,
         0
       );
 
@@ -78,25 +81,24 @@ export class MemoryMappedAudioFile {
   private cleanup(): void {
     try {
       if (this.mappedBuffer) {
-        mmap.unmap(this.mappedBuffer);
+        // mmap-io automatically unmaps when buffer is garbage collected
+        // Just clear our reference
         this.mappedBuffer = undefined;
       }
 
-      if (this.fileDescriptor) {
-        fs.closeSync(this.fileDescriptor.fd);
+      if (this.fileDescriptor !== undefined) {
+        fs.closeSync(this.fileDescriptor);
         this.fileDescriptor = undefined;
       }
 
       this.isOpen = false;
       MemoryMappedAudioFile.openFiles.delete(this.id);
-
+      
       console.log(`Unmapped file: ${this.filePath}`);
     } catch (error) {
       console.error(`Error cleaning up memory map: ${error}`);
     }
-  }
-
-  // Getters
+  }  // Getters
   getId(): string {
     return this.id;
   }

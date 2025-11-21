@@ -1,16 +1,12 @@
 import { app, BrowserWindow, ipcMain, Menu, dialog } from "electron";
 import { join } from "path";
-import { fileURLToPath } from "url";
-import { createRequire } from "module";
 import * as fs from "fs";
 import { CueParser } from "./services/cueParser";
-import { CueIntegration } from "./services/cueIntegration";
 import { AudioProcessor } from "./services/audioProcessor";
 import { MemoryMappedAudioFile } from "./services/mmapAudioFile";
 
-// Handle ES modules in Electron
-const require = createRequire(import.meta.url);
-const __dirname = fileURLToPath(new URL(".", import.meta.url));
+// Get directory name for CommonJS compatibility
+const __dirname = __filename ? join(__filename, '..') : process.cwd();
 
 class ElectronApp {
   private mainWindow: BrowserWindow | null = null;
@@ -53,7 +49,6 @@ class ElectronApp {
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
-        enableRemoteModule: false,
         preload: join(__dirname, "preload.js"),
       },
     });
@@ -82,7 +77,7 @@ class ElectronApp {
   }
 
   private setupMenu() {
-    const template = [
+    const template: Electron.MenuItemConstructorOptions[] = [
       {
         label: "File",
         submenu: [
@@ -232,8 +227,8 @@ class ElectronApp {
 
     ipcMain.handle("cue:detectAndProcess", async (_, filePaths: string[]) => {
       try {
-        const result = await CueIntegration.detectAndProcessCueFiles(filePaths);
-        return { success: true, result };
+        // TODO: Implement CUE integration service
+        return { success: false, error: "CUE integration not yet implemented" };
       } catch (error) {
         return {
           success: false,
