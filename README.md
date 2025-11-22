@@ -7,7 +7,7 @@ A professional audio dynamic range analysis and volume processing application bu
 - **Audio Analysis**: Comprehensive volume level and dynamic range analysis using FFmpeg
 - **Batch Processing**: Multi-threaded file processing using Worker Threads
 - **Memory-Mapped Files**: Efficient large file handling with mmap
-- **Volume Adjustment**: Professional loudness normalization and limiting
+- **Volume Adjustment**: Professional volume balancing and limiting
 - **Cross-Platform**: Builds for Windows, macOS, and Linux
 
 ## Technology Stack
@@ -105,7 +105,7 @@ RangeForge/
 
 ### Processing Features
 
-- **Loudness Normalization**: Target LUFS adjustment
+- **Volume Balancing**: Target level adjustment
 - **Peak Limiting**: Configurable threshold limiting
 - **Batch Processing**: Multi-file parallel processing
 - **Progress Monitoring**: Real-time processing updates
@@ -149,7 +149,7 @@ The app packaging is configured in `package.json` under the `build` section:
 
 Audio processing uses FFmpeg with the following default settings:
 
-- **Loudness Normalization**: EBU R128 standard
+- **Volume Balancing**: EBU R128 standard
 - **Default Target**: -23 LUFS (broadcast standard)
 - **Limiter Threshold**: -1.0 dB
 - **Quality**: Preserves original bit depth and sample rate

@@ -2,60 +2,200 @@
 
 ## Project Overview
 
-RangeForge is a Swiss army knife for losslessly processing audio files built with Electron, React, and Node.js. **Based on existing PowerShell workflows**, this application consolidates multiple audio utilities for CUE-based splitting, format conversion, and loudness leveling with professional LUFS/dBTP standards.
+RangeForge is a **"lossless sound sweetener"** for power users and data hoarders, built with Electron, React, and Node.js. **Consolidates 7+ audio applications** into a single workflow for music library curation, CUE-based splitting, format conversion, and professional volume balancing with broadcast-quality standards.
 
-**Core Mission**: Replace and enhance PowerShell-based audio processing scripts with a unified GUI application that automatically analyzes audio files (individual tracks and CUE-based albums), displays volume levels and dynamic range, and proposes optimal adjustments for user-defined workflow profiles.
+**Target User**: Video editors, audiophiles, and data hoarders managing large music collections who want **consistent listening experiences** across devices. Designed for users with high-end hardware (16GB+ RAM) who process both stereo albums and multichannel audio collections.
+
+**Core Mission**: Replace multi-application workflows (Mediahuman, FFmpeg GUI, Adobe Audition, PowerShell scripts, Mp3tag, Last.fm lookups) with a unified **preview-first** application that stages all operations in memory before committing changes.
 
 ---
 
 ## Core Features & Roadmap
 
-### Phase 1: Core Audio Analysis (Current)
+### Phase 1: Core Audio Analysis ✅ **MAJOR MILESTONE COMPLETED**
 
 - [x] Electron + React + TypeScript boilerplate
 - [x] Audio analysis service with FFmpeg integration
 - [x] Worker threads for multithreaded processing
 - [x] Memory-mapped file I/O support
 - [x] Cross-platform build configuration
-- [ ] **Table-based UI implementation (per concept image)**
-- [ ] **LUFS/dBTP measurement and display**
-- [ ] **Dynamic Range (DR) calculation**
-- [ ] **Batch file processing queue**
-- [ ] **Auto Mode toggle functionality**
+- [x] **Table-based UI implementation (per concept image)**
+- [x] **LUFS/dBTP measurement and display**
+- [x] **Dynamic Range (DR) calculation**
+- [x] **Batch file processing queue**
+- [x] **Auto Mode toggle functionality**
+- [x] **🎯 PREVIEW-FIRST WORKFLOW IMPLEMENTED**
+  - [x] **Memory-mapped CUE file detection and processing**
+  - [x] **Virtual track creation without file modification**
+  - [x] **Real-time FFmpeg audio analysis (LUFS/dBTP/DR)**
+  - [x] **Volume adjustment preview with target LUFS calculation**
+  - [x] **Complete Electron ↔ React IPC communication**
+  - [x] **Segment-based analysis for CUE tracks using mmap**
 
-### Phase 2: Format Conversion & User-Defined Profiles
+### Phase 2: Format Conversion & User-Defined Profiles ⏳ **READY TO BEGIN**
+
+**Prerequisites Complete**: Phase 1 preview workflow provides the foundation for all Phase 2 features
 
 - [ ] **User-defined profile system** (create profiles such as "iTunes", "Plex Stereo", etc. for specific use cases)
 - [ ] **Multi-format output support** (FLAC, WAV, ALAC, AAC, MP3) with **ALAC mandatory**
 - [ ] **Multi-format input support** (MP3, AAC, FLAC, WAV, ALAC, DSD, MLP)
 - [ ] **Metadata preservation across format changes**
-- [ ] **Universal CUE+audio splitting** (FLAC+CUE, WAV+CUE, ALAC+CUE support)
-- [ ] **Memory-mapped CUE processing** for efficient large file handling
-- [ ] **Automatic album vs. single track detection**
-- [ ] **Loudness targeting with LUFS precision**
-- [ ] **True Peak (dBTP) limiting**
-- [ ] **File naming strategies (serialize, rename, replace)**
+- [x] **Universal CUE+audio splitting** (FLAC+CUE, WAV+CUE, ALAC+CUE support) ✅ _Preview implemented_
+- [x] **Memory-mapped CUE processing** for efficient large file handling ✅ _Complete_
+- [x] **Automatic album vs. single track detection** ✅ _Complete_
+- [x] **Volume balancing targeting with precision** ✅ _Preview implemented_
+- [x] **True Peak (dBTP) limiting** ✅ _Analysis implemented_
+- [ ] **File naming strategies (serialize, rename, replace)** (UI ready, backend needed)
 
-### Phase 3: Multichannel & Memory-Optimized Processing
+**Next Priority**: Implement the "GO" button functionality to execute the previewed changes
 
-- [ ] **Memory-mapped multichannel audio processing** (SACD, DVD-A, BD-A sources)
-- [ ] **Memory-optimized FFmpeg/FFprobe operations** for large multichannel files
-- [ ] **DSD file handling** with efficient memory usage
-- [ ] **MLP (DVD-Audio) processing**
-- [ ] **TS (Transport Stream) audio extraction**
-- [ ] **Surround sound format preservation**
-- [ ] **Channel mapping and validation**
-- [ ] **Advanced loudness standards** (stereo vs multichannel)
+### Phase 3: Multichannel & Professional Workflows
 
-### Phase 4: Integration & Workflow Optimization
+**Target**: 206GB multichannel collection + video editing workflows
 
-- [ ] Last.fm API integration for metadata enrichment
-- [ ] **iTunes/Music.app integration**
-- [ ] **Plex media server optimization**
-- [ ] **Batch export with progress monitoring**
-- [ ] **Quality assurance reports**
-- [ ] **Workflow automation and scripting**
-- [ ] **Plugin architecture for custom processors**
+- [ ] **Manual format controls** (codec, sample rate, bit depth, channels)
+- [ ] **User-defined preset system** (save/load custom parameter combinations)
+- [ ] **Multichannel audio processing** (1/2/6/8 channel support)
+- [ ] **Professional video workflows** (PCM for editing, FLAC for delivery)
+- [ ] **DSD file handling** with hardcoded fallback settings (24-bit/88.2kHz)
+- [ ] **MLP (DVD-Audio) processing** via FFmpeg decoding
+- [ ] **Multichannel volume balancing standards** (stereo vs multichannel processing)
+- [ ] **Format validation** (codec/channel combinations)
+
+**Iceboxed**: DD+ encoding (awaiting FFmpeg maturity), Dolby Atmos object data
+
+### Phase 4: Metadata Enhancement
+
+- [ ] **Last.fm API integration for metadata enrichment**
+  - Track identification and popularity data
+  - Genre classification (Album/Song/Chart level)
+  - "Radio" tagging for popular tracks
+- [ ] **Enhanced genre tagging workflow**
+  - Album-level + song-level + chart-level classification
+  - Manual genre editing in file list
+  - Smart genre suggestions
+
+---
+
+## 🎯 **CURRENT STATUS: PHASE 1 COMPLETE** (November 2025)
+
+### ✅ **Major Achievement: Preview-First Workflow Operational + Strategic Clarity**
+
+**Technical Status:**
+The core **memory-mapped preview architecture** is now fully implemented and functional.
+
+**Strategic Status:**
+
+- ✅ **Terminology standardized** to "volume balancing" across all documents
+- ✅ **Market validation** completed - confirmed genuine user pain points
+- ✅ **Naming issue identified** - RangeForge too similar to SoundForge
+- ✅ **AI context system** established for future session consistency
+- ⚠️ **Infrastructure priority** - iSCSI migration needed for Electron builds
+
+#### **What Works Right Now**
+
+1. **File Drop Detection**:
+
+   - Electron automatically detects CUE files and associated audio
+   - Supports all major audio formats (FLAC, WAV, MP3, M4A, etc.)
+
+2. **Memory-Mapped Analysis**:
+
+   - Large audio files opened efficiently with `mmap-io`
+   - No full file loading into RAM required
+   - Supports files of any size without memory constraints
+
+3. **CUE Processing**:
+
+   - Automatic CUE sheet parsing and validation
+   - Virtual track creation based on CUE metadata
+   - Track timing calculated from INDEX positions
+   - No physical file splitting until "GO" button
+
+4. **Real-Time Audio Analysis**:
+
+   - FFmpeg-based LUFS measurement per track/segment
+   - True Peak (dBTP) detection
+   - Dynamic Range (DR) calculation
+   - Results displayed in professional audio table
+
+5. **Volume Adjustment Preview**:
+
+   - Calculates exact dB adjustment needed for target LUFS
+   - Shows "before" and "after" values before processing
+   - Color-coded indicators (safe/warn/danger zones)
+
+6. **Complete UI Integration**:
+
+   - Table displays all analysis results in real-time
+   - DevLog shows detailed processing information
+   - All processing controls functional
+   - Ready for Last.fm metadata integration
+
+### **Technical Architecture Completed**
+
+- **Frontend**: React + TypeScript with complete audio table UI
+- **Backend**: Electron main process with FFmpeg integration
+- **IPC**: Full bidirectional communication (renderer ↔ main process)
+- **Memory Management**: `mmap-io` for efficient large file access
+- **Audio Processing**: `AudioProcessor` service with segment analysis
+- **CUE Integration**: `CueIntegrationService` for metadata parsing
+- **Worker Support**: Thread-based processing architecture ready
+
+### **Deployment Status**
+
+- ✅ **React Build**: Compiles successfully
+- ✅ **Electron Build**: Compiles successfully
+- ✅ **Worker Build**: Compiles successfully
+- ⚠️ **Network Drive Issue**: Electron binaries require local installation
+- 🎯 **Infrastructure Priority**: iSCSI migration planned to resolve network restrictions
+
+### **Ready for Testing**
+
+The application is ready to test the complete **"lossless" preview workflow**:
+
+1. Drop CUE + audio file(s) into the application
+2. Watch as tracks are virtually extracted and displayed
+3. See real-time LUFS/dBTP/DR analysis results
+4. Preview volume adjustments for target LUFS (-18, -23, etc.)
+5. **[Ready for Implementation]** Press "GO" to commit actual file changes
+
+### **🎯 KEY PROJECT INSIGHTS** (November 2025)
+
+#### **Target User Profile Confirmed:**
+
+- **Primary**: Power user/data hoarder with video editing background
+- **Hardware**: High-end systems (16GB+ RAM, multi-core CPUs)
+- **Workflow**: Replace 7+ applications with single tool
+- **Usage**: 93% stereo processing, 7% multichannel (206GB curated collection)
+
+#### **Tool Consolidation Strategy:**
+
+**Replaces:** Mediahuman Audio Converter, FFmpeg GUI, Adobe Audition, PowerShell scripts, Mp3tag, Last.fm lookups, web-based genre research
+
+**Benefits:** 80/20 rule - personal workflow tools benefit professional use cases
+
+#### **Memory Architecture Validation:**
+
+- **mmap benefits**: Workflow efficiency (not memory efficiency)
+- **Target files**: 100-600MB common, up to 6-hour albums
+- **Strategy**: Pre-stage operations for instant parameter adjustment
+- **Cleanup**: Memory released per completed/errored file
+
+#### **MVP Progression Strategy:**
+
+- **MVP1**: ALAC volume balancing with metadata preservation (eliminates PowerShell)
+- **MVP2**: In-app genre tag editing (eliminates Mp3tag for basic workflow)
+- **MVP3**: CUE splitting + metadata management (eliminates Mediahuman)
+- **MVP4**: Last.fm API integration (eliminates manual web lookups)
+
+#### **Scope Refinements Applied:**
+
+- ❌ **REMOVED**: User-defined profiles (UI complexity vs value)
+- ❌ **REMOVED**: Plugin architecture (single user, no ecosystem)
+- ❌ **REMOVED**: Workflow scripting (recreates PowerShell complexity)
+- ✅ **VALIDATED**: Multichannel processing (206GB collection justification)
+- ✅ **SIMPLIFIED**: DSD/MLP processing (FFmpeg handles complexity)
 
 ---
 
@@ -401,6 +541,53 @@ File Strategy
 
 ### Alternative Naming Concepts Considered
 
+#### 🎵 Musical Intuition + Professional Accessibility
+
+**Volume-Focused Names:**
+
+- **VolumeBalance** - Clear, musical, professional
+- **AudioBalance** - Broader scope, intuitive
+- **BalanceStudio** - Studio implies professional tools
+- **VolumeFlow** - Suggests smooth, consistent experience
+- **AudioFlow** - Workflow-focused, less technical
+
+**Consistency-Focused Names:**
+
+- **AudioAlign** - Technical but accessible, implies precision
+- **SoundAlign** - Similar but warmer
+- **VolumeAlign** - Specific to the core problem
+- **AudioLevel** - Simple, direct, professional
+- **SoundLevel** - Warmer version
+
+**Workflow-Focused Names:**
+
+- **AudioCraft** - Implies careful creation/refinement
+- **SoundCraft** - Musical, artisanal feeling
+- **AudioStage** - Preview-first workflow reference
+- **VolumeStage** - Specific to core feature
+
+**Library-Focused Names:**
+
+- **LibraryBalance** - Clear scope and benefit
+- **AudioLibrary** - Too generic
+- **SoundLibrary** - Too generic
+
+#### ⚠️ Avoided Names (Trademark/Similarity Issues)
+
+- **RangeForge** - Too similar to Sony SoundForge
+- **AudioForge** - Same trademark concern
+- **SoundForge** variants - Direct conflict
+
+#### Top Recommendations
+
+1. **VolumeBalance** - Perfect clarity about core function
+2. **AudioAlign** - Professional but approachable
+3. **SoundCraft** - Musical, artisanal, implies careful work
+4. **AudioFlow** - Emphasizes smooth workflow
+5. **VolumeStage** - Highlights preview-first approach
+
+#### Original Alternatives (Pre-Strategy)
+
 #### RangeSmith
 
 - **Concept 1**: Anvil + waveform — stylized anvil with waveform carved across top
@@ -533,7 +720,7 @@ File Strategy
 2. **CUE-Based Splitting**: Memory-mapped processing of Houses of the Holy album
 3. **Volume Analysis**: FFmpeg analysis of all resulting tracks (8 Zeppelin + 1 Killers)
 4. **Dynamic Range Calculation**: DR measurement for each track
-5. **Table Population**: Display all 9 tracks with LUFS/dBTP measurements
+5. **Table Population**: Display all 9 tracks with volume analysis measurements
 6. **Volume Adjustment Proposals**: Show recommended adjustments per active profile
 
 #### General Workflow Steps
@@ -541,12 +728,13 @@ File Strategy
 1. **File Detection**: Automatically identify individual tracks vs. album+CUE combinations
 2. **Memory-Mapped CUE Processing**: Efficiently split large albums using CUE metadata
 3. **Multi-Threaded Analysis**: Parallel FFmpeg analysis of dynamic range for all audio files
-4. **Real-Time Display**: Populate table with LUFS, dBTP, and DR measurements
+4. **Real-Time Display**: Populate table with volume analysis and DR measurements
 5. **Profile-Based Recommendations**: Calculate optimal adjustments for selected workflow
 6. **Export Options**: Manual or automatic export with user-defined parameters
 7. **Metadata Enhancement**: Apply Last.fm tags and metadata preservation
 
 ---
 
-_Last Updated: November 20, 2025_
-_Document Version: 1.2_
+**Last Updated: November 21, 2025**
+**Document Version: 2.0 - Phase 1 Complete**
+**Status: Preview-First Workflow Operational ✅**
