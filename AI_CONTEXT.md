@@ -307,30 +307,40 @@ This document exists to **rapidly transfer project context to AI assistants** an
 
 **Always update these documents to maintain consistency:**
 
+This checklist must be completed at the end of every development session. Do not assume any item is done — treat all items as "not completed" until you (the project owner) or an authorized approver verifies and marks them done. The purpose is to keep canonical documents synchronized and prevent divergent or orphaned guidance.
+
 1. **PROJECT_PLAN.md**
 
-   - ✅ Update phase completion status (✅/⏳/🎯)
-   - ✅ Add new technical decisions or architecture changes
-   - ✅ Update "CURRENT STATUS" section with latest progress
-   - ✅ Document any new dependencies or technical requirements
+   - [ ] Update phase completion status (choose one: ✅/⏳/🎯)
+   - [ ] Add new technical decisions or architecture changes
+   - [ ] Update the "CURRENT STATUS" section with latest progress
+   - [ ] Document any new dependencies or technical requirements
 
 2. **AI_CONTEXT.md**
 
-   - ✅ Add any new scope restrictions or rejected approaches
-   - ✅ Update current priority section if focus changes
-   - ✅ Document new technical insights or architectural decisions
-   - ✅ Add any new "DO NOT SUGGEST" items discovered
+   - [ ] Add any new scope restrictions or rejected approaches
+   - [ ] Update current priority section if focus changes
+   - [ ] Document new technical insights or architectural decisions
+   - [ ] Add any new "DO NOT SUGGEST" items discovered
 
 3. **VALUE_PROPOSITION.md** (if messaging changes)
 
-   - ✅ Update feature descriptions if scope changes
-   - ✅ Refine user benefits based on development learnings
-   - ✅ Adjust competitive positioning if new alternatives found
+   - [ ] Update feature descriptions if scope changes
+   - [ ] Refine user benefits based on development learnings
+   - [ ] Adjust competitive positioning if new alternatives found
 
 4. **DOCUMENT_CONSISTENCY.md**
-   - ✅ Add summary of changes made in session
-   - ✅ Note any terminology updates or new standards
-   - ✅ Update document status and last modified dates
+   - [ ] Add summary of changes made in session
+   - [ ] Note any terminology updates or new standards
+   - [ ] Update document status and last modified dates
+
+Required procedure when closing a session:
+
+- Run through each checklist item and perform the changes in the repo on a branch named `doc/session-YYYYMMDD` (replace with today's date).
+- Create a concise PR describing the changes and mark which checklist items were completed.
+- The project owner must approve or merge the PR. Merged PRs are the only valid evidence that a checklist item is completed.
+
+- If any checklist item cannot be completed in-session, add a short entry in `DOCUMENT_CONSISTENCY.md` noting what remains, who will do it, and the expected completion date.
 
 ### ⚠️ **Critical Consistency Rules:**
 
@@ -338,6 +348,7 @@ This document exists to **rapidly transfer project context to AI assistants** an
 - **Scope**: Single expert UI mode, no plugins, no profiles
 - **Status**: Keep phase completion status accurate across all docs
 - **Naming**: Document any discussions about RangeForge alternatives
+ - **New documents policy**: Do not add standalone onboarding or process documents (for example `ONBOARDING_FROM_AI_CONTEXT.md`) as canonical project files unless the project owner explicitly approves them. All new documentation must be registered in `DOCUMENT_CONSISTENCY.md` and linked from `AI_CONTEXT.md`'s "REQUIRED READING" section if it is intended to be authoritative. This prevents contradictory or orphaned docs from being introduced.
 
 ### 🎯 **Session Success Criteria:**
 
@@ -359,6 +370,16 @@ This document exists to **rapidly transfer project context to AI assistants** an
 ```
 
 ---
+
+## Next Step: Consistency Validation (recommended)
+
+To keep `AI_CONTEXT.md` and the other canonical documents authoritative, run the validation workflow described in `CONSISTENCY_VALIDATION.md`. That file contains an audit checklist, origin-investigation steps (useful `git` commands are provided), and a lightweight PR-based remediation plan. Recommended flow:
+
+- Run the audit (record mismatches).
+- Create branch `doc/consistency-fix` with focused, atomic edits.
+- Submit PR and approve after owner review.
+
+Do not merge fixes until the project owner (you) has reviewed and approved the PR. This ensures AI agents and contributors follow the canonical decisions.
 
 _Document Purpose: Rapid AI context transfer to maintain execution consistency_  
 _Last Updated: November 22, 2025_
