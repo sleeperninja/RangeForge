@@ -36,8 +36,8 @@ RangeForge is a **"lossless sound sweetener"** for power users and data hoarders
 
 **Prerequisites Complete**: Phase 1 preview workflow provides the foundation for all Phase 2 features
 
-- [ ] **User-defined profile system** (create profiles such as "iTunes", "Plex Stereo", etc. for specific use cases)
-- [ ] **Multi-format output support** (FLAC, WAV, ALAC, AAC, MP3) with **ALAC mandatory**
+[ ] **Multi-format output support** (FLAC, WAV, ALAC, AAC, MP3) with **ALAC mandatory**
+
 - [ ] **Multi-format input support** (MP3, AAC, FLAC, WAV, ALAC, DSD, MLP)
 - [ ] **Metadata preservation across format changes**
 - [x] **Universal CUE+audio splitting** (FLAC+CUE, WAV+CUE, ALAC+CUE support) ✅ _Preview implemented_
@@ -49,7 +49,7 @@ RangeForge is a **"lossless sound sweetener"** for power users and data hoarders
 
 **Next Priority**: Implement the "GO" button functionality to execute the previewed changes
 
-### Phase 3: Multichannel & Professional Workflows
+### Phase 3: Multichannel & Advanced Workflows
 
 **Target**: 206GB multichannel collection + video editing workflows
 
@@ -64,16 +64,53 @@ RangeForge is a **"lossless sound sweetener"** for power users and data hoarders
 
 **Iceboxed**: DD+ encoding (awaiting FFmpeg maturity), Dolby Atmos object data
 
-### Phase 4: Metadata Enhancement
+### Phase 4: Metadata & Tagging Enhancement
 
-- [ ] **Last.fm API integration for metadata enrichment**
-  - Track identification and popularity data
-  - Genre classification (Album/Song/Chart level)
-  - "Radio" tagging for popular tracks
-- [ ] **Enhanced genre tagging workflow**
-  - Album-level + song-level + chart-level classification
-  - Manual genre editing in file list
-  - Smart genre suggestions
+**Last.fm API integration for metadata enrichment**
+
+- Track identification and popularity data
+- Genre classification (Album/Song/Chart level)
+- "Radio" tagging for popular tracks
+
+  **Enhanced genre tagging workflow**
+
+- Album-level + song-level + chart-level classification
+- Manual genre editing in file list
+- Smart genre suggestions
+
+### Phase 5: User Profiles (Future Feature)
+
+**Note:** User profiles will be implemented after all core processing, format, and metadata features are stable. Profiles will allow users to create, save, select, and delete collections of settings (output format, loudness, limiter, channel config, metadata, file naming, etc.) for quick workflow switching. The app will function with no saved profiles, and profiles are not part of the MVP or early phases.
+
+**Planned Features:**
+
+- Create, save, select, and delete user profiles from the UI
+- Profiles store all relevant processing and export settings
+- No hardcoded or smart profiles; user controls all preferences
+- Stock profiles (e.g., "iTunes/Music AAC", "iTunes/Music Lossless") should be provided as potentially useful prebuilt options, but should not prevent user tweaks, saving those tweaks, or deleting those presets if not useful.
+
+**Implementation of user profiles is dependent on completion of Phases 1–4.**
+
+### Phase 6: Marketable Product Pivot (Future Consideration)
+
+**Goal:** Prepare RangeForge for broader market adoption and non-expert users, using historical wireframes and new research as a foundation for UI/UX pivots.
+
+**Planned Considerations:**
+
+- Evaluate the potential for multiple UI modes (beginner, intermediate, expert) or guided workflows, using the existing wireframes as starting points.
+- Consider accessibility improvements and onboarding flows for less technical users.
+- Expand user profiles to include not just technical settings, but also UI layout, feature visibility, and workflow simplification.
+- Allow sharing or importing/exporting of profiles/presets for community-driven workflows.
+- Address commercialization readiness: licensing, installer, update mechanisms, branding, documentation, and support resources.
+- Collect feedback from beta testing with target user groups (audiophiles, data hoarders, video editors, etc.) to identify usability and feature gaps for non-expert users.
+- Evaluate integrations with other tools/services (e.g., MusicBrainz, Discogs, more metadata sources) as justified by user demand.
+- Consider plugin or extension architecture only if market/user demand justifies it.
+- Create user guides, quick start tutorials, and in-app help for different user levels.
+- Plan for internationalization/localization if targeting a global market.
+
+**Reference:**
+
+- The wireframe documents (`wireframe-beginner-mode.md`, `wireframe-intermediate-mode.md`, `wireframe-expert-mode.md`) are preserved as historical resources and may inform future UI pivots or onboarding flows.
 
 ---
 
@@ -377,38 +414,7 @@ File Strategy
                    └─────────────┘
 ```
 
-### Professional Workflow Profiles
-
-**iTunes Profile**:
-
-- Target: -16 LUFS (Apple Music standard)
-- Format: ALAC (lossless, iTunes compatible)
-- Peak Protection: -1.0 dBTP
-- Metadata: Full preservation with genre enhancement
-
-**Plex Stereo Profile**:
-
-- Target: -23 LUFS (broadcast standard)
-- Format: FLAC (lossless, universal)
-- Peak Protection: -1.0 dBTP
-- Channels: Downmix to stereo if needed
-
-**Plex Multichannel Profile**:
-
-- Target: -23 LUFS (with multichannel considerations)
-- Format: FLAC (supports multichannel)
-- Peak Protection: -1.0 dBTP
-- Channels: Preserve original surround configuration
-
 ### Advanced Features Integration
-
-**SACD/DVD-A/BD-A Workflow**:
-
-- DSD to PCM conversion with appropriate sample rates
-- MLP extraction and conversion
-- TS file audio track extraction
-- Multichannel mapping preservation
-- High-resolution format optimization
 
 **Metadata Enhancement**:
 

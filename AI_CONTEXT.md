@@ -16,19 +16,24 @@ This document exists to **rapidly transfer project context to AI assistants** an
 
 **Quick Start Summary:** RangeForge consolidates 7+ audio tools into one volume balancing application. Phase 1 (preview workflow) complete, Phase 2 ("GO" button) is current priority. Single expert UI mode, personal productivity tool, avoid feature creep.
 
----
-
 ## ⚠️ COMMON AI HALLUCINATIONS TO AVOID
 
-### ❌ **DO NOT SUGGEST THESE (Explicitly Rejected):**
+## Session Update: 2025-11-23
+
+**Changes Made:** Completed full consistency audit of all canonical documents and wireframes. Verified that AI_CONTEXT.md is the definitive, contradiction-free entry point for onboarding and session closure. No contradictions or outdated references found.
+**Documents Updated:** None (audit only; all docs already consistent)
+**Current Status:** Phase 2 - "GO" button implementation is current priority
+**Next Session Should:** Continue Phase 2 development, update docs if new features or terminology are introduced, and repeat consistency audit at session close.
+
+### ❌ **DO NOT SUGGEST THESE (Explicitly Rejected for MVP/Current Scope):**
 
 - **Plugin architecture** - Single user project, no ecosystem needed
-- **User-defined profiles** - UI complexity without value
+- **User-defined profiles** - Not part of MVP or current scope, but planned for a future phase (see Phase 5)
 - **iTunes/Plex integration** - No app integration, just compatible file output
 - **Workflow scripting** - Would recreate PowerShell complexity being escaped
 - **Quality assurance reports** - Not needed for personal workflow
 - **Batch export monitoring** - Just visual progress on file list
-- **Multiple UI modes** - Beginner/Intermediate modes removed, single expert interface only
+- **Multiple UI modes** - Not part of current scope, but may be revisited in a future phase (see Phase 6)
 - **User management** - Single user tool, no accounts or settings persistence
 - **Cloud integration** - Local processing only, no cloud services
 
@@ -147,6 +152,15 @@ This document exists to **rapidly transfer project context to AI assistants** an
 - Manual genre editing in file list
 - Album/Song/Chart level classification
 
+### **Phase 5: User Profiles (Future Feature)**
+
+- **NOT** part of current scope, but preserved for potential future use
+- User-defined presets are DIFFERENT from profiles - presets are user-created shortcuts for manual parameter combinations, not predefined workflow templates.
+
+### **Phase 6: Marketable Product Pivot (Future Consideration)**
+
+- Phase 6 is reserved for market expansion and may revisit multi-mode UI or onboarding flows, referencing the historical wireframes as a resource for future pivots.
+
 ---
 
 ## 🔧 **TECHNICAL ARCHITECTURE RATIONALE**
@@ -179,7 +193,9 @@ This document exists to **rapidly transfer project context to AI assistants** an
 
 ---
 
-## 🎨 **UI/UX PRINCIPLES ESTABLISHED**
+## 🖼️ UI/UX PRINCIPLES ESTABLISHED
+
+- The canonical UI is the single expert mode. Historical wireframes for beginner and intermediate modes are preserved for potential future pivots (see Phase 6 in PROJECT_PLAN.md), but are not part of the current scope.
 
 ### **Core Design:**
 
@@ -216,15 +232,6 @@ This document exists to **rapidly transfer project context to AI assistants** an
 - **Single workflow focus** - power user knows their preferences
 - **Easy to recreate** settings manually when needed
 
-**UPDATE**: User-defined presets are DIFFERENT from profiles - presets are user-created shortcuts for manual parameter combinations, not predefined workflow templates.
-
-### **User Preset System (Phase 3)**
-
-- **Manual controls**: User sets codec/rate/depth/channels manually
-- **Save preset**: User creates named preset from current manual settings
-- **Load preset**: Auto-fills manual controls, user can override
-- **No smart presets**: Avoids development debt and inflexibility
-
 ### **Why No Integrations?**
 
 - **File compatibility ≠ app integration**
@@ -241,27 +248,27 @@ This document exists to **rapidly transfer project context to AI assistants** an
 
 ## 📋 **SUCCESS METRICS DEFINED**
 
-### **MVP1 Success**:
+### **MVP1 Success**
 
 - Drop files → analyze → "GO" → perfect ALAC output
 - **Eliminates**: PowerShell script from workflow
 
-### **MVP2 Success**:
+### **MVP2 Success**
 
 - In-app genre editing capabilities
 - **Eliminates**: Mp3tag for basic workflow
 
-### **MVP3 Success**:
+### **MVP3 Success**
 
 - CUE splitting with metadata preservation
 - **Eliminates**: Mediahuman Audio Converter
 
-### **MVP4 Success**:
+### **MVP4 Success**
 
 - Last.fm genre auto-population
 - **Eliminates**: Manual web lookups
 
-### **"Mission Accomplished" Scenario**:
+### **"Mission Accomplished" Scenario**
 
 > _"Drop Led Zeppelin discography → app lists songs → pulls metadata + genre tags → review/edit tags → process → perfect ALAC files ready for iTunes"_
 
@@ -348,7 +355,7 @@ Required procedure when closing a session:
 - **Scope**: Single expert UI mode, no plugins, no profiles
 - **Status**: Keep phase completion status accurate across all docs
 - **Naming**: Document any discussions about RangeForge alternatives
- - **New documents policy**: Do not add standalone onboarding or process documents (for example `ONBOARDING_FROM_AI_CONTEXT.md`) as canonical project files unless the project owner explicitly approves them. All new documentation must be registered in `DOCUMENT_CONSISTENCY.md` and linked from `AI_CONTEXT.md`'s "REQUIRED READING" section if it is intended to be authoritative. This prevents contradictory or orphaned docs from being introduced.
+- **New documents policy**: Do not add standalone onboarding or process documents (for example `ONBOARDING_FROM_AI_CONTEXT.md`) as canonical project files unless the project owner explicitly approves them. All new documentation must be registered in `DOCUMENT_CONSISTENCY.md` and linked from `AI_CONTEXT.md`'s "REQUIRED READING" section if it is intended to be authoritative. This prevents contradictory or orphaned docs from being introduced.
 
 ### 🎯 **Session Success Criteria:**
 
@@ -383,3 +390,44 @@ Do not merge fixes until the project owner (you) has reviewed and approved the P
 
 _Document Purpose: Rapid AI context transfer to maintain execution consistency_  
 _Last Updated: November 22, 2025_
+
+---
+
+## 📖 FAQ & Clarifications
+
+- For any concept, term, or feature that is confusing, ambiguous, or needs more explanation, refer to or update the FAQ (`FAQ.md`). This resource is intended to benefit both end users and AI assistants by providing clear, accessible answers to common and advanced questions.
+
+---
+
+## 📋 Consistency & Terminology Standards
+
+### Terminology Standardization
+
+- **"Volume balancing"** is the primary term for the main feature.
+- **"Volume consistency"** is used for problem descriptions.
+- **"Broadcast-quality standards"** is used for credibility without jargon.
+- Avoid "loudness normalization" (confusing) and "LUFS targeting" (too technical for main messaging).
+
+### Scope Clarification
+
+- Single expert UI mode (beginner/intermediate modes removed; see Phase 6 for possible future pivots).
+- Preview-first workflow emphasis.
+- Tool consolidation focus (7+ apps → 1 app).
+- Personal productivity tool (not a commercial product at this stage).
+
+### Wireframe Files (Historical/For Future Use)
+
+- `mockups/wireframe-expert-mode.md`, `mockups/wireframe-intermediate-mode.md`, and `mockups/wireframe-beginner-mode.md` are not part of the current UI, but are preserved for potential use if the project pivots to a broader market in Phase 6.
+
+### Technical References
+
+- LUFS terminology and similar technical details are retained in code comments, technical specs, and professional audio standard references. This is acceptable for technical implementation, but not for user-facing messaging.
+
+### Canonical Documents for AI Context
+
+- **AI_CONTEXT.md**: Primary reference for scope, restrictions, and process.
+- **PROJECT_PLAN.md**: Current status and technical roadmap.
+- **VALUE_PROPOSITION.md**: User-facing messaging and positioning.
+- **README.md**: Project overview and setup.
+
+---
