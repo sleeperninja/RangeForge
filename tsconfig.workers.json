@@ -1,14 +1,21 @@
 {
-  "extends": "./tsconfig.json",
   "compilerOptions": {
-    "target": "es2022",
-    "module": "commonjs",
-    "moduleResolution": "node",
-    "outDir": "./dist/workers",
-    "noEmit": false,
-    "skipLibCheck": true,
-    "allowSyntheticDefaultImports": true
+    "outDir": "dist/workers",
+    "rootDir": ".",
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "lib": ["ES2020"],
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "sourceMap": true,
+    "types": ["node"]
   },
-  "include": ["workers/**/*"],
-  "exclude": ["node_modules", "build", "dist", "src", "electron"]
+  "include": [
+    "workers/**/*",
+    "electron/services/**/*"
+  ],
+  "exclude": ["node_modules"]
 }

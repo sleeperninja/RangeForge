@@ -1,14 +1,19 @@
 {
-  "extends": "./tsconfig.json",
   "compilerOptions": {
-    "target": "es2022",
-    "module": "commonjs",
+    "outDir": "dist",
+    "rootDir": ".",
+    "target": "ES2020",
+    "module": "CommonJS",
+    "strict": true,
+    "esModuleInterop": true,
     "moduleResolution": "node",
-    "outDir": "./dist/electron",
-    "noEmit": false,
-    "skipLibCheck": true,
-    "allowSyntheticDefaultImports": true
+    "sourceMap": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true
   },
-  "include": ["electron/**/*"],
-  "exclude": ["node_modules", "build", "dist", "src"]
+  "include": [
+    "electron/**/*",
+    "src/types/**/*"
+  ],
+  "exclude": ["node_modules"]
 }

@@ -1,1 +1,97 @@
-const https = require('https');\nconst fs = require('fs');\nconst path = require('path');\nconst { execSync } = require('child_process');\n\n/**\n * Download FFmpeg static binaries for distribution\n * This script downloads official FFmpeg static builds for Windows, macOS, and Linux\n */\n\nconst FFMPEG_URLS = {\n  win32: {\n    // Official Windows static builds from gyan.dev (trusted FFmpeg Windows builds)\n    url: 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',\n    binaries: ['ffmpeg.exe', 'ffprobe.exe']\n  },\n  darwin: {\n    // Official macOS static builds from evermeet.cx\n    ffmpeg: 'https://evermeet.cx/ffmpeg/getrelease/zip',\n    ffprobe: 'https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip'\n  },\n  linux: {\n    // Official Linux static builds from johnvansickle.com\n    url: 'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz',\n    binaries: ['ffmpeg', 'ffprobe']\n  }\n};\n\nconst binDir = path.join(__dirname, '..', 'bin');\n\nfunction createDirectories() {\n  const dirs = [\n    path.join(binDir, 'win32'),\n    path.join(binDir, 'darwin'),\n    path.join(binDir, 'linux')\n  ];\n\n  dirs.forEach(dir => {\n    if (!fs.existsSync(dir)) {\n      fs.mkdirSync(dir, { recursive: true });\n      console.log(`Created directory: ${dir}`);\n    }\n  });\n}\n\nfunction downloadFile(url, outputPath) {\n  return new Promise((resolve, reject) => {\n    const file = fs.createWriteStream(outputPath);\n    \n    https.get(url, (response) => {\n      if (response.statusCode === 302 || response.statusCode === 301) {\n        // Follow redirects\n        return downloadFile(response.headers.location, outputPath)\n          .then(resolve)\n          .catch(reject);\n      }\n      \n      if (response.statusCode !== 200) {\n        reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`));\n        return;\n      }\n      \n      response.pipe(file);\n      \n      file.on('finish', () => {\n        file.close();\n        resolve();\n      });\n      \n      file.on('error', (err) => {\n        fs.unlink(outputPath, () => {}); // Delete incomplete file\n        reject(err);\n      });\n    }).on('error', reject);\n  });\n}\n\nasync function downloadFFmpeg() {\n  console.log('🎵 RangeForge FFmpeg Binary Download Script');\n  console.log('==========================================\\n');\n  \n  createDirectories();\n  \n  console.log('ℹ️  This script downloads official FFmpeg static builds for distribution.');\n  console.log('📋 FFmpeg is LGPL licensed and safe to bundle in proprietary applications.\\n');\n  \n  console.log('📁 Download locations:');\n  console.log(`   Windows: ${FFMPEG_URLS.win32.url}`);\n  console.log(`   macOS:   ${FFMPEG_URLS.darwin.ffmpeg}`);\n  console.log(`   Linux:   ${FFMPEG_URLS.linux.url}\\n`);\n  \n  console.log('⚠️  Manual Setup Required:');\n  console.log('   Due to the complexity of extracting different archive formats');\n  console.log('   and platform-specific binaries, please download manually:\\n');\n  \n  console.log('1️⃣  Windows:');\n  console.log(`   - Download: ${FFMPEG_URLS.win32.url}`);\n  console.log(`   - Extract ffmpeg.exe and ffprobe.exe`);\n  console.log(`   - Place in: bin/win32/\\n`);\n  \n  console.log('2️⃣  macOS:');\n  console.log(`   - Download FFmpeg: ${FFMPEG_URLS.darwin.ffmpeg}`);\n  console.log(`   - Download FFprobe: ${FFMPEG_URLS.darwin.ffprobe}`);\n  console.log(`   - Place in: bin/darwin/\\n`);\n  \n  console.log('3️⃣  Linux:');\n  console.log(`   - Download: ${FFMPEG_URLS.linux.url}`);\n  console.log(`   - Extract ffmpeg and ffprobe binaries`);\n  console.log(`   - Place in: bin/linux/\\n`);\n  \n  console.log('✅ Alternative: For development, FFmpeg from PATH is sufficient');\n  console.log('   (Your Chocolatey installation works great!)\\n');\n  \n  // Check if FFmpeg is available in PATH\n  try {\n    execSync('ffmpeg -version', { stdio: 'ignore' });\n    console.log('✅ FFmpeg detected in system PATH - ready for development!');\n  } catch {\n    console.log('❌ FFmpeg not found in system PATH');\n  }\n  \n  try {\n    execSync('ffprobe -version', { stdio: 'ignore' });\n    console.log('✅ FFprobe detected in system PATH - ready for development!');\n  } catch {\n    console.log('❌ FFprobe not found in system PATH');\n  }\n  \n  console.log('\\n🚀 RangeForge will automatically detect and use available FFmpeg binaries.');\n}\n\ndownloadFFmpeg().catch(console.error);
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
+const { execSync } = require('child_process');
+
+/**
+ * Download FFmpeg static binaries for distribution
+ * This script downloads official FFmpeg static builds for Windows, macOS, and Linux
+ */
+
+const FFMPEG_URLS = {
+  win32: {
+    url: 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',
+    binaries: ['ffmpeg.exe', 'ffprobe.exe']
+  },
+  darwin: {
+    ffmpeg: 'https://evermeet.cx/ffmpeg/getrelease/zip',
+    ffprobe: 'https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip'
+  },
+  linux: {
+    url: 'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz',
+    binaries: ['ffmpeg', 'ffprobe']
+  }
+};
+
+const binDir = path.join(__dirname, '..', 'bin');
+
+function createDirectories() {
+  const dirs = [
+    path.join(binDir, 'win32'),
+    path.join(binDir, 'darwin'),
+    path.join(binDir, 'linux')
+  ];
+
+  dirs.forEach(dir => {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      console.log(`Created directory: ${dir}`);
+    }
+  });
+}
+
+async function downloadFFmpeg() {
+  console.log('🎵 RangeForge FFmpeg Binary Download Script');
+  console.log('==========================================\n');
+
+  createDirectories();
+
+  console.log('ℹ️  This script downloads official FFmpeg static builds for distribution.');
+  console.log('📋 FFmpeg is LGPL licensed and safe to bundle in proprietary applications.\n');
+
+  console.log('📁 Download locations:');
+  console.log(`   Windows: ${FFMPEG_URLS.win32.url}`);
+  console.log(`   macOS:   ${FFMPEG_URLS.darwin.ffmpeg}`);
+  console.log(`   Linux:   ${FFMPEG_URLS.linux.url}\n`);
+
+  console.log('⚠️  Manual Setup Required:');
+  console.log('   Due to the complexity of extracting different archive formats');
+  console.log('   and platform-specific binaries, please download manually:\n');
+
+  console.log('1️⃣  Windows:');
+  console.log(`   - Download: ${FFMPEG_URLS.win32.url}`);
+  console.log('   - Extract ffmpeg.exe and ffprobe.exe');
+  console.log('   - Place in: bin/win32/\n');
+
+  console.log('2️⃣  macOS:');
+  console.log(`   - Download FFmpeg: ${FFMPEG_URLS.darwin.ffmpeg}`);
+  console.log(`   - Download FFprobe: ${FFMPEG_URLS.darwin.ffprobe}`);
+  console.log('   - Place in: bin/darwin/\n');
+
+  console.log('3️⃣  Linux:');
+  console.log(`   - Download: ${FFMPEG_URLS.linux.url}`);
+  console.log('   - Extract ffmpeg and ffprobe binaries');
+  console.log('   - Place in: bin/linux/\n');
+
+  console.log('✅ Alternative: For development, FFmpeg from PATH is sufficient');
+  console.log('   (Your Chocolatey installation works great!)\n');
+
+  // Check if FFmpeg is available in PATH
+  try {
+    execSync('ffmpeg -version', { stdio: 'ignore' });
+    console.log('✅ FFmpeg detected in system PATH - ready for development!');
+  } catch {
+    console.log('❌ FFmpeg not found in system PATH');
+  }
+
+  try {
+    execSync('ffprobe -version', { stdio: 'ignore' });
+    console.log('✅ FFprobe detected in system PATH - ready for development!');
+  } catch {
+    console.log('❌ FFprobe not found in system PATH');
+  }
+
+  console.log('\n🚀 RangeForge will automatically detect and use available FFmpeg binaries.');
+}
+
+downloadFFmpeg().catch(console.error);

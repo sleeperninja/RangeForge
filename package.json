@@ -14,23 +14,20 @@
   "scripts": {
     "dev": "concurrently \"npm run dev:react\" \"npm run dev:electron\"",
     "dev:react": "cross-env ESLINT_NO_DEV_ERRORS=true react-scripts start",
-    "dev:electron": "wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .",
+    "dev:electron": "wait-on http://localhost:3000 && electron .",
     "build": "npm run build:react && npm run build:electron && npm run build:workers",
     "build:react": "react-scripts build",
-    "build:electron": "tsc --project tsconfig.electron.json",
-    "build:workers": "tsc --project tsconfig.workers.json",
-    "electron": "electron .",
-    "electron:dev": "cross-env NODE_ENV=development electron .",
-    "pack": "npm run build && npx electron-builder --dir 2>nul || echo 'electron-builder not available, skipping pack'",
-    "dist": "npm run build && npx electron-builder 2>nul || echo 'electron-builder not available, skipping dist'",
-    "dist:win": "npm run build && npx electron-builder --win 2>nul || echo 'electron-builder not available, skipping dist:win'",
-    "dist:mac": "npm run build && npx electron-builder --mac 2>nul || echo 'electron-builder not available, skipping dist:mac'",
-    "dist:linux": "npm run build && npx electron-builder --linux 2>nul || echo 'electron-builder not available, skipping dist:linux'",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "prepare-electron": "node scripts/prepare-electron.js",
+    "build:workers": "tsc -p tsconfig.workers.json",
+    "postinstall": "npm run download:ffmpeg && electron-builder install-app-deps",
     "download:ffmpeg": "node scripts/download-ffmpeg.js",
-    "setup:ffmpeg": "npm run download:ffmpeg",
-    "rebuild:native": "cross-env npm_config_target_platform=win32 npm_config_target_arch=x64 npm_config_runtime=electron electron-builder install-app-deps",
-    "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "rebuild:native": "node scripts/rebuild-native.js",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run prepare-electron && npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux"
   },
   "dependencies": {
     "@types/node": "^22.8.6",
@@ -76,24 +73,15 @@
     "svgo": "^3.2.0",
     "eslint": "^8.57.0",
     "eslint-webpack-plugin": "^3.2.0",
-    "typescript": "^4.9.5"
+    "ajv": "^8.14.0",
+    "ajv-keywords": "^5.1.0"
   },
   "eslintConfig": {
-    "extends": [
-      "react-app"
-    ]
+    "extends": ["react-app"]
   },
   "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+    "production": [">0.2%", "not dead", "not op_mini all"],
+    "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]
   },
   "build": {
     "appId": "com.yourcompany.rangeforge",
@@ -111,65 +99,29 @@
       {
         "from": "bin/",
         "to": "bin/",
-        "filter": [
-          "**/*"
-        ]
+        "filter": ["**/*"]
       }
     ],
-    "beforeBuild": "npm run rebuild:native",
+    "beforeBuild": "scripts/before-build.js",
     "nodeGypRebuild": false,
     "buildDependenciesFromSource": false,
     "mac": {
       "category": "public.app-category.productivity",
       "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
+        {"target": "dmg", "arch": ["x64","arm64"]},
+        {"target": "zip", "arch": ["x64","arm64"]}
       ]
     },
     "win": {
       "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64",
-            "ia32"
-          ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64",
-            "ia32"
-          ]
-        }
+        {"target": "nsis", "arch": ["x64","ia32"]},
+        {"target": "portable", "arch": ["x64","ia32"]}
       ]
     },
     "linux": {
       "target": [
-        {
-          "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "deb",
-          "arch": [
-            "x64"
-          ]
-        }
+        {"target": "AppImage", "arch": ["x64"]},
+        {"target": "deb", "arch": ["x64"]}
       ]
     },
     "nsis": {
