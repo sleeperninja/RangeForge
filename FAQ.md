@@ -32,3 +32,8 @@ Currently, RangeForge uses a single expert UI. Historical wireframes for beginne
 ---
 
 If you have more questions, please suggest them for inclusion in this FAQ!
+
+## API strategy?
+
+The current best idea for API is to call discogs for cue track data and last.fm for album and track-level tag data, and pull the current all.json from https://github.com/mhollingshead/billboard-hot-100 at app start (currently about 42mb as of 2026/10/08) to get hot100 chart positions for the "Radio" tag.
+
