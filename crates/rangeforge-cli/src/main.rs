@@ -3,15 +3,19 @@
 //! This is a thin layer. Parsing, planning and measuring all live in the library crates;
 //! this file only reads input and prints results.
 
+mod support;
+mod ui;
+
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
-use directories::ProjectDirs;
 use rangeforge_audio::cache::{Cache, Source};
-use rangeforge_audio::measure::{self, Measured};
-use rangeforge_core::cue::{self, CueSheet, Segment};
+use rangeforge_audio::measure::Measured;
+
+use support::{CacheOptions, measure_split, measure_whole, read_sheet};
+use ui::model::Settings;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -38,46 +42,71 @@ enum Command {
         /// A CUE sheet describing the tracks inside the audio file
         #[arg(long)]
         cue: Option<PathBuf>,
-        /// Always decode the file; neither read nor write the cache
+        #[command(flatten)]
+        cache: CacheOptions,
+    },
+    /// Open the interactive view: a table of measurements with live volume targets
+    Ui {
+        /// Audio files, CUE sheets, or folders containing them
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        /// Starting target loudness in LUFS
+        #[arg(long, default_value_t = -22.0, allow_negative_numbers = true)]
+        target: f64,
+        /// Starting peak ceiling in dBTP
+        #[arg(long, default_value_t = -0.6, allow_negative_numbers = true)]
+        ceiling: f64,
+        /// Start with peak protection off
         #[arg(long)]
-        no_cache: bool,
-        /// Keep the cache here instead of in the standard cache folder
+        no_peak_protection: bool,
+        /// Start with the log panel open
         #[arg(long)]
-        cache_dir: Option<PathBuf>,
+        show_logs: bool,
+        /// Print one frame as text and exit, instead of opening the interactive view
+        #[arg(long)]
+        snapshot: bool,
+        /// Width of the snapshot in characters
+        #[arg(long, default_value_t = 130)]
+        width: u16,
+        /// Height of the snapshot in lines
+        #[arg(long, default_value_t = 30)]
+        height: u16,
+        #[command(flatten)]
+        cache: CacheOptions,
     },
 }
 
 fn main() -> Result<()> {
     match Cli::parse().command {
         Command::Cue { path } => show_cue(&path),
-        Command::Measure {
-            audio,
-            cue,
-            no_cache,
-            cache_dir,
+        Command::Measure { audio, cue, cache } => {
+            show_measurements(&audio, cue.as_deref(), cache.open().as_ref())
+        }
+        Command::Ui {
+            paths,
+            target,
+            ceiling,
+            no_peak_protection,
+            show_logs,
+            snapshot,
+            width,
+            height,
+            cache,
         } => {
-            let cache = if no_cache {
-                None
-            } else {
-                cache_dir.or_else(default_cache_dir).map(Cache::new)
+            let options = ui::Options {
+                paths,
+                settings: Settings::new(target, !no_peak_protection, ceiling),
+                cache: cache.open(),
+                show_log: show_logs,
             };
-            show_measurements(&audio, cue.as_deref(), cache.as_ref())
+            if snapshot {
+                println!("{}", ui::snapshot(&options, width, height)?);
+                Ok(())
+            } else {
+                ui::run(&options)
+            }
         }
     }
-}
-
-/// The per-user cache folder for this app, such as `%LOCALAPPDATA%\RangeForge\cache\analysis`
-/// on Windows.
-fn default_cache_dir() -> Option<PathBuf> {
-    ProjectDirs::from("", "", "RangeForge").map(|dirs| dirs.cache_dir().join("analysis"))
-}
-
-fn read_sheet(path: &Path) -> Result<CueSheet> {
-    let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    // Many CUE sheets are not UTF-8. Lossy decoding keeps them readable; proper
-    // encoding detection comes later.
-    let text = String::from_utf8_lossy(&bytes);
-    cue::parse(&text).with_context(|| format!("parsing {}", path.display()))
 }
 
 fn show_cue(path: &Path) -> Result<()> {
@@ -103,30 +132,6 @@ fn show_cue(path: &Path) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn measure_whole(audio: &Path, cache: Option<&Cache>) -> Result<(Measured, Source)> {
-    Ok(match cache {
-        Some(cache) => cache.measure_whole_file(audio)?,
-        None => (
-            measure::measure_whole_file(audio)?,
-            Source::Decoded { save_error: None },
-        ),
-    })
-}
-
-fn measure_split(
-    audio: &Path,
-    segments: &[Segment<'_>],
-    cache: Option<&Cache>,
-) -> Result<(Measured, Source)> {
-    Ok(match cache {
-        Some(cache) => cache.measure_segments(audio, segments)?,
-        None => (
-            measure::measure_segments(audio, segments)?,
-            Source::Decoded { save_error: None },
-        ),
-    })
 }
 
 fn show_measurements(audio: &Path, cue_path: Option<&Path>, cache: Option<&Cache>) -> Result<()> {

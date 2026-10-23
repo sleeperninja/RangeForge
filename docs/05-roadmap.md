@@ -2,7 +2,7 @@
 
 One phase scheme. Status is updated here and nowhere else.
 
-**Now:** Phase 0 done. Phase 1 mostly done. The CUE reader, gain planner, FLAC and ALAC decoding and per-track loudness measuring all work and are checked against a real EAC rip of Houses of the Holy and against FFmpeg. `rangeforge cue <file>` and `rangeforge measure <audio> [--cue <file>]` work. The analysis cache is done too: the same album takes 5.3 s the first time and 0.00 s after. Still to do in Phase 1: proper benchmarks.
+**Now:** Phase 0 done. Phase 1 mostly done. The CUE reader, gain planner, FLAC and ALAC decoding and per-track loudness measuring all work and are checked against a real EAC rip of Houses of the Holy and against FFmpeg. `rangeforge cue <file>` and `rangeforge measure <audio> [--cue <file>]` work. The analysis cache is done too: the same album takes 5.3 s the first time and 0.00 s after. Still to do in Phase 1: proper benchmarks. Phase 2 has started: `rangeforge ui` opens an interactive terminal view of the mockup, with live volume targets, background measuring, a log panel and peak-limit markers. Still to do in Phase 2: `--json` output and the HTML report.
 
 | Phase | Goal | Done when |
 | --- | --- | --- |

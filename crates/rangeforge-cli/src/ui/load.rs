@@ -1,0 +1,348 @@
+//! Turns paths given on the command line into table rows and measurement jobs.
+
+use std::ffi::OsString;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use rangeforge_core::cue::{CueFile, CueSheet};
+
+use super::model::{Group, Kind, Status, TrackRow};
+use crate::support::read_sheet;
+
+const AUDIO_EXTENSIONS: [&str; 7] = ["flac", "wav", "m4a", "mp3", "ogg", "aac", "aiff"];
+
+/// One file to measure.
+#[derive(Debug, Clone)]
+pub struct Job {
+    /// Index into the list of groups.
+    pub group: usize,
+    pub audio: PathBuf,
+    /// The CUE layout, for an album. `None` measures the whole file as one song.
+    pub cue_file: Option<CueFile>,
+}
+
+/// What loading produced.
+#[derive(Debug, Default)]
+pub struct Loaded {
+    pub groups: Vec<Group>,
+    pub jobs: Vec<Job>,
+    pub log: Vec<String>,
+}
+
+fn extension_of(path: &Path) -> String {
+    path.extension()
+        .map(|ext| ext.to_string_lossy().to_lowercase())
+        .unwrap_or_default()
+}
+
+fn is_cue(path: &Path) -> bool {
+    extension_of(path) == "cue"
+}
+
+fn is_audio(path: &Path) -> bool {
+    AUDIO_EXTENSIONS.contains(&extension_of(path).as_str())
+}
+
+fn file_name(path: &Path) -> String {
+    path.file_name().map_or_else(
+        || path.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    )
+}
+
+/// Finds the audio file a CUE sheet refers to. Sheets often name a `.wav` that has since
+/// become a `.flac`, so if the exact name is missing, the same name with another audio
+/// extension is accepted.
+pub fn resolve_audio(cue_dir: &Path, name: &str) -> Option<PathBuf> {
+    let exact = cue_dir.join(name);
+    if exact.is_file() {
+        return Some(exact);
+    }
+    let stem = Path::new(name).file_stem()?;
+    AUDIO_EXTENSIONS.iter().find_map(|extension| {
+        let mut candidate: OsString = stem.to_os_string();
+        candidate.push(".");
+        candidate.push(extension);
+        let path = cue_dir.join(candidate);
+        path.is_file().then_some(path)
+    })
+}
+
+/// Replaces folders with what they contain: their CUE sheets, or if there are none, their
+/// audio files.
+fn expand(inputs: &[PathBuf], log: &mut Vec<String>) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for input in inputs {
+        if !input.is_dir() {
+            paths.push(input.clone());
+            continue;
+        }
+        let mut entries: Vec<PathBuf> = match fs::read_dir(input) {
+            Ok(entries) => entries.filter_map(Result::ok).map(|e| e.path()).collect(),
+            Err(error) => {
+                log.push(format!(
+                    "Could not read folder {}: {error}",
+                    input.display()
+                ));
+                continue;
+            }
+        };
+        entries.sort();
+        let cues: Vec<PathBuf> = entries.iter().filter(|p| is_cue(p)).cloned().collect();
+        if cues.is_empty() {
+            paths.extend(entries.into_iter().filter(|p| is_audio(p)));
+        } else {
+            paths.extend(cues);
+        }
+    }
+    paths
+}
+
+/// Loads everything named in `inputs`. Problems become log lines or failed rows, never
+/// errors, so one bad path does not stop the rest.
+pub fn load(inputs: &[PathBuf]) -> Loaded {
+    let mut loaded = Loaded::default();
+    let paths = expand(inputs, &mut loaded.log);
+    for path in paths {
+        if is_cue(&path) {
+            add_cue(&path, &mut loaded);
+        } else if is_audio(&path) {
+            add_single(&path, &mut loaded);
+        } else {
+            loaded.log.push(format!(
+                "Skipped {}: not an audio or CUE file",
+                file_name(&path)
+            ));
+        }
+    }
+    loaded
+}
+
+fn album_name(sheet: &CueSheet, cue_path: &Path) -> String {
+    match (sheet.performer.as_deref(), sheet.title.as_deref()) {
+        (Some(performer), Some(title)) => format!("{performer} - {title}"),
+        (None, Some(title)) => title.to_string(),
+        _ => cue_path.file_stem().map_or_else(
+            || "(untitled)".to_string(),
+            |s| s.to_string_lossy().into_owned(),
+        ),
+    }
+}
+
+fn add_cue(cue_path: &Path, loaded: &mut Loaded) {
+    let sheet = match read_sheet(cue_path) {
+        Ok(sheet) => sheet,
+        Err(error) => {
+            loaded
+                .log
+                .push(format!("Could not read {}: {error:#}", file_name(cue_path)));
+            return;
+        }
+    };
+    let dir = cue_path.parent().unwrap_or_else(|| Path::new("."));
+    let base_name = album_name(&sheet, cue_path);
+
+    for file in &sheet.files {
+        let name = if sheet.files.len() > 1 {
+            format!("{base_name} [{}]", file.name)
+        } else {
+            base_name.clone()
+        };
+        let tracks = file
+            .tracks
+            .iter()
+            .map(|track| TrackRow {
+                label: format!(
+                    "{} - {}",
+                    track.number,
+                    track.title.as_deref().unwrap_or("(untitled)")
+                ),
+                measurement: None,
+            })
+            .collect();
+        let resolved = resolve_audio(dir, &file.name);
+        let mut group = Group {
+            name,
+            kind: Kind::CueAlbum,
+            source_extension: resolved.as_deref().map(extension_of).unwrap_or_default(),
+            tracks,
+            status: Status::Pending,
+        };
+
+        let index = loaded.groups.len();
+        if let Some(audio) = resolved {
+            loaded.log.push(format!("Added {}", file_name(&audio)));
+            loaded
+                .log
+                .push(format!("Cue detected: {}", file_name(cue_path)));
+            loaded.jobs.push(Job {
+                group: index,
+                audio,
+                cue_file: Some(file.clone()),
+            });
+        } else {
+            let message = format!("audio file not found: {}", file.name);
+            loaded
+                .log
+                .push(format!("Failed: {}: {message}", group.name));
+            group.status = Status::Failed(message);
+        }
+        loaded.groups.push(group);
+    }
+}
+
+fn add_single(path: &Path, loaded: &mut Loaded) {
+    let name = file_name(path);
+    let stem = path
+        .file_stem()
+        .map_or_else(|| name.clone(), |s| s.to_string_lossy().into_owned());
+    loaded.jobs.push(Job {
+        group: loaded.groups.len(),
+        audio: path.to_path_buf(),
+        cue_file: None,
+    });
+    loaded.groups.push(Group {
+        name: name.clone(),
+        kind: Kind::SingleFile,
+        source_extension: extension_of(path),
+        tracks: vec![TrackRow {
+            label: stem,
+            measurement: None,
+        }],
+        status: Status::Pending,
+    });
+    loaded.log.push(format!("Added {name}"));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    const CUE: &str = "PERFORMER \"Led Zeppelin\"\nTITLE \"Houses of the Holy\"\nFILE \"album.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"The Song Remains the Same\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"The Rain Song\"\n    INDEX 01 05:30:30\n";
+
+    fn touch(dir: &Path, name: &str, contents: &str) -> PathBuf {
+        let path = dir.join(name);
+        fs::write(&path, contents).unwrap();
+        path
+    }
+
+    #[test]
+    fn a_cue_becomes_an_album_with_one_job() {
+        let dir = tempdir().unwrap();
+        let cue = touch(dir.path(), "album.cue", CUE);
+        touch(dir.path(), "album.wav", "");
+
+        let loaded = load(&[cue]);
+        assert_eq!(loaded.groups.len(), 1);
+        let group = &loaded.groups[0];
+        assert_eq!(group.name, "Led Zeppelin - Houses of the Holy");
+        assert_eq!(group.kind, Kind::CueAlbum);
+        assert_eq!(group.status, Status::Pending);
+        assert_eq!(group.tracks[0].label, "1 - The Song Remains the Same");
+        assert_eq!(group.tracks[1].label, "2 - The Rain Song");
+        assert_eq!(loaded.jobs.len(), 1);
+        assert_eq!(loaded.jobs[0].group, 0);
+        assert!(loaded.jobs[0].cue_file.is_some());
+    }
+
+    #[test]
+    fn a_renamed_audio_file_is_found_by_its_stem() {
+        let dir = tempdir().unwrap();
+        let cue = touch(dir.path(), "album.cue", CUE);
+        // The sheet names album.wav, but the file is now a FLAC.
+        touch(dir.path(), "album.flac", "");
+
+        let loaded = load(&[cue]);
+        assert_eq!(loaded.groups[0].source_extension, "flac");
+        assert_eq!(loaded.jobs.len(), 1);
+        assert!(loaded.jobs[0].audio.ends_with("album.flac"));
+    }
+
+    #[test]
+    fn stems_with_dots_are_matched_whole() {
+        let dir = tempdir().unwrap();
+        touch(dir.path(), "Vol.2 Live.flac", "");
+        let found = resolve_audio(dir.path(), "Vol.2 Live.wav").unwrap();
+        assert!(found.ends_with("Vol.2 Live.flac"));
+    }
+
+    #[test]
+    fn missing_audio_gives_a_failed_row_and_no_job() {
+        let dir = tempdir().unwrap();
+        let cue = touch(dir.path(), "album.cue", CUE);
+
+        let loaded = load(&[cue]);
+        assert!(loaded.jobs.is_empty());
+        assert!(matches!(loaded.groups[0].status, Status::Failed(_)));
+        assert!(
+            loaded
+                .log
+                .iter()
+                .any(|line| line.contains("audio file not found"))
+        );
+    }
+
+    #[test]
+    fn a_single_audio_file_becomes_a_one_song_group() {
+        let dir = tempdir().unwrap();
+        let song = touch(dir.path(), "14 - Shot at the Night.flac", "");
+
+        let loaded = load(&[song]);
+        let group = &loaded.groups[0];
+        assert_eq!(group.kind, Kind::SingleFile);
+        assert_eq!(group.codec_label(), "(flac)");
+        assert_eq!(group.tracks.len(), 1);
+        assert_eq!(group.tracks[0].label, "14 - Shot at the Night");
+        assert!(loaded.jobs[0].cue_file.is_none());
+    }
+
+    #[test]
+    fn a_folder_uses_its_cue_sheets_and_otherwise_its_audio() {
+        let with_cue = tempdir().unwrap();
+        touch(with_cue.path(), "album.cue", CUE);
+        touch(with_cue.path(), "album.flac", "");
+        touch(with_cue.path(), "notes.txt", "");
+        let loaded = load(&[with_cue.path().to_path_buf()]);
+        assert_eq!(loaded.groups.len(), 1);
+        assert_eq!(loaded.groups[0].kind, Kind::CueAlbum);
+
+        let without = tempdir().unwrap();
+        touch(without.path(), "b.flac", "");
+        touch(without.path(), "a.mp3", "");
+        touch(without.path(), "cover.jpg", "");
+        let loaded = load(&[without.path().to_path_buf()]);
+        let names: Vec<&str> = loaded.groups.iter().map(|g| g.name.as_str()).collect();
+        assert_eq!(names, ["a.mp3", "b.flac"]);
+    }
+
+    #[test]
+    fn unknown_files_and_bad_cues_are_logged_not_fatal() {
+        let dir = tempdir().unwrap();
+        let text = touch(dir.path(), "readme.txt", "");
+        let bad = touch(dir.path(), "broken.cue", "this is not a cue sheet");
+        let song = touch(dir.path(), "song.flac", "");
+
+        let loaded = load(&[text, bad, song]);
+        assert_eq!(loaded.groups.len(), 1);
+        assert!(loaded.log.iter().any(|l| l.contains("Skipped readme.txt")));
+        assert!(
+            loaded
+                .log
+                .iter()
+                .any(|l| l.contains("Could not read broken.cue"))
+        );
+    }
+
+    #[test]
+    fn job_indexes_follow_group_order() {
+        let dir = tempdir().unwrap();
+        let cue = touch(dir.path(), "album.cue", CUE);
+        touch(dir.path(), "album.wav", "");
+        let song = touch(dir.path(), "song.flac", "");
+
+        let loaded = load(&[cue, song]);
+        let indexes: Vec<usize> = loaded.jobs.iter().map(|job| job.group).collect();
+        assert_eq!(indexes, [0, 1]);
+    }
+}

@@ -16,6 +16,10 @@ clap.workspace = true
 directories = "6"
 rangeforge-audio = { path = "../rangeforge-audio" }
 rangeforge-core = { path = "../rangeforge-core" }
+ratatui = "0.30.2"
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile = "3.27.0"

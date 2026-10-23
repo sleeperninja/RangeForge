@@ -36,6 +36,18 @@ They expect the "Houses of the Holy" rip (FLAC + CUE + four separate ALAC tracks
 cargo run --release -p rangeforge-cli -- measure "testdata\<album folder>\Houses of the Holy.flac" --cue "testdata\<album folder>\Houses of the Holy.cue"
 ```
 
+## The interactive view
+
+```powershell
+# open it on an album folder (it uses the CUE sheet) and any extra files
+cargo run --release -p rangeforge-cli -- ui "testdata\<album folder>"
+
+# print one frame as text instead (no terminal needed), at a chosen target
+cargo run --release -p rangeforge-cli -- ui --snapshot --target -18 --width 130 --height 25 "testdata\<album folder>"
+```
+
+Use a real terminal such as Windows Terminal for the interactive version. The keys are listed in [02-ui.md](02-ui.md). Starting values can be set with `--target`, `--ceiling` and `--no-peak-protection`, and `--show-logs` opens the log panel. It uses the analysis cache below, so an album you have measured before appears instantly.
+
 ## The analysis cache
 
 `rangeforge measure` remembers its results so a file is only ever decoded once. Entries live in the per-user cache folder, `%LOCALAPPDATA%\RangeForge\cache\analysis` on Windows, one small JSON file per audio file.
