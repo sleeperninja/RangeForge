@@ -119,6 +119,14 @@ pub struct Segment<'a> {
     pub end: Option<Frames>,
 }
 
+impl Segment<'_> {
+    /// How long the track is. The last track has no next track, so it needs the
+    /// total length of the file to find where it ends.
+    pub fn length(&self, file_end: Frames) -> Frames {
+        Frames(self.end.unwrap_or(file_end).0.saturating_sub(self.start.0))
+    }
+}
+
 impl CueFile {
     /// Each track with its end position. A track ends where the next one begins.
     pub fn segments(&self) -> Vec<Segment<'_>> {
