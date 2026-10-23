@@ -21,12 +21,12 @@ Statuses: **Accepted**, **Rejected**, **Reopened** (under discussion), **Parked*
 
 | ID | Decision | Status | Why / when to revisit |
 | --- | --- | --- | --- |
-| S-01 | Personal tool first | Accepted | Simplest honest scope. Market research is archived. |
+| S-01 | Personal tool first | Accepted | Simplest honest scope. The old market research is in git history (`01c53ea`). |
 | S-02 | Plugin architecture | Rejected | Single user, big maintenance cost. |
 | S-03 | Workflow scripting | Rejected | Would recreate the PowerShell complexity being escaped. |
 | S-04 | Cloud processing | Rejected | Local only. Metadata lookups are the only network use. |
 | S-05 | Multi-user, accounts, teams | Rejected | One user. |
-| S-06 | Beginner and intermediate UI modes | Parked | One expert layout. Old wireframes are in `archive/`. |
+| S-06 | Beginner and intermediate UI modes | Parked | One expert layout. Old wireframes are in git history (`01c53ea`). |
 | S-07 | User-defined presets | **Accepted (was Rejected)** | The new mockups include Save/Delete Preset. Replaces the old "no profiles" rule. |
 | S-08 | Persistent settings and API keys | **Accepted (was Rejected)** | The mockup Settings dialog needs it. Keys are stored encrypted. |
 | S-09 | App integrations (iTunes, Plex) | Rejected | Compatible files are enough. |

@@ -50,4 +50,4 @@ Target order: Windows x64, macOS Apple Silicon, macOS Intel, Linux GNU, Windows 
 
 - API keys go in the app's Settings (stored encrypted) or a git-ignored `.env`.
 - Never in docs, code, screenshots or mockups.
-- **A Last.fm key and secret were committed in the old `PROJECT_PLAN.md`.** They are redacted in the working tree but remain in git history. Rotate them on the Last.fm account.
+- **A Last.fm key and secret were committed in the old `PROJECT_PLAN.md`.** They are no longer in the tree but remain in git history (commit `01c53ea` and earlier). Rotate them on the Last.fm account.

@@ -21,7 +21,7 @@ By design, no. It applies a single gain per track, and caps it so the true peak 
 
 ## Will there be beginner or intermediate modes?
 
-Not now. There is one expert layout. The old wireframes are in `docs/archive/`.
+Not now. There is one expert layout. The old wireframes are in git history (commit `01c53ea`).
 
 ## What does "Radio" mean?
 
@@ -37,7 +37,7 @@ Keys for Discogs and Last.fm are entered in Settings.
 
 ## Where did the old project go?
 
-It is in git history at commit `01c53ea`. The old plans and research are in `docs/archive/`.
+All of it, including the old plans, research and wireframes, is in git history at commit `01c53ea`.
 
 ## Where do I read about the design?
 

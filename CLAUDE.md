@@ -28,7 +28,7 @@ It replaces about seven tools (MediaHuman, an FFmpeg GUI, Adobe Audition, a Powe
 | [docs/05-roadmap.md](docs/05-roadmap.md) | What gets built, in what order |
 | [docs/06-development.md](docs/06-development.md) | How to build, test and release |
 | [docs/faq.md](docs/faq.md) | Plain answers to recurring questions |
-| `docs/archive/` | Old plans and research. Kept for reference. **Not authoritative.** |
+| Git history (commit `01c53ea`) | The old plans, market research, wireframes and Electron code. Not kept in the tree. |
 
 ## Rules for any AI (or person) working here
 
