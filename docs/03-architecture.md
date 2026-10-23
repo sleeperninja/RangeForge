@@ -86,5 +86,4 @@ First class: Windows 64-bit and macOS Apple Silicon. Also built and released: ma
 ## Still undecided
 
 - Which decoder handles DSD and MLP without FFmpeg, if any.
-- Whether "Range" should be loudness range or true dynamic range (decision D-04).
 - Whether the settings can be fully checked up front, or some problems only show during a run.

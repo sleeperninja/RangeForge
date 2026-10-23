@@ -12,7 +12,7 @@ Peak normalization makes the loudest instant hit a level, so two tracks can stil
 
 - **LUFS:** perceived loudness, as used by broadcasters and streaming services.
 - **LRA (loudness range):** how much the loudness varies across a track.
-- **DR (dynamic range):** a related but different measure, usually the gap between peaks and average level. See decision D-04 for how the app labels this.
+- **DR (dynamic range):** a related but different measure, popularised by the TT DR Meter and the online dynamic-range database. RangeForge does not show DR. Its Range column is LRA, as decision D-04 explains.
 - **True peak (dBTP):** the real highest level, including between samples. It matters for avoiding distortion on playback.
 
 ## Does the app change the dynamics of my music?
