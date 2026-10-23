@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # First class
+          - { name: Windows x64, os: windows-latest, experimental: false }
+          - { name: macOS Apple Silicon, os: macos-latest, experimental: false }
+          # Secondary: built and tested, not hand-tested
+          - { name: macOS Intel, os: macos-15-intel, experimental: false }
+          - { name: Linux GNU, os: ubuntu-latest, experimental: false }
+          # Needs an ARM runner; may be unavailable on private repositories
+          - { name: Windows ARM, os: windows-11-arm, experimental: true }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Lint
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --workspace
