@@ -106,7 +106,11 @@ mod tests {
     #[test]
     fn matches_the_mockup_adjust_column() {
         // Values from "1. UI Mockups - Main.png", target -22 LUFS.
-        let cases = [(-14.2, -1.65, -7.8), (-19.53, -1.0, -2.47), (-18.1, -1.0, -3.9)];
+        let cases = [
+            (-14.2, -1.65, -7.8),
+            (-19.53, -1.0, -2.47),
+            (-18.1, -1.0, -3.9),
+        ];
         for (lufs, peak, expected) in cases {
             let plan = plan_gain(measured(lufs, peak), TARGET).unwrap();
             assert!(close(plan.gain_db, expected), "{lufs}: {}", plan.gain_db);

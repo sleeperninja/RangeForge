@@ -2,7 +2,7 @@
 
 One phase scheme. Status is updated here and nowhere else.
 
-**Now:** Phase 0 done. Phase 1 in progress (workspace scaffolded, not yet compiled).
+**Now:** Phase 0 done. Phase 1 in progress. The CUE reader and gain planner compile, pass 18 tests and pass format and lint checks. `rangeforge cue <file>` works. Decoding and measuring are next.
 
 | Phase | Goal | Done when |
 | --- | --- | --- |
@@ -18,8 +18,8 @@ One phase scheme. Status is updated here and nowhere else.
 
 ## Phase 1 detail
 
-1. Workspace, lints, CI. *(scaffolded)*
-2. CUE parser and gain planner with tests. *(written, awaiting first compile)*
+1. Workspace, lints, CI. *(done locally; CI itself not yet run on GitHub)*
+2. CUE parser and gain planner with tests. *(done)*
 3. Decoder and meter integration.
 4. Analysis cache.
 5. Benchmarks and FFmpeg comparison harness.

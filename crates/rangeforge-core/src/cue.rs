@@ -48,7 +48,12 @@ impl fmt::Display for Frames {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let total_seconds = self.0 / FRAMES_PER_SECOND;
         let frames = self.0 % FRAMES_PER_SECOND;
-        write!(f, "{:02}:{:02}:{frames:02}", total_seconds / 60, total_seconds % 60)
+        write!(
+            f,
+            "{:02}:{:02}:{frames:02}",
+            total_seconds / 60,
+            total_seconds % 60
+        )
     }
 }
 
@@ -406,7 +411,15 @@ FILE "LZ-HoTH.flac" WAVE
 
     #[test]
     fn frames_reject_bad_input() {
-        for bad in ["", "1:2", "00:60:00", "00:00:75", "a:b:c", "00:00:00:00", "-1:00:00"] {
+        for bad in [
+            "",
+            "1:2",
+            "00:60:00",
+            "00:00:75",
+            "a:b:c",
+            "00:00:00:00",
+            "-1:00:00",
+        ] {
             assert_eq!(Frames::parse(bad), None, "{bad:?} should be rejected");
         }
     }

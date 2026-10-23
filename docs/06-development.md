@@ -6,6 +6,9 @@
 # one-time
 winget install Rustlang.Rustup          # installs Rust
 winget install Gyan.FFmpeg              # FFmpeg for encoding and comparison tests
+# Windows only: Rust needs Microsoft's C++ linker. Build Tools is just the compiler and
+# SDK (no IDE). Needs admin approval.
+winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
 
 # every session (this repo is on a network share, so build locally)
 $env:CARGO_TARGET_DIR = 'C:\Local\rangeforge-target'
@@ -15,6 +18,16 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo run -p rangeforge-cli -- --help
 ```
+
+## If cargo cannot download crates
+
+On a corporate network cargo may fail with `CRYPT_E_NO_REVOCATION_CHECK`. The machine cannot reach the endpoints that check whether a certificate was revoked. Workaround, per terminal session only:
+
+```powershell
+$env:CARGO_HTTP_CHECK_REVOKE = 'false'
+```
+
+This turns off one security check for cargo's downloads, so prefer asking IT to allow the revocation endpoints. It is deliberately not saved in any config file.
 
 ## The network share
 
