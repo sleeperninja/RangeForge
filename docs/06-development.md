@@ -36,6 +36,14 @@ They expect the "Houses of the Holy" rip (FLAC + CUE + four separate ALAC tracks
 cargo run --release -p rangeforge-cli -- measure "testdata\<album folder>\Houses of the Holy.flac" --cue "testdata\<album folder>\Houses of the Holy.cue"
 ```
 
+## The analysis cache
+
+`rangeforge measure` remembers its results so a file is only ever decoded once. Entries live in the per-user cache folder, `%LOCALAPPDATA%\RangeForge\cache\analysis` on Windows, one small JSON file per audio file.
+
+- `--no-cache` ignores the cache and always decodes.
+- `--cache-dir <folder>` keeps the cache somewhere else, which is handy for experiments.
+- Deleting the folder is always safe. It just means everything is measured again.
+
 ## If cargo cannot download crates
 
 On a corporate network cargo may fail with `CRYPT_E_NO_REVOCATION_CHECK`. The machine cannot reach the endpoints that check whether a certificate was revoked. Workaround, per terminal session only:

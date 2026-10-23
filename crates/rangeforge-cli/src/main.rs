@@ -8,8 +8,10 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
+use directories::ProjectDirs;
+use rangeforge_audio::cache::{Cache, Source};
 use rangeforge_audio::measure::{self, Measured};
-use rangeforge_core::cue::{self, CueSheet};
+use rangeforge_core::cue::{self, CueSheet, Segment};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -36,14 +38,38 @@ enum Command {
         /// A CUE sheet describing the tracks inside the audio file
         #[arg(long)]
         cue: Option<PathBuf>,
+        /// Always decode the file; neither read nor write the cache
+        #[arg(long)]
+        no_cache: bool,
+        /// Keep the cache here instead of in the standard cache folder
+        #[arg(long)]
+        cache_dir: Option<PathBuf>,
     },
 }
 
 fn main() -> Result<()> {
     match Cli::parse().command {
         Command::Cue { path } => show_cue(&path),
-        Command::Measure { audio, cue } => show_measurements(&audio, cue.as_deref()),
+        Command::Measure {
+            audio,
+            cue,
+            no_cache,
+            cache_dir,
+        } => {
+            let cache = if no_cache {
+                None
+            } else {
+                cache_dir.or_else(default_cache_dir).map(Cache::new)
+            };
+            show_measurements(&audio, cue.as_deref(), cache.as_ref())
+        }
     }
+}
+
+/// The per-user cache folder for this app, such as `%LOCALAPPDATA%\RangeForge\cache\analysis`
+/// on Windows.
+fn default_cache_dir() -> Option<PathBuf> {
+    ProjectDirs::from("", "", "RangeForge").map(|dirs| dirs.cache_dir().join("analysis"))
 }
 
 fn read_sheet(path: &Path) -> Result<CueSheet> {
@@ -79,9 +105,35 @@ fn show_cue(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn show_measurements(audio: &Path, cue_path: Option<&Path>) -> Result<()> {
+fn measure_whole(audio: &Path, cache: Option<&Cache>) -> Result<(Measured, Source)> {
+    Ok(match cache {
+        Some(cache) => cache.measure_whole_file(audio)?,
+        None => (
+            measure::measure_whole_file(audio)?,
+            Source::Decoded { save_error: None },
+        ),
+    })
+}
+
+fn measure_split(
+    audio: &Path,
+    segments: &[Segment<'_>],
+    cache: Option<&Cache>,
+) -> Result<(Measured, Source)> {
+    Ok(match cache {
+        Some(cache) => cache.measure_segments(audio, segments)?,
+        None => (
+            measure::measure_segments(audio, segments)?,
+            Source::Decoded { save_error: None },
+        ),
+    })
+}
+
+fn show_measurements(audio: &Path, cue_path: Option<&Path>, cache: Option<&Cache>) -> Result<()> {
     let started = Instant::now();
-    let (labels, measured): (Vec<String>, Measured) = if let Some(cue_path) = cue_path {
+    let (labels, (measured, source)): (Vec<String>, (Measured, Source)) = if let Some(cue_path) =
+        cue_path
+    {
         let sheet = read_sheet(cue_path)?;
         let [file] = sheet.files.as_slice() else {
             bail!(
@@ -100,29 +152,38 @@ fn show_measurements(audio: &Path, cue_path: Option<&Path>) -> Result<()> {
                 )
             })
             .collect();
-        (labels, measure::measure_segments(audio, &segments)?)
+        (labels, measure_split(audio, &segments, cache)?)
     } else {
         let name = audio
             .file_name()
             .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-        (vec![name], measure::measure_whole_file(audio)?)
+        (vec![name], measure_whole(audio, cache)?)
     };
     let elapsed = started.elapsed().as_secs_f64();
 
-    println!("{:>9}  {:>10}  {:>8}", "LUFS", "TruePeak", "Range");
+    println!("{:>9}  {:>10}  {:>11}", "LUFS", "TruePeak", "Range (LRA)");
     for (label, track) in labels.iter().zip(&measured.tracks) {
         println!(
-            "{:>9.2}  {:>6.2} dBTP  {:>5.2} LU  {label}",
+            "{:>9.2}  {:>6.2} dBTP  {:>8.2} LU  {label}",
             track.integrated_lufs, track.true_peak_dbtp, track.loudness_range_lu
         );
     }
 
     let audio_seconds = measured.duration_seconds();
-    println!(
-        "\n{audio_seconds:.1} s of audio ({} Hz, {} ch) decoded and measured in {elapsed:.2} s, {:.0}x real time",
-        measured.sample_rate,
-        measured.channels,
-        audio_seconds / elapsed
-    );
+    let details = format!("{} Hz, {} ch", measured.sample_rate, measured.channels);
+    match source {
+        Source::Cache => println!(
+            "\n{audio_seconds:.1} s of audio ({details}): results came from the cache in {elapsed:.2} s"
+        ),
+        Source::Decoded { save_error } => {
+            println!(
+                "\n{audio_seconds:.1} s of audio ({details}) decoded and measured in {elapsed:.2} s, {:.0}x real time",
+                audio_seconds / elapsed
+            );
+            if let Some(error) = save_error {
+                eprintln!("warning: the result could not be saved to the cache: {error}");
+            }
+        }
+    }
     Ok(())
 }

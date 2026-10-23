@@ -7,7 +7,7 @@
 1. **Look at the files.** The app spots CUE sheets and pairs them with their audio.
 2. **Read once.** Each audio file is opened and turned into raw sound in memory, one time.
 3. **Take notes.** For every song it records how loud it is, its highest peak, and how much the loudness moves. A CUE album is one long recording, so each song is just "from here to there" inside it. Nothing is re-read per song.
-4. **Save the notes.** They go in a small file on disk, keyed to the audio file's size and date. Same file next time means the notes are reused.
+4. **Save the notes.** They go in a small file on disk. The app recognises an audio file by its **content**, not its name or date: its size plus a fingerprint of three small slices (start, middle, end). So a renamed file, a copy in another folder, or the same album moved to the NAS all reuse the notes. If the file really changes, or the measuring code is improved, the old notes are ignored and replaced. A cache problem never stops a measurement.
 5. **Show the plan.** The list fills in. The **Adjust** column is simple subtraction: your target minus the measured loudness. Change the target and it updates instantly.
 6. **Optional lookups.** If enabled, tags come from online sources (see the FAQ).
 7. **Run.** The app applies the volume change, cuts the album into songs, writes the tags, and saves the new files using your File Strategy. It uses the sound already in memory, so nothing is decoded a second time.
@@ -45,7 +45,7 @@ Temporary copies are deleted when the file finishes or fails.
 | Decoder | Turns audio files into raw sound | Symphonia; FFmpeg for what it cannot read (DSD, MLP) |
 | Meter | Measures loudness, peak and range to the broadcast standard (EBU R128) | `ebur128` |
 | Planner | Works out the volume change per song, with peak protection | our own code |
-| Cache | Remembers measurements between sessions | `serde` plus a file in the app's data folder |
+| Cache | Remembers measurements between sessions, per way of splitting a file | `serde_json`, `blake3`; one small JSON file per audio file in the app's cache folder |
 | Encoder | Writes ALAC, FLAC, WAV and AAC | FFmpeg, fed the sound we already decoded |
 | Tagger | Reads and writes tags | `lofty` |
 | Lookups | Last.fm and Discogs queries, plus the Billboard Hot 100 history: a ~40 MB JSON file kept as a local copy and re-downloaded only when a newer version exists. Radio tags are then a local lookup. | `reqwest` |
