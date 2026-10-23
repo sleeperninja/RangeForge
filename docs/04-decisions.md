@@ -30,7 +30,7 @@ Statuses: **Accepted**, **Rejected**, **Reopened** (under discussion), **Parked*
 | S-07 | User-defined presets | **Accepted (was Rejected)** | The new mockups include Save/Delete Preset. Replaces the old "no profiles" rule. |
 | S-08 | Persistent settings and API keys | **Accepted (was Rejected)** | The mockup Settings dialog needs it. Keys are stored encrypted. |
 | S-09 | App integrations (iTunes, Plex) | Rejected | Compatible files are enough. |
-| S-10 | Online lookups | Accepted, limited | Last.fm (tags), Discogs (CUE/track data), Billboard Hot 100 file (Radio tag). More only with a clear need. |
+| S-10 | Online lookups | Accepted, limited | Last.fm (tags), Discogs (CUE/track data), Billboard Hot 100 history file (Radio tag; local copy, refreshed only when a newer one exists). More only with a clear need. |
 | S-11 | Quality-assurance reports, batch export monitoring | Parked | Table plus log already cover it. A simple HTML report is planned instead. |
 | S-12 | Dolby Digital Plus output | Parked | Waiting for encoder support. |
 | S-13 | The name "RangeForge" | Parked | Previously worried it is too close to another audio product's name. Decide before any public release. |

@@ -31,7 +31,14 @@ A blue tag marking songs that charted on the Billboard Hot 100.
 
 - **Discogs:** CUE and track data.
 - **Last.fm:** album and track-level genre tags.
-- **Billboard Hot 100 chart data:** the `all.json` file from `github.com/mhollingshead/billboard-hot-100`, fetched at app start (about 42 MB as of 2026-10-08), to decide the Radio tag.
+- **Billboard Hot 100 chart data:** decides the **Radio** tag. A public GitHub project keeps the whole Hot 100 history in one file, `all.json`, about 42 MB as of 2026-10-08.
+
+- The file: <https://github.com/mhollingshead/billboard-hot-100/blob/main/all.json>
+- The app downloads the raw file, which is the same path on GitHub's raw host: `https://raw.githubusercontent.com/mhollingshead/billboard-hot-100/main/all.json`
+
+## How does the Radio tag stay current?
+
+The app keeps a **local copy** of `all.json` and does not download it on every launch. It asks GitHub whether a newer version exists, and only downloads the file when it does. After that, every Radio lookup is a local check. A song gets the Radio tag when it appears anywhere in the chart history, matched on artist and title. If the download fails, the app uses the copy it already has.
 
 Keys for Discogs and Last.fm are entered in Settings.
 

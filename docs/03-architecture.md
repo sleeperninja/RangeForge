@@ -38,7 +38,7 @@ Memory mapping lets the computer treat a file on disk as if it were already in m
 | Cache | Remembers measurements between sessions | `serde` plus a file in the app's data folder |
 | Encoder | Writes ALAC, FLAC, WAV and AAC | FFmpeg, fed the sound we already decoded |
 | Tagger | Reads and writes tags | `lofty` |
-| Lookups | Last.fm, Discogs, Billboard chart file | `reqwest` |
+| Lookups | Last.fm and Discogs queries, plus the Billboard Hot 100 history: a ~40 MB JSON file kept as a local copy and re-downloaded only when a newer version exists. Radio tags are then a local lookup. | `reqwest` |
 | Settings | Presets and keys. Keys are stored encrypted. | JSON file plus the system keychain |
 | Readiness check | Answers "do the settings all agree, and has all the asked-for work finished?" The screen uses it to allow Auto Mode, and the app uses it to start an automatic run. | our own code, heavily tested |
 
