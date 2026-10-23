@@ -40,6 +40,7 @@ Decode each file **once**, keep the audio in memory, and do everything else (mea
 | Tagger | Reads/writes tags | `lofty` |
 | Lookups | Last.fm, Discogs, Billboard chart file | `reqwest` |
 | Settings | Presets and keys; keys stored encrypted | JSON file + OS keychain |
+| Readiness check | Pure function: given the settings and the job state, reports whether everything is consistent (valid output format, keys present for enabled lookups, DSD fallback usable) and whether all asked-for work (maths, API calls, post-add processing) has finished. The UI uses it to allow the Auto Mode toggle, and the pipeline uses it to start an automatic run. | own code, heavily tested |
 
 FFmpeg stays in the design for **encoding** (and awkward inputs) because ALAC and AAC encoders are mature there. Because it receives PCM we already decoded, nothing is decoded twice.
 
