@@ -2,6 +2,9 @@
 target/
 **/*.rs.bk
 
+# Test audio and CUE files from a real collection (never commit these)
+testdata/
+
 # Secrets and local settings
 .env
 .env.*

@@ -22,8 +22,18 @@ Several files are handled at the same time, up to the thread limit in Settings.
 
 Memory mapping lets the computer treat a file on disk as if it were already in memory. It is a speed-up for **uncompressed** files (WAV, AIFF, DSD, big multichannel files), where the app can jump to any song instantly.
 
-- **Used only for files on your own drive.** If a network drive disconnects or the file changes while it is mapped, the app can crash. Network files are copied to a local temporary file first.
+- **Used only for files on your own drive.** If a network drive disconnects or the file changes while it is mapped, the app can crash.
 - **Not a big help for FLAC and ALAC.** They are compressed, so unpacking them, not reading them, is the cost.
+
+How each kind of file is handled:
+
+| File | Where it lives | What the app does |
+| --- | --- | --- |
+| Compressed (FLAC, ALAC) | Anywhere | Decodes straight from where it is, in one sequential read. Safe on a network drive, because only memory mapping is risky, and a copy would add a second pass. |
+| Uncompressed (WAV, AIFF, DSD) | Your own drive | Memory-mapped directly. |
+| Uncompressed (WAV, AIFF, DSD) | Network drive | Copied to a local temporary file first, then that copy is mapped. These files need jumping around between CUE tracks. |
+
+Temporary copies are deleted when the file finishes or fails.
 - All of this code sits in one small, separate piece so it is easy to check.
 
 ## The parts

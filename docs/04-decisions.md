@@ -9,7 +9,7 @@ Statuses: **Accepted**, **Rejected**, **Reopened** (under discussion), **Parked*
 | ID | Decision | Status | Why / when to revisit |
 | --- | --- | --- | --- |
 | D-01 | Rebuild in Rust, replacing Electron + React + TypeScript | Accepted | Speed and a safe core. The old stack had unmaintained parts (Create React App, mmap-io, fluent-ffmpeg) and constant native-rebuild trouble. |
-| D-02 | Memory-map **local** files only | Accepted | Mapping network files can crash on disconnect and is slow. Stream or copy those. |
+| D-02 | Memory-map **local** files only | Accepted | Mapping network files can crash on disconnect and is slow. Compressed files are decoded straight from the network in one pass. Uncompressed files on a network drive are copied to local temp first, then mapped. See the table in 03-architecture. |
 | D-03 | Decode once, work from memory, cache measurements | Accepted | This is where the speed comes from. The old "mmap for preview" never fed FFmpeg, so it did not help. |
 | D-04 | The "Range" column | Reopened | The old code put LRA in a column labelled DR. They are different measures. Plan: label it LRA now, add true DR later if wanted. |
 | D-05 | Gain method: linear gain capped by peak protection | Accepted | Keeps dynamics (the "lossless sweetener" idea). The old plan used `loudnorm`, which can change dynamics. Revisit if clip-limiting is wanted. |
