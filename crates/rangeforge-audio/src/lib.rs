@@ -3,9 +3,14 @@
 //! The file is read in a single sequential pass, so it is safe on a network drive. A separate
 //! loudness meter runs for each CUE track and is fed the exact sample range of that track.
 //! The [`cache`] module remembers results so a file is only decoded once, ever.
+//!
+//! The pieces: [`decode`] streams a file as blocks of audio, [`span`] cuts that stream into
+//! tracks, [`measure`] measures each track, and [`cache`] remembers the results.
 
 pub mod cache;
+pub mod decode;
 mod error;
 pub mod measure;
+pub mod span;
 
 pub use error::AudioError;
