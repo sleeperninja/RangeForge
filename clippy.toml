@@ -1,2 +1,6 @@
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
+
+# Words that are names, not code, so docs need not wrap them in backticks.
+# ".." keeps clippy's built-in list.
+doc-valid-idents = ["FFmpeg", "RangeForge", "DaVinci", "EBU", ".."]

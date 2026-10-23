@@ -58,7 +58,8 @@ FFmpeg stays for **writing** files because its ALAC and AAC encoders are mature.
 
 ```
 crates/
-  rangeforge-core/   the logic: CUE, planning, readiness, (later) measuring, cache, run pipeline
+  rangeforge-core/   the pure logic: CUE, planning, (later) readiness, cache
+  rangeforge-audio/  reads audio files once and measures loudness per track
   rangeforge-cli/    the command line front end
   (later) rangeforge-app/   the desktop window, using the same logic
 ```

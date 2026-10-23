@@ -42,6 +42,14 @@ impl Frames {
     pub fn as_seconds(self) -> f64 {
         f64::from(self.0) / f64::from(FRAMES_PER_SECOND)
     }
+
+    /// The position as a count of audio sample frames (one per channel-group tick) at
+    /// `sample_rate`. At 44.1 kHz a CD frame is exactly 588 sample frames. For rates that
+    /// 75 does not divide evenly, the result is rounded to the nearest sample.
+    pub fn to_sample_frames(self, sample_rate: u32) -> u64 {
+        let per_second = u64::from(FRAMES_PER_SECOND);
+        (u64::from(self.0) * u64::from(sample_rate) + per_second / 2) / per_second
+    }
 }
 
 impl fmt::Display for Frames {
@@ -415,6 +423,16 @@ FILE "LZ-HoTH.flac" WAVE
         assert_eq!(Frames::parse("00:00:74"), Some(Frames(74)));
         assert_eq!(Frames(24_900).to_string(), "05:32:00");
         assert!((Frames(150).as_seconds() - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn frames_convert_to_sample_positions() {
+        assert_eq!(Frames(1).to_sample_frames(44_100), 588);
+        assert_eq!(Frames(24_900).to_sample_frames(44_100), 14_641_200);
+        assert_eq!(Frames(75).to_sample_frames(96_000), 96_000);
+        // 32 kHz does not divide evenly by 75: 1 frame is 426.67 samples.
+        assert_eq!(Frames(1).to_sample_frames(32_000), 427);
+        assert_eq!(Frames(0).to_sample_frames(48_000), 0);
     }
 
     #[test]

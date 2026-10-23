@@ -2,7 +2,7 @@
 
 One phase scheme. Status is updated here and nowhere else.
 
-**Now:** Phase 0 done. Phase 1 in progress. The CUE reader and gain planner compile, pass 18 tests and pass format and lint checks. `rangeforge cue <file>` works. Decoding and measuring are next.
+**Now:** Phase 0 done. Phase 1 mostly done. The CUE reader, gain planner, FLAC and ALAC decoding and per-track loudness measuring all work and are checked against a real EAC rip of Houses of the Holy and against FFmpeg. `rangeforge cue <file>` and `rangeforge measure <audio> [--cue <file>]` work. Still to do in Phase 1: the analysis cache and benchmarks.
 
 | Phase | Goal | Done when |
 | --- | --- | --- |
@@ -20,9 +20,9 @@ One phase scheme. Status is updated here and nowhere else.
 
 1. Workspace, lints, CI. *(done locally; CI itself not yet run on GitHub)*
 2. CUE parser and gain planner with tests. *(done)*
-3. Decoder and meter integration.
+3. Decoder and meter integration. *(done: `rangeforge-audio`; matches FFmpeg on loudness and peak, see decisions D-03, D-04, D-09)*
 4. Analysis cache.
-5. Benchmarks and FFmpeg comparison harness.
+5. Benchmarks. *(first manual comparison done; proper `criterion` benchmarks still to do)*
 
 ## Parked ideas
 

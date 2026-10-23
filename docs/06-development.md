@@ -19,6 +19,23 @@ cargo test --workspace
 cargo run -p rangeforge-cli -- --help
 ```
 
+## Tests that use real audio
+
+Two kinds of tests exist:
+
+- **Normal tests** run everywhere, including on GitHub. They use small text fixtures kept in the repo.
+- **Real-audio tests** read an album from the git-ignored `testdata/` folder, so they are skipped by default. Run them yourself, in release mode because decoding is slow in debug builds:
+
+```powershell
+cargo test -p rangeforge-audio --release -- --ignored
+```
+
+They expect the "Houses of the Holy" rip (FLAC + CUE + four separate ALAC tracks). Try the tool by hand:
+
+```powershell
+cargo run --release -p rangeforge-cli -- measure "testdata\<album folder>\Houses of the Holy.flac" --cue "testdata\<album folder>\Houses of the Holy.cue"
+```
+
 ## If cargo cannot download crates
 
 On a corporate network cargo may fail with `CRYPT_E_NO_REVOCATION_CHECK`. The machine cannot reach the endpoints that check whether a certificate was revoked. Workaround, per terminal session only:
