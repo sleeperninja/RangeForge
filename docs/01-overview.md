@@ -37,6 +37,18 @@ Right now: **one person**. A power user with a video-editing background, a large
 
 Anything FFmpeg or our decoders can read, including DSD and MLP. DSD converts using the fallback format set in Settings.
 
+## Words you will see
+
+- **CUE album:** one big audio file plus a small `.cue` text file that says where each song starts.
+- **Loudness (LUFS):** how loud something sounds to a person. Lower numbers are quieter, and every song is moved toward the same target.
+- **True peak (dBTP):** the highest point the sound reaches. Pushing it too high causes distortion.
+- **Range:** how much the loudness rises and falls within a song.
+- **Codec / container:** the way audio is compressed (codec, like ALAC) and the file type that holds it (container, like `.m4a`).
+- **Sample rate, bit depth, channels:** the sound's detail level, its precision, and how many speakers it is for (2 is stereo, 6 is 5.1).
+- **DSD:** a rare high-end format that has to be converted to something else to be edited.
+- **Preset:** a saved set of output settings you can pick again.
+- **Run:** do the real work, writing the new files.
+
 ## What it deliberately does not do
 
 - No plugin system.

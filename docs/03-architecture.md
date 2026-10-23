@@ -1,75 +1,79 @@
-# 03 - Architecture
+# 03 - How it works
 
-## The short version
+**In short:** the app reads each audio file once, takes notes on it, and does everything else from those notes. Because it never goes back to re-read the file, changing a setting feels instant. The notes are saved, so dropping the same album tomorrow costs nothing.
 
-Decode each file **once**, keep the audio in memory, and do everything else (measure, preview, split, gain, encode) from that memory. Cache the measurements so the work is never repeated.
+## What happens when you drop an album
 
-```
- files ──► [ Read ] ──► [ Decode once ] ──► [ Measure per track ] ──► table / preview
-                              │                     │
-                              │                     └──► [ Cache on disk ]
-                              ▼
-                      (on Run) [ Gain + split ] ──► [ Encode ] ──► [ Tag + write ]
-```
+1. **Look at the files.** The app spots CUE sheets and pairs them with their audio.
+2. **Read once.** Each audio file is opened and turned into raw sound in memory, one time.
+3. **Take notes.** For every song it records how loud it is, its highest peak, and how much the loudness moves. A CUE album is one long recording, so each song is just "from here to there" inside it. Nothing is re-read per song.
+4. **Save the notes.** They go in a small file on disk, keyed to the audio file's size and date. Same file next time means the notes are reused.
+5. **Show the plan.** The list fills in. The **Adjust** column is simple subtraction: your target minus the measured loudness. Change the target and it updates instantly.
+6. **Optional lookups.** If enabled, tags come from online sources (see the FAQ).
+7. **Run.** The app applies the volume change, cuts the album into songs, writes the tags, and saves the new files using your File Strategy. It uses the sound already in memory, so nothing is decoded a second time.
 
-## Why it is fast
+## Why this is faster than before
 
-- A compressed file (FLAC, ALAC) costs time to **decode**, not to read. We decode once, where the old design decoded for every analysis and again for every export.
-- A CUE album is one long buffer. Each track is just a start and end offset into it, so there is no re-decode per track.
-- The preview is arithmetic. True peak after gain equals measured peak plus gain. Changing the target never re-measures.
-- Several files are processed at once on a worker pool sized to the CPU (or the Settings limit).
+The old design started a separate FFmpeg program for each measurement and read the file again for every export. Reading the sound out of a compressed file (FLAC, ALAC) is the slow part, and it was being repeated. Now it happens once.
 
-## Where memory mapping is used (and where it is not)
+Several files are handled at the same time, up to the thread limit in Settings.
 
-- **Used for:** local, uncompressed sources (WAV, AIFF, DSD, large multichannel PCM). The OS gives zero-copy random access to any segment.
-- **Not used for:** files on network shares. A dropped connection or a changed file can crash a process that has the file mapped, and it is slow. These are streamed or copied to a local temp file first.
-- **Not a big win for:** FLAC and ALAC, where decoding dominates.
-- All memory-map code lives in one small module, so the one place `unsafe` is needed is easy to audit.
+## About memory mapping
 
-## The pieces
+Memory mapping lets the computer treat a file on disk as if it were already in memory. It is a speed-up for **uncompressed** files (WAV, AIFF, DSD, big multichannel files), where the app can jump to any song instantly.
 
-| Piece | Job | Planned library |
+- **Used only for files on your own drive.** If a network drive disconnects or the file changes while it is mapped, the app can crash. Network files are copied to a local temporary file first.
+- **Not a big help for FLAC and ALAC.** They are compressed, so unpacking them, not reading them, is the cost.
+- All of this code sits in one small, separate piece so it is easy to check.
+
+## The parts
+
+| Part | What it does | Built with |
 | --- | --- | --- |
-| Reader | Opens files, picks local-map vs stream | `memmap2`, `std::fs` |
-| CUE | Parses cue sheets into tracks and offsets | own code (small, heavily tested) |
-| Decoder | Turns audio files into PCM | Symphonia; FFmpeg for what it cannot read (DSD, MLP) |
-| Meter | EBU R128 / BS.1770 loudness, true peak, range | `ebur128` crate |
-| Planner | Pure maths: target, peak cap, gain per track | own code |
-| Cache | Stores measurements keyed by file path, size, modified time | `serde` + a file in the app data folder |
-| Encoder | Writes ALAC, FLAC, WAV, AAC | FFmpeg, fed raw PCM on stdin |
-| Tagger | Reads/writes tags | `lofty` |
+| Reader | Opens files, decides local-map versus copy | `memmap2`, standard library |
+| CUE reader | Turns a `.cue` sheet into songs and exact start and end points | our own code |
+| Decoder | Turns audio files into raw sound | Symphonia; FFmpeg for what it cannot read (DSD, MLP) |
+| Meter | Measures loudness, peak and range to the broadcast standard (EBU R128) | `ebur128` |
+| Planner | Works out the volume change per song, with peak protection | our own code |
+| Cache | Remembers measurements between sessions | `serde` plus a file in the app's data folder |
+| Encoder | Writes ALAC, FLAC, WAV and AAC | FFmpeg, fed the sound we already decoded |
+| Tagger | Reads and writes tags | `lofty` |
 | Lookups | Last.fm, Discogs, Billboard chart file | `reqwest` |
-| Settings | Presets and keys; keys stored encrypted | JSON file + OS keychain |
-| Readiness check | Pure function: given the settings and the job state, reports whether everything is consistent (valid output format, keys present for enabled lookups, DSD fallback usable) and whether all asked-for work (maths, API calls, post-add processing) has finished. The UI uses it to allow the Auto Mode toggle, and the pipeline uses it to start an automatic run. | own code, heavily tested |
+| Settings | Presets and keys. Keys are stored encrypted. | JSON file plus the system keychain |
+| Readiness check | Answers "do the settings all agree, and has all the asked-for work finished?" The screen uses it to allow Auto Mode, and the app uses it to start an automatic run. | our own code, heavily tested |
 
-FFmpeg stays in the design for **encoding** (and awkward inputs) because ALAC and AAC encoders are mature there. Because it receives PCM we already decoded, nothing is decoded twice.
+FFmpeg stays for **writing** files because its ALAC and AAC encoders are mature. It is handed sound we already decoded, so there is no double work.
 
-## Code layout
+## How the code is organised
 
 ```
 crates/
-  rangeforge-core/   pure library: cue, planner, models, (later) meter, cache, pipeline
-  rangeforge-cli/    command line front end
-  (later) rangeforge-app/   desktop UI on the same core
+  rangeforge-core/   the logic: CUE, planning, readiness, (later) measuring, cache, run pipeline
+  rangeforge-cli/    the command line front end
+  (later) rangeforge-app/   the desktop window, using the same logic
 ```
 
-- The core has no UI and does no printing. Front ends call it and render results.
-- Anything that is just maths or parsing is a pure function with tests. I/O sits at the edges.
+- The core does no drawing and no printing. Front ends ask it questions and show the answers.
+- Maths and parsing are written as plain functions with tests. Reading and writing files stays at the edges.
 
-## Front ends
+## The front ends
 
-1. **CLI:** `analyze` (table output), `ui` (interactive terminal view of the mockup), `report --html`, `--json` on everything.
-2. **Desktop app (Tauri 2):** renders the mockup layout in a web view, calling the same core.
+1. **Command line:** `analyze` prints the list as a table. `ui` is an interactive terminal version of the mockup. `report --html` makes a shareable page. `--json` on anything gives machine-readable output.
+2. **Desktop app (Tauri 2):** the mockup layout in a web view, using the same core.
 
-## Correctness and quality
+## How we check it is right
 
-- Loudness numbers are compared against FFmpeg's `ebur128` filter on real files. We accept a small, stated tolerance.
-- The CUE parser gets example tests and property tests (never panics, offsets always ordered).
-- `criterion` benchmarks back any speed claim.
-- CI runs format, lints (warnings are errors), tests and a build on every target platform.
+- Loudness numbers are compared with FFmpeg's own measurement on real albums from your collection, within a stated tolerance.
+- The CUE reader gets example tests and random-input tests (it must never crash, and songs must always be in order).
+- Any speed claim is backed by a benchmark.
+- On every change, automated checks run format, lint (warnings count as failures) and tests on Windows, macOS, Linux.
 
-## Known open questions
+## Platforms
 
-- Exact behaviour of Auto Mode.
-- DR versus LRA (decision D-04).
-- Which decoder handles DSD/MLP without FFmpeg, if any.
+First class: Windows 64-bit and macOS Apple Silicon. Also built and released: macOS Intel, Linux (GNU), Windows ARM. If work has to be staged, they are done in that order.
+
+## Still undecided
+
+- Which decoder handles DSD and MLP without FFmpeg, if any.
+- Whether "Range" should be loudness range or true dynamic range (decision D-04).
+- Whether the settings can be fully checked up front, or some problems only show during a run.
