@@ -86,6 +86,18 @@ To see a whole run without a terminal, write to a scratch folder and print the f
 cargo run --release -p rangeforge-cli -- ui --snapshot --run --show-logs --out "C:\temp\out" --config-dir "C:\temp\cfg" "testdata\<album folder>"
 ```
 
+## The desktop window
+
+```powershell
+cargo run --release -p rangeforge-app                      # opens the window
+cargo run --release -p rangeforge-app -- "testdata\<album folder>"   # opens it with files already added
+node --test crates/rangeforge-app/frontend/render.test.js  # tests of how rows are displayed
+```
+
+The window is a Tauri program. The page lives in `crates/rangeforge-app/frontend/` as plain HTML, CSS and JavaScript, so building needs only Rust. It shows what `rangeforge-session` describes (a `Snapshot`) and sends the user's actions back; every rule stays in Rust. Drop files or folders on it, or use Add files. Outside the program, `index.html` shows sample data from `demo-state.json`, which is how the layout is checked without a window. On Linux it needs the WebKitGTK libraries (see `ci.yml`). It also needs FFmpeg for Run, like the terminal view.
+
+CI uploads a download for each platform (the `RangeForge-<platform>` artifacts on a run's page): the window and the `rangeforge` command, as plain executables. They are not signed or installed, so macOS may ask you to allow them.
+
 ## The analysis cache
 
 `rangeforge measure` remembers its results so a file is only ever decoded once. Entries live in the per-user cache folder, `%LOCALAPPDATA%\RangeForge\cache\analysis` on Windows, one small JSON file per audio file.

@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "What the main window may do: its own events and commands, and open the file and folder pickers.",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:allow-open"]
+}

@@ -1,0 +1,31 @@
+[package]
+name = "rangeforge-app"
+description = "The RangeForge desktop window."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "rangeforge-app"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+rangeforge-audio = { path = "../rangeforge-audio" }
+rangeforge-export = { path = "../rangeforge-export" }
+rangeforge-session = { path = "../rangeforge-session" }
+serde = { version = "1", features = ["derive"] }
+# "custom-protocol" makes a plain `cargo build` embed the page in the program instead of
+# looking for a development server.
+tauri = { version = "2", features = ["custom-protocol"] }
+tauri-plugin-dialog = "2"
+
+[dev-dependencies]
+serde_json = "1"
+tempfile = "3"
+
+[lints]
+workspace = true

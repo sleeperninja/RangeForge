@@ -41,9 +41,35 @@ jobs:
             Linux) sudo apt-get update && sudo apt-get install -y ffmpeg ;;
           esac
           ffmpeg -version | head -n 1
+      # The window needs the system web view libraries to build on Linux.
+      - name: Install window libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libxdo-dev libssl-dev
       - name: Format
         run: cargo fmt --all -- --check
       - name: Lint
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace
+      - name: Test the page's display logic
+        run: node --test crates/rangeforge-app/frontend/render.test.js
+      # Programs to download and try. These are plain executables, not installers, and FFmpeg
+      # is not included: it must be installed on the machine that runs them.
+      - name: Build programs
+        run: cargo build --release -p rangeforge-app -p rangeforge-cli
+      - name: Collect programs
+        shell: bash
+        run: |
+          mkdir dist
+          for f in rangeforge-app rangeforge; do
+            if [ -f "target/release/$f.exe" ]; then cp "target/release/$f.exe" dist/;
+            elif [ -f "target/release/$f" ]; then cp "target/release/$f" dist/; fi
+          done
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RangeForge-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error

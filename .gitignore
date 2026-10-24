@@ -29,3 +29,6 @@ bin/
 .DS_Store
 Thumbs.db
 ehthumbs.db
+
+# Written by the Tauri build
+crates/rangeforge-app/gen/
