@@ -3,6 +3,9 @@
 //! This is a thin layer. Parsing, planning and measuring all live in the library crates;
 //! this file only reads input and prints results.
 
+mod output;
+mod plan;
+mod presets;
 mod run;
 mod support;
 mod ui;
@@ -72,6 +75,17 @@ enum Command {
         /// Height of the snapshot in lines
         #[arg(long, default_value_t = 30)]
         height: u16,
+        /// With --snapshot: press Run once measuring is done, wait for the files to be
+        /// written, and show the result
+        #[arg(long, requires = "snapshot")]
+        run: bool,
+        /// With --run: confirm a File Strategy that overwrites files
+        #[arg(long, requires = "run")]
+        yes: bool,
+        #[command(flatten)]
+        output: output::OutputArgs,
+        #[command(flatten)]
+        config: support::ConfigOptions,
         #[command(flatten)]
         cache: CacheOptions,
     },
@@ -95,13 +109,22 @@ fn main() -> Result<()> {
             snapshot,
             width,
             height,
+            run,
+            yes,
+            output,
+            config,
             cache,
         } => {
             let options = ui::Options {
                 paths,
                 settings: Settings::new(target, !no_peak_protection, ceiling),
+                output: output.output_settings(),
+                strategy: output.strategy_settings(),
                 cache: cache.open(),
                 show_log: show_logs,
+                presets_path: config.presets_path(),
+                run,
+                yes,
             };
             if snapshot {
                 println!("{}", ui::snapshot(&options, width, height)?);

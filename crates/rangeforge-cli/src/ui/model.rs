@@ -1,15 +1,23 @@
 //! The state behind the interactive view.
 //!
-//! Nothing here draws or spawns threads, so all of it can be tested directly.
+//! Nothing here draws, reads files or spawns threads, so all of it can be tested directly.
+//! When the user asks to run, the model builds a [`RunSpec`] and leaves it for the caller to
+//! start; progress comes back as [`RunEvent`]s.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use rangeforge_core::planner::{self, GainPlan, Measurement, PlanError, Target};
+use rangeforge_export::format::OutputFormat;
+use rangeforge_export::pipeline::TrackPlan;
+use rangeforge_export::strategy::Strategy;
 use ratatui::crossterm::event::KeyCode;
 
-/// The output codec shown on track rows. A placeholder until the Output Format controls
-/// exist.
-pub const OUTPUT_CODEC: &str = "alac";
+use super::controls::{
+    Focus, Mode, OutputSettings, PresetList, Saved, StrategySettings, apply_preset,
+};
+use super::load::Job;
+use crate::plan::{plan_tracks, track_plans};
 
 const TARGET_STEP: f64 = 0.5;
 const CEILING_STEP: f64 = 0.1;
@@ -78,11 +86,27 @@ pub enum Origin {
     Decoded,
 }
 
-/// How far along a file is.
+/// How far along measuring a file is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Status {
     Pending,
     Done(Origin),
+    Failed(String),
+}
+
+/// How far along writing a file's output is.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum RunState {
+    #[default]
+    Idle,
+    /// Part of a run that has started but not reached this file yet.
+    Queued,
+    /// Song `index` (counting from 0) of `total` is being encoded.
+    Encoding {
+        index: usize,
+        total: usize,
+    },
+    Saved,
     Failed(String),
 }
 
@@ -98,6 +122,8 @@ pub enum Kind {
 pub struct TrackRow {
     pub label: String,
     pub measurement: Option<Measurement>,
+    /// Its output file has been written.
+    pub saved: bool,
 }
 
 /// An album, or a single file, with its songs.
@@ -109,6 +135,7 @@ pub struct Group {
     pub source_extension: String,
     pub tracks: Vec<TrackRow>,
     pub status: Status,
+    pub run: RunState,
 }
 
 impl Group {
@@ -118,6 +145,13 @@ impl Group {
             Kind::CueAlbum => "Split(cue)".to_string(),
             Kind::SingleFile => format!("({})", self.source_extension),
         }
+    }
+
+    /// Rows this group takes in the table: itself, its songs, and a line for each failure.
+    fn row_count(&self) -> usize {
+        let measuring_message = usize::from(matches!(self.status, Status::Failed(_)));
+        let run_message = usize::from(matches!(self.run, RunState::Failed(_)));
+        1 + measuring_message + run_message + self.tracks.len()
     }
 }
 
@@ -129,26 +163,91 @@ pub struct MeasureOutcome {
     pub elapsed: Duration,
 }
 
+/// Progress of a run, sent back from the worker that is writing the files.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunEvent {
+    Encoding {
+        group: usize,
+        index: usize,
+        total: usize,
+    },
+    Saved {
+        group: usize,
+        index: usize,
+        path: PathBuf,
+    },
+    Finished {
+        group: usize,
+    },
+    Failed {
+        group: usize,
+        message: String,
+    },
+    /// Every file has been dealt with.
+    AllDone,
+}
+
+/// One file to write: what to make of it, ready to hand to the exporter.
+#[derive(Debug)]
+pub struct RunItem {
+    pub group: usize,
+    pub job: Job,
+    pub plans: Vec<TrackPlan>,
+    /// The folder the source lives in.
+    pub directory: PathBuf,
+}
+
+/// Everything a run needs, fixed at the moment the user asked for it.
+#[derive(Debug)]
+pub struct RunSpec {
+    pub items: Vec<RunItem>,
+    pub format: OutputFormat,
+    pub strategy: Strategy,
+}
+
+// The screen's state is a flat set of independent switches, so the count of booleans is fine.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug)]
 pub struct App {
     pub groups: Vec<Group>,
+    pub jobs: Vec<Job>,
     pub settings: Settings,
+    pub output: OutputSettings,
+    pub strategy: StrategySettings,
+    pub presets: PresetList,
+    pub focus: Focus,
+    pub mode: Mode,
     pub show_log: bool,
     pub log: Vec<String>,
     /// The first table row shown.
     pub scroll: usize,
     pub should_quit: bool,
+    /// A run is in progress.
+    pub running: bool,
+    /// A run the user has asked for, waiting for the caller to start it.
+    pending_run: Option<RunSpec>,
+    /// The presets changed and should be saved to disk.
+    presets_changed: bool,
 }
 
 impl App {
-    pub fn new(groups: Vec<Group>, log: Vec<String>, settings: Settings) -> Self {
+    pub fn new(groups: Vec<Group>, jobs: Vec<Job>, log: Vec<String>, settings: Settings) -> Self {
         Self {
             groups,
+            jobs,
             settings,
+            output: OutputSettings::default(),
+            strategy: StrategySettings::default(),
+            presets: PresetList::new(Vec::new()),
+            focus: Focus::Target,
+            mode: Mode::Normal,
             show_log: false,
             log,
             scroll: 0,
             should_quit: false,
+            running: false,
+            pending_run: None,
+            presets_changed: false,
         }
     }
 
@@ -169,16 +268,9 @@ impl App {
             .sum()
     }
 
-    /// Total table rows: one per group, one per song, and one extra per failed group for its
-    /// message.
+    /// Total table rows.
     pub fn row_count(&self) -> usize {
-        self.groups
-            .iter()
-            .map(|group| {
-                let message = usize::from(matches!(group.status, Status::Failed(_)));
-                1 + message + group.tracks.len()
-            })
-            .sum()
+        self.groups.iter().map(Group::row_count).sum()
     }
 
     /// The volume change for a song under the current settings, once it is measured.
@@ -197,8 +289,32 @@ impl App {
             .any(|plan| plan.is_ok_and(|plan| plan.limited_by_peak))
     }
 
-    fn log(&mut self, line: String) {
-        self.log.push(line);
+    /// True if the settings have been changed from the selected preset.
+    pub fn preset_modified(&self) -> bool {
+        self.presets.is_modified(&self.settings, self.output)
+    }
+
+    /// True when there is something worth saving as a preset: the settings match no preset
+    /// yet, or have been changed from the selected one. The mockup greys Save out otherwise.
+    pub fn can_save_preset(&self) -> bool {
+        self.presets.selected.is_none() || self.preset_modified()
+    }
+
+    /// Adds a line to the log.
+    pub fn log(&mut self, line: impl Into<String>) {
+        self.log.push(line.into());
+    }
+
+    /// Gives up on a run that was asked for but could not start, such as when FFmpeg is
+    /// missing, and puts the rows back as they were.
+    pub fn abort_run(&mut self, reason: &str) {
+        self.running = false;
+        for group in &mut self.groups {
+            if group.run == RunState::Queued {
+                group.run = RunState::Idle;
+            }
+        }
+        self.log(format!("Cannot run: {reason}"));
     }
 
     /// Records a finished measurement.
@@ -238,6 +354,148 @@ impl App {
         self.log(line);
     }
 
+    /// Records progress of a run.
+    pub fn apply_run_event(&mut self, event: RunEvent) {
+        match event {
+            RunEvent::Encoding {
+                group,
+                index,
+                total,
+            } => {
+                if let Some(group) = self.groups.get_mut(group) {
+                    group.run = RunState::Encoding { index, total };
+                }
+            }
+            RunEvent::Saved { group, index, path } => {
+                if let Some(track) = self
+                    .groups
+                    .get_mut(group)
+                    .and_then(|group| group.tracks.get_mut(index))
+                {
+                    track.saved = true;
+                }
+                let name = path.file_name().map_or_else(
+                    || path.display().to_string(),
+                    |n| n.to_string_lossy().into_owned(),
+                );
+                self.log(format!("Saved {name}"));
+            }
+            RunEvent::Finished { group } => {
+                if let Some(group) = self.groups.get_mut(group) {
+                    group.run = RunState::Saved;
+                    let line = format!("Finished {}", group.name);
+                    self.log(line);
+                }
+            }
+            RunEvent::Failed { group, message } => {
+                if let Some(group) = self.groups.get_mut(group) {
+                    group.run = RunState::Failed(message.clone());
+                    let line = format!("Failed to write {}: {message}", group.name);
+                    self.log(line);
+                }
+            }
+            RunEvent::AllDone => {
+                self.running = false;
+                let saved = self
+                    .groups
+                    .iter()
+                    .filter(|group| group.run == RunState::Saved)
+                    .count();
+                let failed = self
+                    .groups
+                    .iter()
+                    .filter(|group| matches!(group.run, RunState::Failed(_)))
+                    .count();
+                self.log(format!(
+                    "Run complete: {saved} file(s) written, {failed} failed"
+                ));
+            }
+        }
+    }
+
+    /// Takes the run the user asked for, if any. The caller starts it.
+    pub fn take_run_spec(&mut self) -> Option<RunSpec> {
+        self.pending_run.take()
+    }
+
+    /// True once after the presets change, so the caller can save them.
+    pub fn take_presets_changed(&mut self) -> bool {
+        std::mem::take(&mut self.presets_changed)
+    }
+
+    /// Builds the run from what is on screen now, or says why it cannot be done.
+    fn build_run(&self) -> Result<RunSpec, String> {
+        let strategy = self.strategy.to_strategy()?;
+        let format = self.output.format();
+        let mut items = Vec::new();
+        for job in &self.jobs {
+            let Some(group) = self.groups.get(job.group) else {
+                continue;
+            };
+            if matches!(group.status, Status::Failed(_)) {
+                continue;
+            }
+            let measurements: Option<Vec<Measurement>> =
+                group.tracks.iter().map(|track| track.measurement).collect();
+            let Some(measurements) = measurements else {
+                continue;
+            };
+            let planned = plan_tracks(job, &measurements, self.settings.target());
+            let (plans, directory) = track_plans(job, &planned, format);
+            items.push(RunItem {
+                group: job.group,
+                job: job.clone(),
+                plans,
+                directory,
+            });
+        }
+        if items.is_empty() {
+            return Err("there is nothing to write".to_string());
+        }
+        Ok(RunSpec {
+            items,
+            format,
+            strategy,
+        })
+    }
+
+    /// The user pressed Run. Checks that it makes sense, asks for confirmation if the
+    /// strategy overwrites files, and otherwise prepares the run.
+    fn request_run(&mut self) {
+        if self.running {
+            self.log("A run is already in progress");
+        } else if self.pending() > 0 {
+            self.log("Measuring is not finished yet");
+        } else if self.queued() == 0 {
+            self.log("Nothing to run");
+        } else if let Err(reason) = self.build_run() {
+            self.log(format!("Cannot run: {reason}"));
+        } else if self.strategy.kind.needs_confirmation() {
+            self.mode = Mode::ConfirmRun;
+        } else {
+            self.start_run();
+        }
+    }
+
+    fn start_run(&mut self) {
+        match self.build_run() {
+            Ok(spec) => {
+                for item in &spec.items {
+                    if let Some(group) = self.groups.get_mut(item.group) {
+                        group.run = RunState::Queued;
+                        for track in &mut group.tracks {
+                            track.saved = false;
+                        }
+                    }
+                }
+                self.log(format!("Run started: {} file(s)", spec.items.len()));
+                self.running = true;
+                self.pending_run = Some(spec);
+            }
+            Err(reason) => self.log(format!("Cannot run: {reason}")),
+        }
+    }
+
     fn scroll_down(&mut self, rows: usize) {
         let last = self.row_count().saturating_sub(1);
         self.scroll = (self.scroll + rows).min(last);
@@ -247,12 +505,42 @@ impl App {
         self.scroll = self.scroll.saturating_sub(rows);
     }
 
+    /// Changes the value of the focused control by one step.
+    fn change(&mut self, steps: i32) {
+        match self.focus {
+            Focus::Target => self.settings.nudge_target(steps),
+            Focus::PeakProtection => self.settings.peak_protection = !self.settings.peak_protection,
+            Focus::Ceiling => self.settings.nudge_ceiling(steps),
+            Focus::Codec => self.output.cycle_codec(steps),
+            Focus::BitDepth => self.output.cycle_bit_depth(steps),
+            Focus::Preset => {
+                if let Some(preset) = self.presets.cycle(steps) {
+                    apply_preset(&preset, &mut self.settings, &mut self.output);
+                }
+            }
+            Focus::Strategy => self.strategy.cycle_kind(steps),
+            // Typed fields are changed by editing them, not by stepping.
+            Focus::Suffix | Focus::Folder => {}
+        }
+    }
+
     /// Reacts to a key press.
     pub fn handle_key(&mut self, key: KeyCode) {
+        match self.mode.clone() {
+            Mode::Normal => self.key_normal(key),
+            Mode::Editing(buffer) => self.key_editing(key, buffer),
+            Mode::NamingPreset(buffer) => self.key_naming(key, buffer),
+            Mode::ConfirmRun => self.key_confirm(key),
+        }
+    }
+
+    fn key_normal(&mut self, key: KeyCode) {
         match key {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-            KeyCode::Left => self.settings.nudge_target(-1),
-            KeyCode::Right => self.settings.nudge_target(1),
+            KeyCode::Tab => self.focus = self.focus.step(1, &self.strategy),
+            KeyCode::BackTab => self.focus = self.focus.step(-1, &self.strategy),
+            KeyCode::Left => self.change(-1),
+            KeyCode::Right => self.change(1),
             KeyCode::Char('[') => self.settings.nudge_ceiling(-1),
             KeyCode::Char(']') => self.settings.nudge_ceiling(1),
             KeyCode::Char('p') => self.settings.peak_protection = !self.settings.peak_protection,
@@ -263,10 +551,94 @@ impl App {
             KeyCode::PageDown => self.scroll_down(PAGE),
             KeyCode::Home => self.scroll = 0,
             KeyCode::End => self.scroll = self.row_count().saturating_sub(1),
+            KeyCode::Char('e') => self.begin_edit(),
+            KeyCode::Char('s') => {
+                if self.can_save_preset() {
+                    let name = self
+                        .presets
+                        .selected_preset()
+                        .map_or_else(String::new, |preset| preset.name.clone());
+                    self.mode = Mode::NamingPreset(name);
+                } else {
+                    self.log("Nothing has changed from this preset, so there is nothing to save");
+                }
+            }
+            KeyCode::Char('d') => match self.presets.delete_selected() {
+                Some(name) => {
+                    self.presets_changed = true;
+                    self.log(format!("Deleted preset {name}"));
+                }
+                None => self.log("No preset is selected to delete"),
+            },
+            KeyCode::Enter | KeyCode::Char('r') => self.request_run(),
+            _ => {}
+        }
+    }
+
+    fn begin_edit(&mut self) {
+        if !self.focus.is_text() {
+            self.log("Tab to the suffix or folder first, then press e to edit it");
+        } else if let Some(text) = self.strategy.text() {
+            self.mode = Mode::Editing(text.to_string());
+        } else {
+            self.log("The selected File Strategy has nothing to edit");
+        }
+    }
+
+    fn key_editing(&mut self, key: KeyCode, mut buffer: String) {
+        match key {
+            KeyCode::Esc => self.mode = Mode::Normal,
             KeyCode::Enter => {
-                self.log("Run is not built yet (roadmap phase 3)".to_string());
+                self.strategy.set_text(buffer);
+                self.mode = Mode::Normal;
+            }
+            KeyCode::Backspace => {
+                buffer.pop();
+                self.mode = Mode::Editing(buffer);
+            }
+            KeyCode::Char(c) if !c.is_control() => {
+                buffer.push(c);
+                self.mode = Mode::Editing(buffer);
             }
             _ => {}
+        }
+    }
+
+    fn key_naming(&mut self, key: KeyCode, mut buffer: String) {
+        match key {
+            KeyCode::Esc => self.mode = Mode::Normal,
+            KeyCode::Enter => {
+                self.mode = Mode::Normal;
+                let name = buffer.trim().to_string();
+                if name.is_empty() {
+                    self.log("A preset needs a name");
+                    return;
+                }
+                let saved = self.presets.save_as(&name, &self.settings, self.output);
+                self.presets_changed = true;
+                self.log(match saved {
+                    Saved::Added => format!("Saved preset {name}"),
+                    Saved::Updated => format!("Updated preset {name}"),
+                });
+            }
+            KeyCode::Backspace => {
+                buffer.pop();
+                self.mode = Mode::NamingPreset(buffer);
+            }
+            KeyCode::Char(c) if !c.is_control() => {
+                buffer.push(c);
+                self.mode = Mode::NamingPreset(buffer);
+            }
+            _ => {}
+        }
+    }
+
+    fn key_confirm(&mut self, key: KeyCode) {
+        self.mode = Mode::Normal;
+        if matches!(key, KeyCode::Char('y' | 'Y')) {
+            self.start_run();
+        } else {
+            self.log("Run cancelled");
         }
     }
 }
@@ -274,6 +646,10 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::presets::built_in;
+    use crate::ui::controls::StrategyKind;
+    use rangeforge_core::cue;
+    use rangeforge_export::format::{BitDepth, Codec};
 
     fn measurement(lufs: f64, peak: f64) -> Measurement {
         Measurement {
@@ -287,6 +663,7 @@ mod tests {
         TrackRow {
             label: label.to_string(),
             measurement,
+            saved: false,
         }
     }
 
@@ -297,11 +674,38 @@ mod tests {
             source_extension: "flac".to_string(),
             tracks: rows,
             status: Status::Pending,
+            run: RunState::Idle,
         }
     }
 
     fn app_with(groups: Vec<Group>) -> App {
-        App::new(groups, Vec::new(), Settings::default())
+        App::new(groups, Vec::new(), Vec::new(), Settings::default())
+    }
+
+    const SHEET: &str = "PERFORMER \"Led Zeppelin\"\nTITLE \"Houses of the Holy\"\nFILE \"album.flac\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"The Rain Song\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"No Quarter\"\n    INDEX 01 05:00:00\n";
+
+    /// An app with one measured two-song CUE album, ready to run.
+    fn ready_app() -> App {
+        let sheet = cue::parse(SHEET).unwrap();
+        let job = Job {
+            group: 0,
+            audio: PathBuf::from("music/album/album.flac"),
+            cue_file: Some(sheet.files[0].clone()),
+            sheet: Some(sheet),
+        };
+        let mut group = album(vec![
+            row("1 - The Rain Song", Some(measurement(-20.66, -1.91))),
+            row("2 - No Quarter", Some(measurement(-19.05, -2.37))),
+        ]);
+        group.status = Status::Done(Origin::Decoded);
+        let mut app = App::new(vec![group], vec![job], Vec::new(), Settings::default());
+        app.presets = PresetList::new(built_in());
+        app.presets.select_matching(&app.settings, app.output);
+        app
+    }
+
+    fn last_log(app: &App) -> &str {
+        app.log.last().map_or("", String::as_str)
     }
 
     #[test]
@@ -388,7 +792,7 @@ mod tests {
         assert_eq!(app.pending(), 0);
         assert_eq!(app.groups[0].status, Status::Done(Origin::Cache));
         assert!(app.groups[0].tracks.iter().all(|t| t.measurement.is_some()));
-        assert!(app.log.last().unwrap().contains("(cached)"));
+        assert!(last_log(&app).contains("(cached)"));
     }
 
     #[test]
@@ -431,6 +835,10 @@ mod tests {
         app.groups[1].status = Status::Failed("gone".to_string());
         assert_eq!(app.row_count(), 7);
         assert_eq!(app.queued(), 3);
+
+        // A failed write adds a message line too.
+        app.groups[0].run = RunState::Failed("disk full".to_string());
+        assert_eq!(app.row_count(), 8);
     }
 
     #[test]
@@ -439,6 +847,7 @@ mod tests {
             (0..30).map(|n| row(&n.to_string(), None)).collect(),
         )]);
 
+        // Target is focused to begin with, so left and right change it.
         app.handle_key(KeyCode::Right);
         assert!((app.settings.target_lufs - -21.5).abs() < 1e-9);
         app.handle_key(KeyCode::Left);
@@ -459,12 +868,351 @@ mod tests {
         app.handle_key(KeyCode::Up);
         assert_eq!(app.scroll, 0);
 
-        app.handle_key(KeyCode::Enter);
-        assert!(app.log.last().unwrap().contains("not built yet"));
-
         assert!(!app.should_quit);
         app.handle_key(KeyCode::Char('q'));
         assert!(app.should_quit);
+    }
+
+    #[test]
+    fn tab_moves_between_controls_and_arrows_change_the_focused_one() {
+        let mut app = ready_app();
+        for _ in 0..3 {
+            app.handle_key(KeyCode::Tab);
+        }
+        assert_eq!(app.focus, Focus::Codec);
+        app.handle_key(KeyCode::Right);
+        assert_eq!(app.output.codec, Codec::Flac);
+        app.handle_key(KeyCode::Tab);
+        assert_eq!(app.focus, Focus::BitDepth);
+        app.handle_key(KeyCode::Left);
+        assert_eq!(app.output.bit_depth, BitDepth::TwentyFour);
+        app.handle_key(KeyCode::BackTab);
+        assert_eq!(app.focus, Focus::Codec);
+
+        // The volume did not move while another control had the keyboard.
+        assert!((app.settings.target_lufs - -22.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn the_peak_protection_control_toggles_with_either_arrow() {
+        let mut app = ready_app();
+        app.handle_key(KeyCode::Tab);
+        assert_eq!(app.focus, Focus::PeakProtection);
+        app.handle_key(KeyCode::Right);
+        assert!(!app.settings.peak_protection);
+        app.handle_key(KeyCode::Left);
+        assert!(app.settings.peak_protection);
+    }
+
+    #[test]
+    fn choosing_a_preset_fills_the_output_and_volume() {
+        let mut app = ready_app();
+        app.focus = Focus::Preset;
+        app.handle_key(KeyCode::Right);
+        assert_eq!(app.presets.selected_preset().unwrap().name, "CD Quality");
+        assert_eq!(app.output.codec, Codec::Flac);
+        assert_eq!(app.output.bit_depth, BitDepth::Sixteen);
+        assert!(!app.preset_modified());
+
+        app.focus = Focus::Codec;
+        app.handle_key(KeyCode::Right);
+        assert!(
+            app.preset_modified(),
+            "changing a setting marks the preset modified"
+        );
+    }
+
+    #[test]
+    fn saving_a_preset_asks_for_a_name_and_flags_the_change() {
+        let mut app = ready_app();
+        app.settings.nudge_target(2);
+
+        app.handle_key(KeyCode::Char('s'));
+        assert!(matches!(&app.mode, Mode::NamingPreset(name) if name == "iTunes Lossless"));
+        // Replace the suggested name.
+        for _ in 0..20 {
+            app.handle_key(KeyCode::Backspace);
+        }
+        for c in "Quiet car".chars() {
+            app.handle_key(KeyCode::Char(c));
+        }
+        app.handle_key(KeyCode::Enter);
+
+        assert_eq!(app.mode, Mode::Normal);
+        assert_eq!(app.presets.selected_preset().unwrap().name, "Quiet car");
+        assert!((app.presets.selected_preset().unwrap().target_lufs - -21.0).abs() < 1e-9);
+        assert!(app.take_presets_changed());
+        assert!(
+            !app.take_presets_changed(),
+            "the flag is cleared once taken"
+        );
+        assert!(last_log(&app).contains("Saved preset Quiet car"));
+    }
+
+    #[test]
+    fn saving_is_only_offered_when_something_has_changed() {
+        let mut app = ready_app();
+        assert!(!app.can_save_preset());
+        app.handle_key(KeyCode::Char('s'));
+        assert_eq!(app.mode, Mode::Normal);
+        assert!(last_log(&app).contains("nothing to save"));
+
+        app.settings.nudge_target(1);
+        assert!(app.can_save_preset());
+
+        // Settings that match no preset can always be saved as a new one.
+        app.presets.selected = None;
+        app.settings = Settings::default();
+        assert!(app.can_save_preset());
+    }
+
+    #[test]
+    fn a_run_that_cannot_start_puts_the_rows_back() {
+        let mut app = ready_app();
+        app.handle_key(KeyCode::Enter);
+        let _ = app.take_run_spec();
+        assert_eq!(app.groups[0].run, RunState::Queued);
+
+        app.abort_run("FFmpeg was not found");
+
+        assert!(!app.running);
+        assert_eq!(app.groups[0].run, RunState::Idle);
+        assert!(last_log(&app).contains("Cannot run: FFmpeg was not found"));
+    }
+
+    #[test]
+    fn naming_can_be_cancelled_and_an_empty_name_is_refused() {
+        let mut app = ready_app();
+        app.settings.nudge_target(1);
+        app.handle_key(KeyCode::Char('s'));
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.mode, Mode::Normal);
+        assert!(!app.take_presets_changed());
+
+        app.handle_key(KeyCode::Char('s'));
+        for _ in 0..20 {
+            app.handle_key(KeyCode::Backspace);
+        }
+        app.handle_key(KeyCode::Enter);
+        assert!(last_log(&app).contains("needs a name"));
+        assert!(!app.take_presets_changed());
+        assert_eq!(app.presets.items.len(), 5);
+    }
+
+    #[test]
+    fn deleting_a_preset_needs_one_selected() {
+        let mut app = ready_app();
+        app.handle_key(KeyCode::Char('d'));
+        assert_eq!(app.presets.items.len(), 4);
+        assert!(app.take_presets_changed());
+        assert!(last_log(&app).contains("Deleted preset iTunes Lossless"));
+
+        app.handle_key(KeyCode::Char('d'));
+        assert_eq!(app.presets.items.len(), 4);
+        assert!(last_log(&app).contains("No preset is selected"));
+        assert!(!app.take_presets_changed());
+    }
+
+    #[test]
+    fn text_fields_are_edited_in_place() {
+        let mut app = ready_app();
+        app.focus = Focus::Suffix;
+        app.handle_key(KeyCode::Char('e'));
+        assert_eq!(app.mode, Mode::Editing("_00".to_string()));
+
+        app.handle_key(KeyCode::Backspace);
+        app.handle_key(KeyCode::Backspace);
+        app.handle_key(KeyCode::Char('1'));
+        app.handle_key(KeyCode::Char('2'));
+        // Keys that would normally act, like q, are just letters while typing.
+        app.handle_key(KeyCode::Char('q'));
+        assert!(!app.should_quit);
+        app.handle_key(KeyCode::Enter);
+
+        assert_eq!(app.mode, Mode::Normal);
+        assert_eq!(app.strategy.serial_suffix, "_12q");
+    }
+
+    #[test]
+    fn editing_can_be_cancelled() {
+        let mut app = ready_app();
+        app.focus = Focus::Suffix;
+        app.handle_key(KeyCode::Char('e'));
+        app.handle_key(KeyCode::Char('9'));
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.strategy.serial_suffix, "_00");
+        assert_eq!(app.mode, Mode::Normal);
+    }
+
+    #[test]
+    fn editing_only_starts_on_a_text_control() {
+        let mut app = ready_app();
+        app.handle_key(KeyCode::Char('e'));
+        assert_eq!(app.mode, Mode::Normal);
+        assert!(last_log(&app).contains("Tab to the suffix or folder"));
+    }
+
+    #[test]
+    fn run_waits_for_measuring_and_for_something_to_run() {
+        let mut app = app_with(vec![album(vec![row("1", None)])]);
+        app.handle_key(KeyCode::Enter);
+        assert!(last_log(&app).contains("not finished"));
+        assert!(app.take_run_spec().is_none());
+
+        let mut empty = app_with(Vec::new());
+        empty.handle_key(KeyCode::Enter);
+        assert!(last_log(&empty).contains("Nothing to run"));
+    }
+
+    #[test]
+    fn run_builds_a_plan_for_every_song() {
+        let mut app = ready_app();
+        app.handle_key(KeyCode::Enter);
+
+        assert!(app.running);
+        assert_eq!(app.groups[0].run, RunState::Queued);
+        let spec = app.take_run_spec().unwrap();
+        assert_eq!(spec.items.len(), 1);
+        let plans = &spec.items[0].plans;
+        assert_eq!(plans.len(), 2);
+        assert_eq!(plans[0].file_name, "01 - The Rain Song.m4a");
+        assert_eq!(plans[1].file_name, "02 - No Quarter.m4a");
+        // The same gains the table shows: -22 minus the measured loudness.
+        assert!((plans[0].gain_db - -1.34).abs() < 1e-9);
+        assert!((plans[1].gain_db - -2.95).abs() < 1e-9);
+        assert_eq!(
+            spec.strategy,
+            Strategy::Serialize {
+                suffix: "_00".to_string()
+            }
+        );
+        assert_eq!(spec.items[0].directory, PathBuf::from("music/album"));
+        assert!(
+            app.take_run_spec().is_none(),
+            "a spec is handed over only once"
+        );
+    }
+
+    #[test]
+    fn run_uses_the_output_format_on_screen() {
+        let mut app = ready_app();
+        app.output.codec = Codec::Flac;
+        app.handle_key(KeyCode::Enter);
+        let spec = app.take_run_spec().unwrap();
+        assert_eq!(spec.format.codec, Codec::Flac);
+        assert_eq!(spec.items[0].plans[0].file_name, "01 - The Rain Song.flac");
+    }
+
+    #[test]
+    fn a_second_run_is_refused_while_one_is_going() {
+        let mut app = ready_app();
+        app.handle_key(KeyCode::Enter);
+        let _ = app.take_run_spec();
+        app.handle_key(KeyCode::Enter);
+        assert!(last_log(&app).contains("already in progress"));
+        assert!(app.take_run_spec().is_none());
+    }
+
+    #[test]
+    fn replace_asks_first_and_only_a_yes_starts_the_run() {
+        let mut app = ready_app();
+        app.strategy.kind = StrategyKind::Replace;
+
+        app.handle_key(KeyCode::Enter);
+        assert_eq!(app.mode, Mode::ConfirmRun);
+        assert!(!app.running);
+        assert!(app.take_run_spec().is_none());
+
+        app.handle_key(KeyCode::Char('n'));
+        assert_eq!(app.mode, Mode::Normal);
+        assert!(last_log(&app).contains("cancelled"));
+        assert!(app.take_run_spec().is_none());
+
+        app.handle_key(KeyCode::Enter);
+        app.handle_key(KeyCode::Char('y'));
+        assert_eq!(app.mode, Mode::Normal);
+        assert!(app.running);
+        assert!(app.take_run_spec().is_some());
+    }
+
+    #[test]
+    fn a_strategy_that_cannot_work_stops_the_run_with_a_reason() {
+        let mut app = ready_app();
+        app.strategy.kind = StrategyKind::SaveTo;
+        app.handle_key(KeyCode::Enter);
+        assert!(!app.running);
+        assert!(last_log(&app).contains("choose a folder"));
+
+        app.strategy.kind = StrategyKind::Serialize;
+        app.strategy.serial_suffix = "_new".to_string();
+        app.handle_key(KeyCode::Enter);
+        assert!(last_log(&app).contains("must end in digits"));
+        assert!(app.take_run_spec().is_none());
+    }
+
+    #[test]
+    fn failed_files_are_left_out_of_a_run() {
+        let mut app = ready_app();
+        app.groups[0].status = Status::Failed("gone".to_string());
+        app.handle_key(KeyCode::Enter);
+        assert!(last_log(&app).contains("Nothing to run"));
+    }
+
+    #[test]
+    fn run_events_update_the_rows_and_the_log() {
+        let mut app = ready_app();
+        app.handle_key(KeyCode::Enter);
+        let _ = app.take_run_spec();
+
+        app.apply_run_event(RunEvent::Encoding {
+            group: 0,
+            index: 0,
+            total: 2,
+        });
+        assert_eq!(app.groups[0].run, RunState::Encoding { index: 0, total: 2 });
+
+        app.apply_run_event(RunEvent::Saved {
+            group: 0,
+            index: 0,
+            path: PathBuf::from("out/01 - The Rain Song.m4a"),
+        });
+        assert!(app.groups[0].tracks[0].saved);
+        assert!(!app.groups[0].tracks[1].saved);
+        assert_eq!(last_log(&app), "Saved 01 - The Rain Song.m4a");
+
+        app.apply_run_event(RunEvent::Finished { group: 0 });
+        assert_eq!(app.groups[0].run, RunState::Saved);
+
+        app.apply_run_event(RunEvent::AllDone);
+        assert!(!app.running);
+        assert_eq!(last_log(&app), "Run complete: 1 file(s) written, 0 failed");
+    }
+
+    #[test]
+    fn a_failed_write_is_shown_and_counted() {
+        let mut app = ready_app();
+        app.handle_key(KeyCode::Enter);
+        let _ = app.take_run_spec();
+        app.apply_run_event(RunEvent::Failed {
+            group: 0,
+            message: "FFmpeg failed".to_string(),
+        });
+        assert_eq!(
+            app.groups[0].run,
+            RunState::Failed("FFmpeg failed".to_string())
+        );
+        app.apply_run_event(RunEvent::AllDone);
+        assert!(last_log(&app).contains("0 file(s) written, 1 failed"));
+    }
+
+    #[test]
+    fn a_new_run_clears_the_saved_marks() {
+        let mut app = ready_app();
+        app.groups[0].tracks[0].saved = true;
+        app.groups[0].run = RunState::Saved;
+        app.handle_key(KeyCode::Enter);
+        assert!(!app.groups[0].tracks[0].saved);
+        assert_eq!(app.groups[0].run, RunState::Queued);
     }
 
     #[test]

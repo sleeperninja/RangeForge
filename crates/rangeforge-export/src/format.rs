@@ -13,6 +13,26 @@ pub enum Codec {
 }
 
 impl Codec {
+    /// Every codec, in the order a picker shows them.
+    pub const ALL: [Self; 4] = [Self::Alac, Self::Flac, Self::Wav, Self::Aac];
+
+    /// The short name used on screen and in saved settings, such as `alac`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Alac => "alac",
+            Self::Flac => "flac",
+            Self::Wav => "wav",
+            Self::Aac => "aac",
+        }
+    }
+
+    /// The codec with this short name, ignoring case.
+    pub fn from_name(text: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|codec| codec.name().eq_ignore_ascii_case(text.trim()))
+    }
+
     pub fn extension(self) -> &'static str {
         match self {
             Self::Alac | Self::Aac => "m4a",
@@ -43,6 +63,36 @@ pub enum BitDepth {
     Source,
     Sixteen,
     TwentyFour,
+}
+
+impl BitDepth {
+    /// Every choice, in the order a picker shows them.
+    pub const ALL: [Self; 3] = [Self::Source, Self::Sixteen, Self::TwentyFour];
+
+    /// The name used in saved settings and on the command line: `source`, `16` or `24`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Source => "source",
+            Self::Sixteen => "16",
+            Self::TwentyFour => "24",
+        }
+    }
+
+    /// The name shown on screen.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Source => "source",
+            Self::Sixteen => "16-bit",
+            Self::TwentyFour => "24-bit",
+        }
+    }
+
+    /// The choice with this saved name, ignoring case.
+    pub fn from_name(text: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|depth| depth.name().eq_ignore_ascii_case(text.trim()))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,6 +184,20 @@ mod tests {
         assert_eq!(Codec::Flac.extension(), "flac");
         assert_eq!(Codec::Wav.extension(), "wav");
         assert_eq!(Codec::Alac.muxer(), "ipod");
+    }
+
+    #[test]
+    fn names_round_trip() {
+        for codec in Codec::ALL {
+            assert_eq!(Codec::from_name(codec.name()), Some(codec));
+        }
+        assert_eq!(Codec::from_name("  ALAC "), Some(Codec::Alac));
+        assert_eq!(Codec::from_name("mp3"), None);
+        for depth in BitDepth::ALL {
+            assert_eq!(BitDepth::from_name(depth.name()), Some(depth));
+        }
+        assert_eq!(BitDepth::from_name("32"), None);
+        assert_eq!(BitDepth::TwentyFour.label(), "24-bit");
     }
 
     #[test]

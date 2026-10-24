@@ -40,7 +40,7 @@ pub struct GainPlan {
     pub resulting_peak_dbtp: f64,
 }
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Error, PartialEq, Eq)]
 pub enum PlanError {
     #[error("the measurement is not usable (silent audio or a non-finite value)")]
     NotMeasurable,

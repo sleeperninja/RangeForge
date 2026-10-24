@@ -39,6 +39,29 @@ fn default_cache_dir() -> Option<PathBuf> {
     ProjectDirs::from("", "", "RangeForge").map(|dirs| dirs.cache_dir().join("analysis"))
 }
 
+/// Options that decide where saved settings, such as presets, are kept.
+#[derive(Debug, Args)]
+pub struct ConfigOptions {
+    /// Keep saved settings here instead of in the standard config folder
+    #[arg(long)]
+    pub config_dir: Option<PathBuf>,
+}
+
+impl ConfigOptions {
+    /// Where the presets file lives, or `None` if no folder can be found.
+    pub fn presets_path(&self) -> Option<PathBuf> {
+        self.config_dir
+            .clone()
+            .or_else(default_config_dir)
+            .map(|dir| dir.join("presets.json"))
+    }
+}
+
+/// The per-user config folder for this app, such as `%APPDATA%\RangeForge\config` on Windows.
+fn default_config_dir() -> Option<PathBuf> {
+    ProjectDirs::from("", "", "RangeForge").map(|dirs| dirs.config_dir().to_path_buf())
+}
+
 /// Reads and parses a CUE sheet.
 pub fn read_sheet(path: &Path) -> Result<CueSheet> {
     let bytes = std::fs::read(path).with_context(|| format!("reading {}", path.display()))?;

@@ -4,67 +4,18 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
-use clap::{Args, ValueEnum};
-use rangeforge_core::planner::{GainPlan, Measurement, PlanError, plan_gain};
+use clap::Args;
+use rangeforge_audio::cache::Cache;
 use rangeforge_export::ffmpeg::Ffmpeg;
-use rangeforge_export::format::{BitDepth, Codec, OutputFormat};
-use rangeforge_export::naming::{converted_file_name, track_file_name};
-use rangeforge_export::pipeline::{Options, Progress, TrackPlan, export_file, preview};
+use rangeforge_export::format::OutputFormat;
+use rangeforge_export::pipeline::{Options, Progress, export_file, preview};
 use rangeforge_export::strategy::{Resolved, Strategy};
-use rangeforge_export::tags::Tags;
 
+use crate::output::OutputArgs;
+use crate::plan::{Planned, plan_tracks, track_plans};
 use crate::support::{CacheOptions, measure_split, measure_whole};
 use crate::ui::load::{Job, load};
 use crate::ui::model::{Group, Settings, Status};
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum CodecArg {
-    Alac,
-    Flac,
-    Wav,
-    Aac,
-}
-
-impl From<CodecArg> for Codec {
-    fn from(arg: CodecArg) -> Self {
-        match arg {
-            CodecArg::Alac => Self::Alac,
-            CodecArg::Flac => Self::Flac,
-            CodecArg::Wav => Self::Wav,
-            CodecArg::Aac => Self::Aac,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum BitDepthArg {
-    /// Match the source file
-    Source,
-    #[value(name = "16")]
-    Sixteen,
-    #[value(name = "24")]
-    TwentyFour,
-}
-
-impl From<BitDepthArg> for BitDepth {
-    fn from(arg: BitDepthArg) -> Self {
-        match arg {
-            BitDepthArg::Source => Self::Source,
-            BitDepthArg::Sixteen => Self::Sixteen,
-            BitDepthArg::TwentyFour => Self::TwentyFour,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum StrategyArg {
-    /// New files get a serial suffix such as _00; nothing existing is touched
-    Serialize,
-    /// An existing file at the same name is renamed with the suffix _old
-    RenameOld,
-    /// A file at exactly the same path is overwritten (needs --yes)
-    Replace,
-}
 
 #[derive(Debug, Args)]
 pub struct RunOptions {
@@ -80,21 +31,8 @@ pub struct RunOptions {
     /// Do not cap the gain to keep the true peak under the ceiling
     #[arg(long)]
     no_peak_protection: bool,
-    /// The format to write
-    #[arg(long, value_enum, default_value = "alac")]
-    codec: CodecArg,
-    /// How precisely to store each sample
-    #[arg(long, value_enum, default_value = "source")]
-    bit_depth: BitDepthArg,
-    /// What to do about files that already exist
-    #[arg(long, value_enum, default_value = "serialize", conflicts_with = "out")]
-    strategy: StrategyArg,
-    /// Suffix for --strategy serialize (default _00) or rename-old (default _old)
-    #[arg(long, conflicts_with = "out")]
-    suffix: Option<String>,
-    /// Write into this folder instead of next to the sources
-    #[arg(long)]
-    out: Option<PathBuf>,
+    #[command(flatten)]
+    output: OutputArgs,
     /// Show what would be written, with every gain and file name, and write nothing
     #[arg(long)]
     dry_run: bool,
@@ -103,38 +41,6 @@ pub struct RunOptions {
     yes: bool,
     #[command(flatten)]
     cache: CacheOptions,
-}
-
-impl RunOptions {
-    fn strategy(&self) -> Strategy {
-        if let Some(directory) = &self.out {
-            return Strategy::SaveTo {
-                directory: directory.clone(),
-            };
-        }
-        match self.strategy {
-            StrategyArg::Serialize => Strategy::Serialize {
-                suffix: self
-                    .suffix
-                    .clone()
-                    .unwrap_or_else(|| Strategy::DEFAULT_SERIAL.to_string()),
-            },
-            StrategyArg::RenameOld => Strategy::RenameOld {
-                suffix: self
-                    .suffix
-                    .clone()
-                    .unwrap_or_else(|| Strategy::DEFAULT_OLD.to_string()),
-            },
-            StrategyArg::Replace => Strategy::Replace,
-        }
-    }
-}
-
-/// One track with its measurement and the gain chosen for it.
-struct Planned {
-    label: String,
-    measurement: Measurement,
-    gain: Result<GainPlan, PlanError>,
 }
 
 pub fn run(options: &RunOptions) -> Result<()> {
@@ -151,7 +57,7 @@ pub fn run(options: &RunOptions) -> Result<()> {
         bail!("nothing to do: no audio files or CUE sheets were found");
     }
 
-    let strategy = options.strategy();
+    let strategy = options.output.strategy().map_err(anyhow::Error::msg)?;
     if matches!(strategy, Strategy::Replace) && !options.dry_run && !options.yes {
         bail!("--strategy replace overwrites files. Add --yes to confirm, or --dry-run to preview");
     }
@@ -162,7 +68,7 @@ pub fn run(options: &RunOptions) -> Result<()> {
     };
 
     let settings = Settings::new(options.target, !options.no_peak_protection, options.ceiling);
-    let format = OutputFormat::new(options.codec.into(), options.bit_depth.into());
+    let format = options.output.output_settings().format();
     let cache = options.cache.open();
 
     let started = Instant::now();
@@ -207,13 +113,17 @@ fn run_job(
     settings: Settings,
     format: OutputFormat,
     strategy: &Strategy,
-    cache: Option<&rangeforge_audio::cache::Cache>,
+    cache: Option<&Cache>,
     ffmpeg: Option<&Ffmpeg>,
 ) -> Result<usize> {
     if let Status::Failed(message) = &group.status {
         bail!("{message}");
     }
-    let planned = measure_and_plan(job, settings, cache)?;
+    let (measured, _) = match &job.cue_file {
+        Some(file) => measure_split(&job.audio, &file.segments(), cache)?,
+        None => measure_whole(&job.audio, cache)?,
+    };
+    let planned = plan_tracks(job, &measured.tracks, settings.target());
     let (plans, source_dir) = track_plans(job, &planned, format);
     let write_options = Options {
         format,
@@ -251,79 +161,6 @@ fn run_job(
     )
     .with_context(|| format!("writing {}", job.audio.display()))?;
     Ok(written.len())
-}
-
-/// Measures the file (using the cache) and works out each track's gain.
-fn measure_and_plan(
-    job: &Job,
-    settings: Settings,
-    cache: Option<&rangeforge_audio::cache::Cache>,
-) -> Result<Vec<Planned>> {
-    let (measured, _) = match &job.cue_file {
-        Some(file) => measure_split(&job.audio, &file.segments(), cache)?,
-        None => measure_whole(&job.audio, cache)?,
-    };
-    let labels: Vec<String> = match &job.cue_file {
-        Some(file) => file
-            .tracks
-            .iter()
-            .map(|t| {
-                format!(
-                    "{} - {}",
-                    t.number,
-                    t.title.as_deref().unwrap_or("(untitled)")
-                )
-            })
-            .collect(),
-        None => vec![file_stem(&job.audio)],
-    };
-    Ok(labels
-        .into_iter()
-        .zip(measured.tracks)
-        .map(|(label, measurement)| Planned {
-            label,
-            measurement,
-            gain: plan_gain(measurement, settings.target()),
-        })
-        .collect())
-}
-
-/// What to write for each track, and the folder the sources live in.
-fn track_plans(job: &Job, planned: &[Planned], format: OutputFormat) -> (Vec<TrackPlan>, PathBuf) {
-    let extension = format.codec.extension();
-    let source_dir = job
-        .audio
-        .parent()
-        .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
-    // A track that cannot be measured (silence) is passed through untouched.
-    let gain_of = |planned: &Planned| planned.gain.as_ref().map_or(0.0, |plan| plan.gain_db);
-
-    let plans = match (&job.cue_file, &job.sheet) {
-        (Some(file), Some(sheet)) => file
-            .tracks
-            .iter()
-            .zip(planned)
-            .map(|(track, planned)| TrackPlan {
-                gain_db: gain_of(planned),
-                file_name: track_file_name(track.number, track.title.as_deref(), extension),
-                tags: Tags::for_cue_track(sheet, track, file.tracks.len()),
-            })
-            .collect(),
-        _ => planned
-            .iter()
-            .map(|planned| TrackPlan {
-                gain_db: gain_of(planned),
-                file_name: converted_file_name(&file_stem(&job.audio), extension),
-                tags: Tags::default(),
-            })
-            .collect(),
-    };
-    (plans, source_dir)
-}
-
-fn file_stem(path: &Path) -> String {
-    path.file_stem()
-        .map_or_else(String::new, |stem| stem.to_string_lossy().into_owned())
 }
 
 /// One line of the plan: the song, its loudness, its gain, and where it goes.

@@ -74,7 +74,17 @@ cargo run --release -p rangeforge-cli -- ui "testdata\<album folder>"
 cargo run --release -p rangeforge-cli -- ui --snapshot --target -18 --width 130 --height 25 "testdata\<album folder>"
 ```
 
-Use a real terminal such as Windows Terminal for the interactive version. The keys are listed in [02-ui.md](02-ui.md). Starting values can be set with `--target`, `--ceiling` and `--no-peak-protection`, and `--show-logs` opens the log panel. It uses the analysis cache below, so an album you have measured before appears instantly.
+Use a real terminal such as Windows Terminal for the interactive version. The keys are listed in [02-ui.md](02-ui.md). Starting values can be set with `--target`, `--ceiling`, `--no-peak-protection`, `--codec`, `--bit-depth`, `--strategy`, `--suffix` and `--out` (the same options as `run`), and `--show-logs` opens the log panel. It uses the analysis cache below, so an album you have measured before appears instantly.
+
+Pressing Run needs FFmpeg (on the path, or named in `RANGEFORGE_FFMPEG`). If it cannot be found, the screen says so and nothing is written.
+
+Presets live in `presets.json` in your settings folder (`%APPDATA%\RangeForge\config` on Windows). Use `--config-dir <folder>` to keep them somewhere else, which is handy for experiments. A file that cannot be read is set aside as `presets.json.bad` and the built-in presets are used, so a damaged file never stops the app and is never silently overwritten.
+
+To see a whole run without a terminal, write to a scratch folder and print the finished screen:
+
+```powershell
+cargo run --release -p rangeforge-cli -- ui --snapshot --run --show-logs --out "C:\temp\out" --config-dir "C:\temp\cfg" "testdata\<album folder>"
+```
 
 ## The analysis cache
 

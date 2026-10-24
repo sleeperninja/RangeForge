@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use rangeforge_core::cue::{CueFile, CueSheet};
 
-use super::model::{Group, Kind, Status, TrackRow};
+use super::model::{Group, Kind, RunState, Status, TrackRow};
 use crate::support::read_sheet;
 
 const AUDIO_EXTENSIONS: [&str; 7] = ["flac", "wav", "m4a", "mp3", "ogg", "aac", "aiff"];
@@ -160,6 +160,7 @@ fn add_cue(cue_path: &Path, loaded: &mut Loaded) {
                     track.title.as_deref().unwrap_or("(untitled)")
                 ),
                 measurement: None,
+                saved: false,
             })
             .collect();
         let resolved = resolve_audio(dir, &file.name);
@@ -169,6 +170,7 @@ fn add_cue(cue_path: &Path, loaded: &mut Loaded) {
             source_extension: resolved.as_deref().map(extension_of).unwrap_or_default(),
             tracks,
             status: Status::Pending,
+            run: RunState::Idle,
         };
 
         let index = loaded.groups.len();
@@ -212,8 +214,10 @@ fn add_single(path: &Path, loaded: &mut Loaded) {
         tracks: vec![TrackRow {
             label: stem,
             measurement: None,
+            saved: false,
         }],
         status: Status::Pending,
+        run: RunState::Idle,
     });
     loaded.log.push(format!("Added {name}"));
 }

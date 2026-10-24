@@ -1363,6 +1363,8 @@ dependencies = [
  "rangeforge-core",
  "rangeforge-export",
  "ratatui",
+ "serde",
+ "serde_json",
  "tempfile",
 ]
 
