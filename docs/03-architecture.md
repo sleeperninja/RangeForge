@@ -36,6 +36,27 @@ How each kind of file is handled:
 Temporary copies are deleted when the file finishes or fails.
 - All of this code sits in one small, separate piece so it is easy to check.
 
+## Writing files safely
+
+When you run, the app never changes an original until every new file has been written successfully.
+
+1. Each song is encoded to a hidden temporary file next to where it will end up.
+2. Only after the whole source has been read and every song has encoded without error are the temporary files moved into place, following your File Strategy.
+3. If anything fails along the way, the temporary files are deleted and your originals are exactly as they were.
+
+The four File Strategy choices, and what each can and cannot do:
+
+| Choice | What happens | What it never does |
+| --- | --- | --- |
+| Serialize new filename | The new file always gets a serial suffix such as `_00`, counting up if that name is taken. | Touch an existing file. |
+| Rename old file | An existing file at the new file's path is renamed with the suffix (such as `_old`), and the new file takes its name. | Overwrite an earlier `_old` file; it stops with an error instead. |
+| Replace original | A file at exactly the new file's path is overwritten. | Delete a source with a different name, such as the FLAC when making ALAC. |
+| Save to location | Files go into the folder you choose. If a name is taken there, the new file gets a serial suffix. | Touch the source folder. |
+
+**Volume and quality.** Volume change is a single gain per song, applied to the sound in memory before it is encoded, so the dynamics are untouched. A song exported at 0 dB is sample for sample identical to its source. When a gain forces 16-bit audio between its steps, a tiny amount of triangular dither is used instead of plain rounding, which trades a faint distortion for a steady noise about 96 dB down. Audio kept at 0 dB is never dithered, so it stays exact. Audio written at 24 bits needs no dither.
+
+**Tags.** CUE albums get title, artist, album, album artist, track number and total, genre and date from the CUE sheet. A single file keeps the tags it already has, with anything we set on top.
+
 ## The parts
 
 | Part | What it does | Built with |
@@ -46,8 +67,8 @@ Temporary copies are deleted when the file finishes or fails.
 | Meter | Measures loudness, peak and range to the broadcast standard (EBU R128) | `ebur128` |
 | Planner | Works out the volume change per song, with peak protection | our own code |
 | Cache | Remembers measurements between sessions, per way of splitting a file | `serde_json`, `blake3`; one small JSON file per audio file in the app's cache folder |
-| Encoder | Writes ALAC, FLAC, WAV and AAC | FFmpeg, fed the sound we already decoded |
-| Tagger | Reads and writes tags | `lofty` |
+| Encoder | Writes ALAC, FLAC, WAV and AAC, one FFmpeg process per song, fed the already-decoded sound through a pipe | FFmpeg |
+| Tagger | Writes tags as the file is encoded. Reading and editing tags in the app comes later. | FFmpeg now; `lofty` later |
 | Lookups | Last.fm and Discogs queries, plus the Billboard Hot 100 history: a ~40 MB JSON file kept as a local copy and re-downloaded only when a newer version exists. Radio tags are then a local lookup. | `reqwest` |
 | Settings | Presets and keys. Keys are stored encrypted. | JSON file plus the system keychain |
 | Readiness check | Answers "do the settings all agree, and has all the asked-for work finished?" The screen uses it to allow Auto Mode, and the app uses it to start an automatic run. | our own code, heavily tested |
@@ -60,6 +81,7 @@ FFmpeg stays for **writing** files because its ALAC and AAC encoders are mature.
 crates/
   rangeforge-core/   the pure logic: CUE, planning, (later) readiness, cache
   rangeforge-audio/  reads audio files once and measures loudness per track
+  rangeforge-export/ writes the finished files: gain, encode through FFmpeg, place by File Strategy
   rangeforge-cli/    the command line front end
   (later) rangeforge-app/   the desktop window, using the same logic
 ```
@@ -69,7 +91,7 @@ crates/
 
 ## The front ends
 
-1. **Command line:** `analyze` prints the list as a table. `ui` is an interactive terminal version of the mockup. `report --html` makes a shareable page. `--json` on anything gives machine-readable output.
+1. **Command line:** `measure` prints loudness per song. `ui` is an interactive terminal version of the mockup. `run` writes the finished files, with `--dry-run` to preview. Planned: `report --html` for a shareable page, and `--json` on anything for machine-readable output.
 2. **Desktop app (Tauri 2):** the mockup layout in a web view, using the same core.
 
 ## How we check it is right

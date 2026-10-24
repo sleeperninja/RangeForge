@@ -19,6 +19,8 @@ pub struct Job {
     pub audio: PathBuf,
     /// The CUE layout, for an album. `None` measures the whole file as one song.
     pub cue_file: Option<CueFile>,
+    /// The whole CUE sheet, which holds the album-level details used for tags.
+    pub sheet: Option<CueSheet>,
 }
 
 /// What loading produced.
@@ -179,6 +181,7 @@ fn add_cue(cue_path: &Path, loaded: &mut Loaded) {
                 group: index,
                 audio,
                 cue_file: Some(file.clone()),
+                sheet: Some(sheet.clone()),
             });
         } else {
             let message = format!("audio file not found: {}", file.name);
@@ -200,6 +203,7 @@ fn add_single(path: &Path, loaded: &mut Loaded) {
         group: loaded.groups.len(),
         audio: path.to_path_buf(),
         cue_file: None,
+        sheet: None,
     });
     loaded.groups.push(Group {
         name: name.clone(),

@@ -3,6 +3,7 @@
 //! This is a thin layer. Parsing, planning and measuring all live in the library crates;
 //! this file only reads input and prints results.
 
+mod run;
 mod support;
 mod ui;
 
@@ -74,10 +75,13 @@ enum Command {
         #[command(flatten)]
         cache: CacheOptions,
     },
+    /// Balance volume, split CUE albums, tag, and write the finished files
+    Run(run::RunOptions),
 }
 
 fn main() -> Result<()> {
     match Cli::parse().command {
+        Command::Run(options) => run::run(&options),
         Command::Cue { path } => show_cue(&path),
         Command::Measure { audio, cue, cache } => {
             show_measurements(&audio, cue.as_deref(), cache.open().as_ref())

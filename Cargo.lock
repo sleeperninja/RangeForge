@@ -1361,6 +1361,7 @@ dependencies = [
  "directories",
  "rangeforge-audio",
  "rangeforge-core",
+ "rangeforge-export",
  "ratatui",
  "tempfile",
 ]
@@ -1370,6 +1371,16 @@ name = "rangeforge-core"
 version = "0.1.0"
 dependencies = [
  "proptest",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "rangeforge-export"
+version = "0.1.0"
+dependencies = [
+ "rangeforge-audio",
+ "rangeforge-core",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 

@@ -36,6 +36,26 @@ They expect the "Houses of the Holy" rip (FLAC + CUE + four separate ALAC tracks
 cargo run --release -p rangeforge-cli -- measure "testdata\<album folder>\Houses of the Holy.flac" --cue "testdata\<album folder>\Houses of the Holy.cue"
 ```
 
+## Writing files: `rangeforge run`
+
+```powershell
+# preview first: every song's gain and where it would be written, nothing written
+cargo run --release -p rangeforge-cli -- run "testdata\<album folder>" --out "C:\temp\album-out" --dry-run
+
+# then write it (FFmpeg must be installed, or RANGEFORGE_FFMPEG must point at it)
+cargo run --release -p rangeforge-cli -- run "testdata\<album folder>" --out "C:\temp\album-out"
+```
+
+Useful options: `--target` and `--ceiling` set the volume, `--codec alac|flac|wav|aac`, `--bit-depth source|16|24`, `--strategy serialize|rename-old|replace` with `--suffix`, `--out <folder>` to write elsewhere, and `--yes` to confirm a strategy that overwrites. With no `--out` and the default strategy, files are written next to the sources with a `_00` suffix, and nothing existing is touched.
+
+**FFmpeg for the tests.** The export tests run the real FFmpeg on generated audio. They skip themselves on your machine if FFmpeg is missing, and fail on the build server (where `CI` is set) so they cannot be skipped there by accident. CI installs FFmpeg for each platform.
+
+```powershell
+$env:RANGEFORGE_FFMPEG = 'C:\path\to\ffmpeg.exe'   # only if it is not on your path
+cargo test -p rangeforge-export                    # generated-audio tests
+cargo test -p rangeforge-export --release --test real_album -- --ignored   # your real album
+```
+
 ## The interactive view
 
 ```powershell

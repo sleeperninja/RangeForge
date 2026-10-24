@@ -5,7 +5,7 @@
 //! be tested without a terminal.
 
 mod engine;
-mod load;
+pub mod load;
 pub mod model;
 mod view;
 

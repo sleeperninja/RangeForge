@@ -31,6 +31,16 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      # The export tests run the real FFmpeg, and fail (instead of skipping) if it is missing.
+      - name: Install FFmpeg
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Windows) choco install ffmpeg -y --no-progress ;;
+            macOS) brew install ffmpeg ;;
+            Linux) sudo apt-get update && sudo apt-get install -y ffmpeg ;;
+          esac
+          ffmpeg -version | head -n 1
       - name: Format
         run: cargo fmt --all -- --check
       - name: Lint
