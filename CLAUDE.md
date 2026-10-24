@@ -36,6 +36,8 @@ It replaces about seven tools (MediaHuman, an FFmpeg GUI, Adobe Audition, a Powe
 - **Before suggesting something, check [docs/04-decisions.md](docs/04-decisions.md).** If a decision is marked *Rejected*, its reason is listed. Raise it again only with a new reason.
 - **Do not memory-map files on network shares.** Local files only. See decision D-02.
 - **Never put API keys or secrets in the repo or docs.** They live in the app's Settings (stored encrypted) and in a git-ignored `.env`.
+- **Never change the waveform except by one gain per song,** and never past the true-peak ceiling. No compression or limiting. See decision D-12.
+- **Tests that write or delete files use generated audio or copies in temporary folders.** `testdata/` is read-only, and tests never touch the real Recycle Bin.
 - **Update the docs in the same change as the code.** There is no separate session-close ritual.
 - **Keep one source of truth.** If two documents disagree, fix one of them. Do not add a third.
 

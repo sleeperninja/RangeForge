@@ -56,6 +56,14 @@ cargo test -p rangeforge-export                    # generated-audio tests
 cargo test -p rangeforge-export --release --test real_album -- --ignored   # your real album
 ```
 
+## Timing the decoder
+
+To see how fast a file decodes with nothing else running (no meter, no encoder), use the example program. Put the files on a local disk first, or the network will be what you are timing:
+
+```powershell
+cargo run --release -p rangeforge-audio --example decode_speed -- C:\temp\album.flac C:\temp\album.m4a
+```
+
 ## The interactive view
 
 ```powershell
