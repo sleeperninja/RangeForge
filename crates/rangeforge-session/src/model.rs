@@ -13,7 +13,8 @@ use rangeforge_export::pipeline::TrackPlan;
 use rangeforge_export::strategy::Strategy;
 
 use crate::controls::{
-    Focus, Mode, OutputSettings, PresetList, Saved, StrategyKind, StrategySettings, apply_preset,
+    ConflictKind, Focus, Mode, OutputSettings, PresetList, Saved, StrategySettings, WhereKind,
+    apply_preset,
 };
 use crate::load::{Job, load_from};
 use crate::plan::{plan_tracks, track_plans};
@@ -143,6 +144,20 @@ pub struct TrackRow {
     pub measurement: Option<Measurement>,
     /// Its output file has been written.
     pub saved: bool,
+    /// Part of the next run. Songs the user switches off are left out.
+    pub included: bool,
+}
+
+impl TrackRow {
+    /// A song that is waiting to be measured and will be part of the run.
+    pub fn new(label: String) -> Self {
+        Self {
+            label,
+            measurement: None,
+            saved: false,
+            included: true,
+        }
+    }
 }
 
 /// An album, or a single file, with its songs.
@@ -193,6 +208,11 @@ pub enum RunEvent {
     Saved {
         group: usize,
         index: usize,
+        path: PathBuf,
+    },
+    /// The original was deleted, as the File Strategy asked.
+    RemovedOriginal {
+        group: usize,
         path: PathBuf,
     },
     Finished {
@@ -289,13 +309,14 @@ impl App {
             .count()
     }
 
-    /// Songs that a run would process: everything except files that failed.
+    /// Songs that a run would process: everything switched on, except files that failed.
     pub fn queued(&self) -> usize {
         self.groups
             .iter()
             .filter(|group| !matches!(group.status, Status::Failed(_)))
-            .map(|group| group.tracks.len())
-            .sum()
+            .flat_map(|group| &group.tracks)
+            .filter(|track| track.included)
+            .count()
     }
 
     /// Total table rows.
@@ -410,6 +431,13 @@ impl App {
                 );
                 self.log(format!("Saved {name}"));
             }
+            RunEvent::RemovedOriginal { path, .. } => {
+                let name = path.file_name().map_or_else(
+                    || path.display().to_string(),
+                    |n| n.to_string_lossy().into_owned(),
+                );
+                self.log(format!("Deleted original {name}"));
+            }
             RunEvent::Finished { group } => {
                 if let Some(group) = self.groups.get_mut(group) {
                     group.run = RunState::Saved;
@@ -470,8 +498,14 @@ impl App {
             let Some(measurements) = measurements else {
                 continue;
             };
+            if !group.tracks.iter().any(|track| track.included) {
+                continue;
+            }
             let planned = plan_tracks(job, &measurements, self.settings.target());
-            let (plans, directory) = track_plans(job, &planned, format);
+            let (mut plans, directory) = track_plans(job, &planned, format);
+            for (plan, track) in plans.iter_mut().zip(&group.tracks) {
+                plan.skip = !track.included;
+            }
             items.push(RunItem {
                 group: job.group,
                 job: job.clone(),
@@ -509,7 +543,7 @@ impl App {
     fn request_run(&mut self) {
         if let Some(reason) = self.run_blocker() {
             self.log(reason);
-        } else if self.strategy.kind.needs_confirmation() {
+        } else if self.strategy.needs_confirmation() {
             self.mode = Mode::ConfirmRun;
         } else {
             self.start_run();
@@ -523,7 +557,7 @@ impl App {
             self.log(reason.clone());
             return RunRequest::Refused(reason);
         }
-        if self.strategy.kind.needs_confirmation() && !confirmed {
+        if self.strategy.needs_confirmation() && !confirmed {
             return RunRequest::NeedsConfirmation;
         }
         self.start_run();
@@ -606,13 +640,101 @@ impl App {
         }
     }
 
-    pub fn set_strategy_kind(&mut self, kind: StrategyKind) {
-        self.strategy.kind = kind;
+    pub fn set_where(&mut self, kind: WhereKind) {
+        self.strategy.where_kind = kind;
     }
 
-    /// Sets the text of the selected File Strategy choice (its suffix or folder).
-    pub fn set_strategy_text(&mut self, text: String) {
-        self.strategy.set_text(text);
+    /// Sets the subfolder name or the folder, whichever the chosen place uses.
+    pub fn set_where_text(&mut self, text: String) {
+        self.strategy.set_where_text(text);
+    }
+
+    pub fn set_conflict(&mut self, kind: ConflictKind) {
+        self.strategy.conflict_kind = kind;
+    }
+
+    /// Sets the suffix of the chosen way of handling a clash.
+    pub fn set_conflict_text(&mut self, text: String) {
+        self.strategy.set_conflict_text(text);
+    }
+
+    pub fn set_delete_original(&mut self, on: bool) {
+        self.strategy.delete_original = on;
+    }
+
+    /// Switches one song on or off for the next run.
+    pub fn set_track_included(&mut self, group: usize, track: usize, included: bool) {
+        if let Some(track) = self
+            .groups
+            .get_mut(group)
+            .and_then(|group| group.tracks.get_mut(track))
+        {
+            track.included = included;
+        }
+    }
+
+    /// Switches every song of a group on or off.
+    pub fn set_group_included(&mut self, group: usize, included: bool) {
+        if let Some(group) = self.groups.get_mut(group) {
+            for track in &mut group.tracks {
+                track.included = included;
+            }
+        }
+    }
+
+    /// Removes one group from the list. Not while a run is writing or files are being
+    /// measured, because both refer to groups by position.
+    pub fn remove_group(&mut self, index: usize) -> Result<(), String> {
+        self.check_list_is_still()?;
+        if index >= self.groups.len() {
+            return Ok(());
+        }
+        let name = self.groups.remove(index).name;
+        self.jobs.retain(|job| job.group != index);
+        for job in &mut self.jobs {
+            if job.group > index {
+                job.group -= 1;
+            }
+        }
+        self.scroll = 0;
+        self.log(format!("Removed {name} from the list"));
+        Ok(())
+    }
+
+    /// Removes every group whose files have been written. Returns how many went.
+    pub fn clear_completed(&mut self) -> Result<usize, String> {
+        self.check_list_is_still()?;
+        let done: Vec<usize> = self
+            .groups
+            .iter()
+            .enumerate()
+            .filter(|(_, group)| group.run == RunState::Saved)
+            .map(|(index, _)| index)
+            .collect();
+        for index in done.iter().rev() {
+            self.groups.remove(*index);
+            self.jobs.retain(|job| job.group != *index);
+            for job in &mut self.jobs {
+                if job.group > *index {
+                    job.group -= 1;
+                }
+            }
+        }
+        self.scroll = 0;
+        if !done.is_empty() {
+            self.log(format!("Cleared {} finished item(s)", done.len()));
+        }
+        Ok(done.len())
+    }
+
+    fn check_list_is_still(&self) -> Result<(), String> {
+        if self.running {
+            Err("Wait for the run to finish before changing the list".to_string())
+        } else if self.pending() > 0 {
+            Err("Wait for measuring to finish before changing the list".to_string())
+        } else {
+            Ok(())
+        }
     }
 
     /// Adds files, CUE sheets or folders to the list and returns the measuring jobs for them.
@@ -677,9 +799,13 @@ impl App {
                     apply_preset(&preset, &mut self.settings, &mut self.output);
                 }
             }
-            Focus::Strategy => self.strategy.cycle_kind(steps),
+            Focus::Where => self.strategy.cycle_where(steps),
+            Focus::Conflict => self.strategy.cycle_conflict(steps),
+            Focus::DeleteOriginal => {
+                self.strategy.delete_original = !self.strategy.delete_original;
+            }
             // Typed fields are changed by editing them, not by stepping.
-            Focus::Suffix | Focus::Folder => {}
+            Focus::WhereText | Focus::ConflictText => {}
         }
     }
 
@@ -735,12 +861,17 @@ impl App {
     }
 
     fn begin_edit(&mut self) {
-        if !self.focus.is_text() {
-            self.log("Tab to the suffix or folder first, then press e to edit it");
-        } else if let Some(text) = self.strategy.text() {
-            self.mode = Mode::Editing(text.to_string());
-        } else {
-            self.log("The selected File Strategy has nothing to edit");
+        let text = match self.focus {
+            Focus::WhereText => self.strategy.where_text(),
+            Focus::ConflictText => self.strategy.conflict_text(),
+            _ => {
+                self.log("Tab to the folder or suffix first, then press e to edit it");
+                return;
+            }
+        };
+        match text {
+            Some(text) => self.mode = Mode::Editing(text.to_string()),
+            None => self.log("The selected File Strategy choice has nothing to edit"),
         }
     }
 
@@ -748,7 +879,11 @@ impl App {
         match key {
             Key::Esc => self.mode = Mode::Normal,
             Key::Enter => {
-                self.strategy.set_text(buffer);
+                match self.focus {
+                    Focus::WhereText => self.strategy.set_where_text(buffer),
+                    Focus::ConflictText => self.strategy.set_conflict_text(buffer),
+                    _ => {}
+                }
                 self.mode = Mode::Normal;
             }
             Key::Backspace => {
@@ -805,7 +940,6 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controls::StrategyKind;
     use crate::presets::built_in;
     use rangeforge_core::cue;
     use rangeforge_export::format::{BitDepth, Codec};
@@ -820,9 +954,8 @@ mod tests {
 
     fn row(label: &str, measurement: Option<Measurement>) -> TrackRow {
         TrackRow {
-            label: label.to_string(),
             measurement,
-            saved: false,
+            ..TrackRow::new(label.to_string())
         }
     }
 
@@ -1175,7 +1308,7 @@ mod tests {
     #[test]
     fn text_fields_are_edited_in_place() {
         let mut app = ready_app();
-        app.focus = Focus::Suffix;
+        app.focus = Focus::ConflictText;
         app.handle_key(Key::Char('e'));
         assert_eq!(app.mode, Mode::Editing("_00".to_string()));
 
@@ -1189,17 +1322,17 @@ mod tests {
         app.handle_key(Key::Enter);
 
         assert_eq!(app.mode, Mode::Normal);
-        assert_eq!(app.strategy.serial_suffix, "_12q");
+        assert_eq!(app.strategy.number_suffix, "_12q");
     }
 
     #[test]
     fn editing_can_be_cancelled() {
         let mut app = ready_app();
-        app.focus = Focus::Suffix;
+        app.focus = Focus::ConflictText;
         app.handle_key(Key::Char('e'));
         app.handle_key(Key::Char('9'));
         app.handle_key(Key::Esc);
-        assert_eq!(app.strategy.serial_suffix, "_00");
+        assert_eq!(app.strategy.number_suffix, "_00");
         assert_eq!(app.mode, Mode::Normal);
     }
 
@@ -1208,7 +1341,7 @@ mod tests {
         let mut app = ready_app();
         app.handle_key(Key::Char('e'));
         assert_eq!(app.mode, Mode::Normal);
-        assert!(last_log(&app).contains("Tab to the suffix or folder"));
+        assert!(last_log(&app).contains("Tab to the folder or suffix"));
     }
 
     #[test]
@@ -1239,12 +1372,7 @@ mod tests {
         // The same gains the table shows: -22 minus the measured loudness.
         assert!((plans[0].gain_db - -1.34).abs() < 1e-9);
         assert!((plans[1].gain_db - -2.95).abs() < 1e-9);
-        assert_eq!(
-            spec.strategy,
-            Strategy::Serialize {
-                suffix: "_00".to_string()
-            }
-        );
+        assert_eq!(spec.strategy, Strategy::safe());
         assert_eq!(spec.items[0].directory, PathBuf::from("music/album"));
         assert!(
             app.take_run_spec().is_none(),
@@ -1273,9 +1401,9 @@ mod tests {
     }
 
     #[test]
-    fn replace_asks_first_and_only_a_yes_starts_the_run() {
+    fn overwriting_asks_first_and_only_a_yes_starts_the_run() {
         let mut app = ready_app();
-        app.strategy.kind = StrategyKind::Replace;
+        app.strategy.conflict_kind = ConflictKind::Overwrite;
 
         app.handle_key(Key::Enter);
         assert_eq!(app.mode, Mode::ConfirmRun);
@@ -1297,13 +1425,13 @@ mod tests {
     #[test]
     fn a_strategy_that_cannot_work_stops_the_run_with_a_reason() {
         let mut app = ready_app();
-        app.strategy.kind = StrategyKind::SaveTo;
+        app.strategy.where_kind = WhereKind::Folder;
         app.handle_key(Key::Enter);
         assert!(!app.running);
         assert!(last_log(&app).contains("choose a folder"));
 
-        app.strategy.kind = StrategyKind::Serialize;
-        app.strategy.serial_suffix = "_new".to_string();
+        app.strategy.where_kind = WhereKind::NextToOriginal;
+        app.strategy.number_suffix = "_new".to_string();
         app.handle_key(Key::Enter);
         assert!(last_log(&app).contains("must end in digits"));
         assert!(app.take_run_spec().is_none());
@@ -1395,14 +1523,14 @@ mod tests {
 
         let mut ready = ready_app();
         assert_eq!(ready.run_blocker(), None);
-        ready.strategy.kind = StrategyKind::SaveTo;
+        ready.strategy.where_kind = WhereKind::Folder;
         assert!(
             ready
                 .run_blocker()
                 .unwrap()
                 .starts_with("Cannot run: choose a folder")
         );
-        ready.strategy.kind = StrategyKind::Serialize;
+        ready.strategy.where_kind = WhereKind::NextToOriginal;
         ready.running = true;
         assert_eq!(
             ready.run_blocker().as_deref(),
@@ -1414,7 +1542,7 @@ mod tests {
     #[test]
     fn a_window_asks_for_confirmation_itself() {
         let mut app = ready_app();
-        app.strategy.kind = StrategyKind::Replace;
+        app.set_delete_original(true);
 
         assert_eq!(app.begin_run(false), RunRequest::NeedsConfirmation);
         assert!(!app.running);
@@ -1518,12 +1646,118 @@ mod tests {
     #[test]
     fn strategy_choices_can_be_set_directly() {
         let mut app = ready_app();
-        app.set_strategy_kind(StrategyKind::RenameOld);
-        app.set_strategy_text("_backup".to_string());
+        app.set_conflict(ConflictKind::RenameExisting);
+        app.set_conflict_text("_backup".to_string());
         assert_eq!(app.strategy.old_suffix, "_backup");
-        app.set_strategy_kind(StrategyKind::SaveTo);
-        app.set_strategy_text("D:\\music\\out".to_string());
+        app.set_where(WhereKind::Folder);
+        app.set_where_text("D:\\music\\out".to_string());
         assert_eq!(app.strategy.folder, "D:\\music\\out");
+        app.set_where(WhereKind::Subfolder);
+        app.set_where_text("Balanced".to_string());
+        assert_eq!(app.strategy.subfolder, "Balanced");
+        app.set_delete_original(true);
+        assert!(app.strategy.delete_original);
+    }
+
+    #[test]
+    fn songs_can_be_left_out_of_a_run() {
+        let mut app = ready_app();
+        assert_eq!(app.queued(), 2);
+
+        app.set_track_included(0, 1, false);
+        assert_eq!(app.queued(), 1);
+        app.handle_key(Key::Enter);
+        let spec = app.take_run_spec().unwrap();
+        let skips: Vec<bool> = spec.items[0].plans.iter().map(|p| p.skip).collect();
+        assert_eq!(skips, [false, true]);
+
+        // Out-of-range indexes are ignored.
+        app.set_track_included(5, 0, false);
+        app.set_track_included(0, 9, false);
+    }
+
+    #[test]
+    fn a_group_with_every_song_left_out_is_not_run() {
+        let mut app = ready_app();
+        app.set_group_included(0, false);
+        assert_eq!(app.queued(), 0);
+        assert_eq!(app.run_blocker().as_deref(), Some("Nothing to run"));
+
+        app.set_group_included(0, true);
+        assert_eq!(app.queued(), 2);
+    }
+
+    #[test]
+    fn a_removed_group_takes_its_job_and_renumbers_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = ready_app();
+        for name in ["b.flac", "c.flac"] {
+            let path = dir.path().join(name);
+            std::fs::write(&path, b"").unwrap();
+            app.add_paths(&[path]);
+        }
+        for group in &mut app.groups {
+            group.status = Status::Done(Origin::Decoded);
+        }
+        assert_eq!(app.groups.len(), 3);
+
+        app.remove_group(1).unwrap();
+
+        assert_eq!(app.groups.len(), 2);
+        assert_eq!(app.groups[1].name, "c.flac");
+        let indexes: Vec<usize> = app.jobs.iter().map(|job| job.group).collect();
+        assert_eq!(indexes, [0, 1], "c.flac's job now points at group 1");
+        assert!(app.jobs[1].audio.ends_with("c.flac"));
+        assert!(last_log(&app).contains("Removed b.flac"));
+
+        app.remove_group(9).unwrap();
+        assert_eq!(app.groups.len(), 2, "an unknown index changes nothing");
+    }
+
+    #[test]
+    fn finished_groups_can_be_cleared_and_the_rest_stay() {
+        let mut app = ready_app();
+        let mut second = app.groups[0].clone();
+        second.name = "Second".to_string();
+        second.run = RunState::Idle;
+        app.groups.push(second);
+        let mut job = app.jobs[0].clone();
+        job.group = 1;
+        app.jobs.push(job);
+        app.groups[0].run = RunState::Saved;
+
+        assert_eq!(app.clear_completed().unwrap(), 1);
+
+        assert_eq!(app.groups.len(), 1);
+        assert_eq!(app.groups[0].name, "Second");
+        assert_eq!(app.jobs.len(), 1);
+        assert_eq!(app.jobs[0].group, 0);
+        assert_eq!(app.clear_completed().unwrap(), 0);
+    }
+
+    #[test]
+    fn the_list_is_left_alone_while_busy() {
+        let mut app = ready_app();
+        app.groups[0].run = RunState::Saved;
+
+        app.running = true;
+        assert!(app.remove_group(0).unwrap_err().contains("run"));
+        assert!(app.clear_completed().is_err());
+
+        app.running = false;
+        app.groups[0].status = Status::Pending;
+        assert!(app.remove_group(0).unwrap_err().contains("measuring"));
+        assert_eq!(app.groups.len(), 1);
+    }
+
+    #[test]
+    fn deleting_the_original_is_announced_in_the_log() {
+        let mut app = ready_app();
+        app.apply_run_event(RunEvent::RemovedOriginal {
+            group: 0,
+            path: PathBuf::from("music/album/album.flac"),
+        });
+        assert_eq!(last_log(&app), "Deleted original album.flac");
     }
 
     #[test]

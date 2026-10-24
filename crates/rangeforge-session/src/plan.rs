@@ -79,6 +79,7 @@ pub fn track_plans(
                 gain_db: gain_of(planned),
                 file_name: track_file_name(track.number, track.title.as_deref(), extension),
                 tags: Tags::for_cue_track(sheet, track, file.tracks.len()),
+                skip: false,
             })
             .collect(),
         _ => planned
@@ -87,6 +88,7 @@ pub fn track_plans(
                 gain_db: gain_of(planned),
                 file_name: converted_file_name(&file_stem(&job.audio), extension),
                 tags: Tags::default(),
+                skip: false,
             })
             .collect(),
     };

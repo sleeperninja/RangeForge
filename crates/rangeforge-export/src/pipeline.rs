@@ -29,6 +29,8 @@ pub struct TrackPlan {
     /// The output file's name, before the File Strategy adjusts it.
     pub file_name: String,
     pub tags: Tags,
+    /// Leave this track out: it is cut out of the stream but never encoded or written.
+    pub skip: bool,
 }
 
 /// How to write the files.
@@ -61,6 +63,8 @@ pub enum Progress {
     Encoding { index: usize, total: usize },
     /// Track `index` has been placed at `path`.
     Saved { index: usize, path: PathBuf },
+    /// The original was deleted, because every song from it was written.
+    RemovedOriginal { path: PathBuf },
 }
 
 /// Where each track would be written, without writing anything.
@@ -95,7 +99,7 @@ pub fn export_file(
         segments,
         tracks,
         options,
-        on_progress,
+        on_progress: &mut *on_progress,
         splitter: None,
         info: None,
         encoder: None,
@@ -109,7 +113,38 @@ pub fn export_file(
         run.discard_staged();
         return Err(error);
     }
-    run.place_files()
+    let written = run.place_files()?;
+    drop(run);
+    if options.strategy.delete_original {
+        remove_original(input, tracks, &written, on_progress)?;
+    }
+    Ok(written)
+}
+
+/// Deletes the original, but only when nothing could be lost by it: every song was written,
+/// none was left out, and the original is not itself one of the files just written.
+fn remove_original(
+    input: &Path,
+    tracks: &[TrackPlan],
+    written: &[Written],
+    on_progress: &mut dyn FnMut(&Progress),
+) -> Result<(), ExportError> {
+    let everything_written = written.len() == tracks.len() && tracks.iter().all(|t| !t.skip);
+    if !everything_written {
+        return Ok(());
+    }
+    let same_file = |path: &Path| match (fs::canonicalize(input), fs::canonicalize(path)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => input == path,
+    };
+    if written.iter().any(|item| same_file(&item.path)) {
+        return Ok(());
+    }
+    fs::remove_file(input).map_err(ExportError::io("deleting", input))?;
+    on_progress(&Progress::RemovedOriginal {
+        path: input.to_path_buf(),
+    });
+    Ok(())
 }
 
 struct Staged {
@@ -187,6 +222,9 @@ impl Run<'_> {
         let (Some(info), Some(plan)) = (self.info, self.tracks.get(index)) else {
             return Ok(());
         };
+        if plan.skip {
+            return Ok(());
+        }
         let temp = self.temp_path(plan);
         if let Some(parent) = temp.parent() {
             fs::create_dir_all(parent).map_err(ExportError::io("creating", parent))?;

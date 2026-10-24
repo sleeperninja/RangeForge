@@ -46,7 +46,7 @@ cargo run --release -p rangeforge-cli -- run "testdata\<album folder>" --out "C:
 cargo run --release -p rangeforge-cli -- run "testdata\<album folder>" --out "C:\temp\album-out"
 ```
 
-Useful options: `--target` and `--ceiling` set the volume, `--codec alac|flac|wav|aac`, `--bit-depth source|16|24`, `--strategy serialize|rename-old|replace` with `--suffix`, `--out <folder>` to write elsewhere, and `--yes` to confirm a strategy that overwrites. With no `--out` and the default strategy, files are written next to the sources with a `_00` suffix, and nothing existing is touched.
+Useful options: `--target` and `--ceiling` set the volume, `--codec alac|flac|wav|aac`, `--bit-depth source|16|24`, `--out <folder>` (everything into one folder) or `--subfolder <name>` (a folder of that name inside each original's folder), `--on-conflict number|rename-existing|overwrite` with `--suffix`, `--delete-original`, and `--yes` to confirm overwriting or deleting. With none of these, files are written next to the sources under their new names, a number such as `_00` is added only if that name is taken, and nothing existing is touched.
 
 **FFmpeg for the tests.** The export tests run the real FFmpeg on generated audio. They skip themselves on your machine if FFmpeg is missing, and fail on the build server (where `CI` is set) so they cannot be skipped there by accident. CI installs FFmpeg for each platform.
 
@@ -74,9 +74,9 @@ cargo run --release -p rangeforge-cli -- ui "testdata\<album folder>"
 cargo run --release -p rangeforge-cli -- ui --snapshot --target -18 --width 130 --height 25 "testdata\<album folder>"
 ```
 
-Use a real terminal such as Windows Terminal for the interactive version. The keys are listed in [02-ui.md](02-ui.md). Starting values can be set with `--target`, `--ceiling`, `--no-peak-protection`, `--codec`, `--bit-depth`, `--strategy`, `--suffix` and `--out` (the same options as `run`), and `--show-logs` opens the log panel. It uses the analysis cache below, so an album you have measured before appears instantly.
+Use a real terminal such as Windows Terminal for the interactive version. The keys are listed in [02-ui.md](02-ui.md). Starting values can be set with `--target`, `--ceiling`, `--no-peak-protection`, `--codec`, `--bit-depth`, `--out`, `--subfolder`, `--on-conflict`, `--suffix` and `--delete-original` (the same options as `run`), and `--show-logs` opens the log panel. It uses the analysis cache below, so an album you have measured before appears instantly.
 
-Pressing Run needs FFmpeg (on the path, or named in `RANGEFORGE_FFMPEG`). If it cannot be found, the screen says so and nothing is written.
+Pressing Run needs FFmpeg. The program looks, in order, at `RANGEFORGE_FFMPEG`, an `ffmpeg` file next to the program, the system path, and the usual package folders (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`). If it cannot be found, the screen says so and nothing is written. On a Mac with no Homebrew, drop an `ffmpeg` binary in the same folder as `rangeforge-app`.
 
 Presets live in `presets.json` in your settings folder (`%APPDATA%\RangeForge\config` on Windows). Use `--config-dir <folder>` to keep them somewhere else, which is handy for experiments. A file that cannot be read is set aside as `presets.json.bad` and the built-in presets are used, so a damaged file never stops the app and is never silently overwritten.
 

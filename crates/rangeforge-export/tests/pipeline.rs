@@ -18,7 +18,7 @@ use rangeforge_export::ffmpeg::Ffmpeg;
 use rangeforge_export::format::{BitDepth, Codec, OutputFormat};
 use rangeforge_export::naming::track_file_name;
 use rangeforge_export::pipeline::{Options, Progress, TrackPlan, Written, export_file, preview};
-use rangeforge_export::strategy::Strategy;
+use rangeforge_export::strategy::{Conflict, Destination, Strategy};
 use rangeforge_export::tags::Tags;
 use tempfile::{TempDir, tempdir};
 
@@ -94,6 +94,7 @@ fn plan(gain_db: f64, file_name: &str) -> TrackPlan {
         gain_db,
         file_name: file_name.to_string(),
         tags: Tags::default(),
+        skip: false,
     }
 }
 
@@ -106,10 +107,26 @@ fn options(codec: Codec, strategy: Strategy, directory: &Path) -> Options {
     }
 }
 
+/// Next to the original, numbering a new file whose name is taken.
 fn serialize() -> Strategy {
-    Strategy::Serialize {
-        suffix: "_00".to_string(),
+    Strategy::safe()
+}
+
+fn with_conflict(conflict: Conflict) -> Strategy {
+    Strategy {
+        conflict,
+        ..Strategy::safe()
     }
+}
+
+fn overwrite() -> Strategy {
+    with_conflict(Conflict::Overwrite)
+}
+
+fn rename_existing() -> Strategy {
+    with_conflict(Conflict::RenameExisting {
+        suffix: "_old".to_string(),
+    })
 }
 
 /// Exports a whole file as one track, ignoring progress.
@@ -191,10 +208,11 @@ fn a_cue_album_is_cut_exactly_and_tagged() {
             gain_db: 0.0,
             file_name: track_file_name(track.number, track.title.as_deref(), "m4a"),
             tags: Tags::for_cue_track(&sheet, track, file.tracks.len()),
+            skip: false,
         })
         .collect();
     let out_dir = dir.path().join("album");
-    let opts = options(Codec::Alac, Strategy::Replace, &out_dir);
+    let opts = options(Codec::Alac, overwrite(), &out_dir);
 
     let mut events = Vec::new();
     let written = export_file(&ffmpeg, &input, Some(&segments), &plans, &opts, &mut |p| {
@@ -245,7 +263,7 @@ fn a_cue_album_is_cut_exactly_and_tagged() {
 }
 
 #[test]
-fn serialize_leaves_the_original_alone() {
+fn a_free_name_is_written_as_it_is() {
     let Some(ffmpeg) = ffmpeg() else { return };
     let (dir, input) = with_source("song.wav", 2, 200);
     let original_bytes = fs::read(&input).unwrap();
@@ -253,9 +271,142 @@ fn serialize_leaves_the_original_alone() {
     let opts = options(Codec::Alac, serialize(), dir.path());
     let written = export_whole(&ffmpeg, &input, plan(-3.0, "song.m4a"), &opts).unwrap();
 
-    assert_eq!(written[0].path, dir.path().join("song_00.m4a"));
+    assert_eq!(written[0].path, dir.path().join("song.m4a"));
     assert_eq!(fs::read(&input).unwrap(), original_bytes);
-    assert_eq!(file_names(dir.path()), ["song.wav", "song_00.m4a"]);
+    assert_eq!(file_names(dir.path()), ["song.m4a", "song.wav"]);
+}
+
+#[test]
+fn numbering_a_taken_name_leaves_what_is_there_alone() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let (dir, input) = with_source("song.wav", 2, 200);
+    fs::write(dir.path().join("song.m4a"), b"already here").unwrap();
+
+    let opts = options(Codec::Alac, serialize(), dir.path());
+    let written = export_whole(&ffmpeg, &input, plan(-3.0, "song.m4a"), &opts).unwrap();
+
+    assert_eq!(written[0].path, dir.path().join("song_00.m4a"));
+    assert_eq!(
+        fs::read(dir.path().join("song.m4a")).unwrap(),
+        b"already here"
+    );
+    assert_eq!(
+        file_names(dir.path()),
+        ["song.m4a", "song.wav", "song_00.m4a"]
+    );
+}
+
+#[test]
+fn a_subfolder_of_the_original_is_created_and_used() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let (dir, input) = with_source("song.wav", 2, 200);
+
+    let strategy = Strategy {
+        destination: Destination::Subfolder("Balanced".to_string()),
+        ..Strategy::safe()
+    };
+    let opts = options(Codec::Alac, strategy, dir.path());
+    let written = export_whole(&ffmpeg, &input, plan(-3.0, "song.m4a"), &opts).unwrap();
+
+    assert_eq!(
+        written[0].path,
+        dir.path().join("Balanced").join("song.m4a")
+    );
+    assert_eq!(file_names(dir.path()), ["Balanced", "song.wav"]);
+    assert_eq!(file_names(&dir.path().join("Balanced")), ["song.m4a"]);
+}
+
+#[test]
+fn a_song_left_out_is_not_written_and_does_not_disturb_the_rest() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let (dir, input) = with_source("in.wav", 3, 200);
+    let sheet = cue::parse(
+        "PERFORMER \"The Band\"\nTITLE \"Album\"\nFILE \"in.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"First\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"Second\"\n    INDEX 01 00:01:00\n  TRACK 03 AUDIO\n    TITLE \"Third\"\n    INDEX 01 00:02:00\n",
+    )
+    .unwrap();
+    let file = &sheet.files[0];
+    let segments = file.segments();
+    let plans: Vec<TrackPlan> = ["01 - First.m4a", "02 - Second.m4a", "03 - Third.m4a"]
+        .iter()
+        .enumerate()
+        .map(|(index, name)| TrackPlan {
+            skip: index == 1,
+            ..plan(0.0, name)
+        })
+        .collect();
+    let opts = options(Codec::Alac, serialize(), dir.path());
+
+    let written =
+        export_file(&ffmpeg, &input, Some(&segments), &plans, &opts, &mut |_| {}).unwrap();
+
+    let indexes: Vec<usize> = written.iter().map(|w| w.index).collect();
+    assert_eq!(indexes, [0, 2]);
+    assert_eq!(
+        file_names(dir.path()),
+        ["01 - First.m4a", "03 - Third.m4a", "in.wav"]
+    );
+}
+
+#[test]
+fn the_original_is_deleted_only_when_asked_and_everything_was_written() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let strategy = Strategy {
+        delete_original: true,
+        ..Strategy::safe()
+    };
+
+    // Everything written: the original goes.
+    let (dir, input) = with_source("song.wav", 1, 200);
+    let opts = options(Codec::Alac, strategy.clone(), dir.path());
+    let mut events = Vec::new();
+    export_file(
+        &ffmpeg,
+        &input,
+        None,
+        &[plan(0.0, "song.m4a")],
+        &opts,
+        &mut |p| events.push(p.clone()),
+    )
+    .unwrap();
+    assert_eq!(file_names(dir.path()), ["song.m4a"]);
+    assert!(events.contains(&Progress::RemovedOriginal { path: input }));
+
+    // A song left out: the original stays, because deleting it would lose that song.
+    let (dir, input) = with_source("song.wav", 1, 200);
+    let opts = options(Codec::Alac, strategy.clone(), dir.path());
+    let left_out = TrackPlan {
+        skip: true,
+        ..plan(0.0, "song.m4a")
+    };
+    export_whole(&ffmpeg, &input, left_out, &opts).unwrap();
+    assert_eq!(file_names(dir.path()), ["song.wav"]);
+
+    // The original is itself the file written (overwrite): it must not be deleted.
+    let (dir, input) = with_source("song.wav", 1, 200);
+    let both = Strategy {
+        conflict: Conflict::Overwrite,
+        ..strategy
+    };
+    let opts = options(Codec::Wav, both, dir.path());
+    export_whole(&ffmpeg, &input, plan(-3.0, "song.wav"), &opts).unwrap();
+    assert_eq!(file_names(dir.path()), ["song.wav"]);
+}
+
+#[test]
+fn nothing_is_deleted_when_the_run_fails() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("bad.wav");
+    fs::write(&input, b"this is not audio at all").unwrap();
+    let strategy = Strategy {
+        delete_original: true,
+        ..Strategy::safe()
+    };
+    let opts = options(Codec::Alac, strategy, dir.path());
+
+    export_whole(&ffmpeg, &input, plan(0.0, "out.m4a"), &opts).unwrap_err();
+
+    assert_eq!(file_names(dir.path()), ["bad.wav"]);
 }
 
 #[test]
@@ -264,7 +415,7 @@ fn replace_overwrites_a_source_with_the_same_name() {
     let (dir, input) = with_source("song.wav", 2, 200);
     let before = loudness(&input);
 
-    let opts = options(Codec::Wav, Strategy::Replace, dir.path());
+    let opts = options(Codec::Wav, overwrite(), dir.path());
     let written = export_whole(&ffmpeg, &input, plan(-6.0, "song.wav"), &opts).unwrap();
 
     assert_eq!(written[0].path, input);
@@ -279,7 +430,7 @@ fn replace_never_removes_a_source_with_a_different_name() {
     let (dir, input) = with_source("song.wav", 2, 200);
     let original_bytes = fs::read(&input).unwrap();
 
-    let opts = options(Codec::Alac, Strategy::Replace, dir.path());
+    let opts = options(Codec::Alac, overwrite(), dir.path());
     let written = export_whole(&ffmpeg, &input, plan(0.0, "song.m4a"), &opts).unwrap();
 
     assert!(!written[0].overwrote);
@@ -294,10 +445,7 @@ fn rename_old_keeps_the_original_under_the_old_name() {
     let original_bytes = fs::read(&input).unwrap();
     let before = loudness(&input);
 
-    let strategy = Strategy::RenameOld {
-        suffix: "_old".to_string(),
-    };
-    let opts = options(Codec::Wav, strategy, dir.path());
+    let opts = options(Codec::Wav, rename_existing(), dir.path());
     let written = export_whole(&ffmpeg, &input, plan(-6.0, "song.wav"), &opts).unwrap();
 
     let old = dir.path().join("song_old.wav");
@@ -323,8 +471,9 @@ fn save_to_writes_elsewhere_and_leaves_the_source() {
     let (dir, input) = with_source("song.wav", 2, 200);
     let target = tempdir().unwrap();
 
-    let strategy = Strategy::SaveTo {
-        directory: target.path().to_path_buf(),
+    let strategy = Strategy {
+        destination: Destination::Folder(target.path().to_path_buf()),
+        ..Strategy::safe()
     };
     let opts = options(Codec::Flac, strategy, dir.path());
     let written = export_whole(&ffmpeg, &input, plan(0.0, "song.flac"), &opts).unwrap();
@@ -338,14 +487,11 @@ fn save_to_writes_elsewhere_and_leaves_the_source() {
 fn a_failed_placement_changes_nothing_and_leaves_no_temporary_files() {
     let Some(ffmpeg) = ffmpeg() else { return };
     let (dir, input) = with_source("song.wav", 2, 200);
-    // A song and its backup both exist, so RenameOld must refuse rather than overwrite.
+    // A song and its backup both exist, so renaming must refuse rather than overwrite.
     fs::write(dir.path().join("out.m4a"), b"current").unwrap();
     fs::write(dir.path().join("out_old.m4a"), b"older backup").unwrap();
 
-    let strategy = Strategy::RenameOld {
-        suffix: "_old".to_string(),
-    };
-    let opts = options(Codec::Alac, strategy, dir.path());
+    let opts = options(Codec::Alac, rename_existing(), dir.path());
     let error = export_whole(&ffmpeg, &input, plan(0.0, "out.m4a"), &opts).unwrap_err();
 
     assert!(
@@ -396,6 +542,7 @@ fn a_plan_for_the_wrong_number_of_tracks_is_refused() {
 fn preview_matches_what_a_run_does_and_writes_nothing() {
     let Some(ffmpeg) = ffmpeg() else { return };
     let (dir, input) = with_source("song.wav", 1, 200);
+    fs::write(dir.path().join("song.m4a"), b"taken").unwrap();
     fs::write(dir.path().join("song_00.m4a"), b"taken").unwrap();
     let opts = options(Codec::Alac, serialize(), dir.path());
     let tracks = [plan(0.0, "song.m4a")];
@@ -403,7 +550,7 @@ fn preview_matches_what_a_run_does_and_writes_nothing() {
     let planned = preview(&opts, &tracks).unwrap();
     assert_eq!(
         file_names(dir.path()),
-        ["song.wav", "song_00.m4a"],
+        ["song.m4a", "song.wav", "song_00.m4a"],
         "preview wrote nothing"
     );
 
@@ -426,6 +573,7 @@ fn single_files_carry_their_tags_over() {
             artist: Some("Original Artist".to_string()),
             ..Tags::default()
         },
+        skip: false,
     };
     let make = options(Codec::Flac, serialize(), dir.path());
     let source = export_whole(&ffmpeg, &input, tagged, &make)
@@ -443,6 +591,7 @@ fn single_files_carry_their_tags_over() {
             title: Some("New Title".to_string()),
             ..Tags::default()
         },
+        skip: false,
     };
     let written = export_whole(&ffmpeg, &source, new_title, &convert).unwrap();
 

@@ -6,15 +6,28 @@
       "kind": "cue",
       "measuring": false,
       "failure": null,
+      "run_text": "saved",
+      "run_state": "saved",
+      "run_failure": null,
+      "tracks": [
+        {"label": "1 - The Song Remains the Same", "loudness_lufs": -14.2, "true_peak_dbtp": -1.65, "range_lu": 11.0, "adjust_db": -7.8, "limited": false, "unadjustable": false, "saved": true, "included": true},
+        {"label": "2 - The Rain Song", "loudness_lufs": -20.66, "true_peak_dbtp": -1.91, "range_lu": 12.2, "adjust_db": 1.31, "limited": true, "unadjustable": false, "saved": true, "included": true}
+      ]
+    },
+    {
+      "name": "Led Zeppelin - Coda",
+      "codec_label": "Split(cue)",
+      "kind": "cue",
+      "measuring": false,
+      "failure": null,
       "run_text": "",
       "run_state": "idle",
       "run_failure": null,
       "tracks": [
-        {"label": "1 - The Song Remains the Same", "loudness_lufs": -14.2, "true_peak_dbtp": -1.65, "range_lu": 11.0, "adjust_db": -7.8, "limited": false, "unadjustable": false, "saved": false},
-        {"label": "2 - The Rain Song", "loudness_lufs": -20.66, "true_peak_dbtp": -1.91, "range_lu": 12.2, "adjust_db": 1.31, "limited": true, "unadjustable": false, "saved": false},
-        {"label": "3 - Over the Hills and Far Away", "loudness_lufs": -17.3, "true_peak_dbtp": -0.9, "range_lu": 9.4, "adjust_db": -4.7, "limited": false, "unadjustable": false, "saved": false},
-        {"label": "4 - Silence", "loudness_lufs": null, "true_peak_dbtp": null, "range_lu": null, "adjust_db": null, "limited": false, "unadjustable": true, "saved": false},
-        {"label": "5 - Still measuring", "loudness_lufs": null, "true_peak_dbtp": null, "range_lu": null, "adjust_db": null, "limited": false, "unadjustable": false, "saved": false}
+        {"label": "1 - We're Gonna Groove", "loudness_lufs": -17.18, "true_peak_dbtp": -5.66, "range_lu": 3.0, "adjust_db": -4.82, "limited": false, "unadjustable": false, "saved": false, "included": true},
+        {"label": "2 - Poor Tom", "loudness_lufs": -19.9, "true_peak_dbtp": -4.72, "range_lu": 4.5, "adjust_db": -2.1, "limited": false, "unadjustable": false, "saved": false, "included": false},
+        {"label": "3 - Silence", "loudness_lufs": null, "true_peak_dbtp": null, "range_lu": null, "adjust_db": null, "limited": false, "unadjustable": true, "saved": false, "included": true},
+        {"label": "4 - Still measuring", "loudness_lufs": null, "true_peak_dbtp": null, "range_lu": null, "adjust_db": null, "limited": false, "unadjustable": false, "saved": false, "included": true}
       ]
     },
     {
@@ -31,17 +44,22 @@
   ],
   "volume": {"target_lufs": -22.0, "peak_protection": true, "ceiling_dbtp": -0.6},
   "output": {"codec": "alac", "container": "m4a", "bit_depth": "source"},
-  "strategy": {"kind": "serialize", "serial_suffix": "_00", "old_suffix": "_old", "folder": "", "problem": null, "needs_confirmation": false},
+  "strategy": {
+    "place": "next", "subfolder": "RangeForge", "folder": "",
+    "conflict": "number", "number_suffix": "_00", "old_suffix": "_old",
+    "delete_original": false, "problem": null, "needs_confirmation": false
+  },
   "presets": {"names": ["iTunes Lossy", "iTunes Lossless", "CD Quality", "Flac HD Multi", "ALAC Multi"], "selected": 1, "modified": false, "can_save": false, "can_delete": true},
   "options": {
     "codecs": [{"id": "alac", "label": "alac"}, {"id": "flac", "label": "flac"}, {"id": "wav", "label": "wav"}, {"id": "aac", "label": "aac"}],
     "bit_depths": [{"id": "source", "label": "Source"}, {"id": "16", "label": "16-bit"}, {"id": "24", "label": "24-bit"}],
-    "strategies": []
+    "places": [],
+    "conflicts": []
   },
   "running": false,
   "pending_files": 1,
-  "total_files": 2,
-  "queued_songs": 4,
+  "total_files": 3,
+  "queued_songs": 5,
   "any_limited": true,
   "run_blocker": null,
   "log": ["Added Led Zeppelin - Houses of the Holy", "Measured 5 songs"]

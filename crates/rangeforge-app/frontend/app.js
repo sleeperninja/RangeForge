@@ -72,7 +72,11 @@
     }
     const s = state;
     $('rows').innerHTML = Render.tableBodyHtml(s);
+    for (const box of document.querySelectorAll('input.include[data-state="some"]')) {
+      box.indeterminate = true;
+    }
     $('empty').classList.toggle('hidden', s.groups.length > 0);
+    closeMenu();
 
     const run = $('run');
     run.textContent = Render.runLabel(s);
@@ -92,16 +96,17 @@
     $('savePreset').disabled = !s.presets.can_save;
     $('deletePreset').disabled = !s.presets.can_delete;
 
-    for (const radio of document.querySelectorAll('input[name="strategy"]')) {
-      radio.checked = radio.value === s.strategy.kind;
+    for (const radio of document.querySelectorAll('input[name="place"]')) {
+      radio.checked = radio.value === s.strategy.place;
     }
-    setValue($('serialSuffix'), s.strategy.serial_suffix);
-    setValue($('oldSuffix'), s.strategy.old_suffix);
+    for (const radio of document.querySelectorAll('input[name="conflict"]')) {
+      radio.checked = radio.value === s.strategy.conflict;
+    }
+    setValue($('subfolder'), s.strategy.subfolder);
     setValue($('folder'), s.strategy.folder);
-    $('serialSuffix').disabled = s.strategy.kind !== 'serialize';
-    $('oldSuffix').disabled = s.strategy.kind !== 'rename_old';
-    $('folder').disabled = s.strategy.kind !== 'save_to';
-    $('browse').disabled = s.strategy.kind !== 'save_to';
+    setValue($('numberSuffix'), s.strategy.number_suffix);
+    setValue($('oldSuffix'), s.strategy.old_suffix);
+    $('deleteOriginal').checked = s.strategy.delete_original;
     const problem = $('strategyProblem');
     problem.textContent = s.strategy.problem || '';
     problem.classList.toggle('hidden', !s.strategy.problem);
@@ -139,9 +144,41 @@
     return picked || null;
   }
 
+  let currentMenu = null;
+
+  function openMenu(x, y, items) {
+    if (items.length === 0) {
+      return;
+    }
+    currentMenu = items;
+    const menu = $('menu');
+    menu.innerHTML = Render.menuHtml(items);
+    menu.classList.remove('hidden');
+    // Keep the menu inside the window.
+    menu.style.left = Math.max(0, Math.min(x, window.innerWidth - menu.offsetWidth - 4)) + 'px';
+    menu.style.top = Math.max(0, Math.min(y, window.innerHeight - menu.offsetHeight - 4)) + 'px';
+  }
+
+  function closeMenu() {
+    currentMenu = null;
+    $('menu').classList.add('hidden');
+  }
+
+  function runMenuItem(item) {
+    closeMenu();
+    if (item.action === 'toggle_track') {
+      call('set_included', { group: item.group, track: item.track, on: item.on });
+    } else if (item.action === 'toggle_group') {
+      call('set_included', { group: item.group, track: null, on: item.on });
+    } else if (item.action === 'remove') {
+      call('remove_group', { group: item.group });
+    }
+  }
+
   async function pressRun(confirmed) {
     const reply = await call('run', { confirmed });
     if (reply && reply.outcome === 'needs_confirmation') {
+      $('confirmText').textContent = Render.confirmText(state.strategy);
       const dialog = $('confirmDialog');
       dialog.returnValue = '';
       dialog.addEventListener(
@@ -203,16 +240,73 @@
     $('savePreset').addEventListener('click', askForPresetName);
     $('deletePreset').addEventListener('click', () => call('delete_preset'));
 
-    for (const radio of document.querySelectorAll('input[name="strategy"]')) {
-      radio.addEventListener('change', (e) => call('set_strategy', { id: e.target.value }));
+    for (const radio of document.querySelectorAll('input[name="place"]')) {
+      radio.addEventListener('change', (e) => call('set_place', { id: e.target.value }));
     }
-    for (const id of ['serialSuffix', 'oldSuffix', 'folder']) {
-      $(id).addEventListener('change', (e) => call('set_strategy_text', { text: e.target.value }));
+    for (const radio of document.querySelectorAll('input[name="conflict"]')) {
+      radio.addEventListener('change', (e) => call('set_conflict', { id: e.target.value }));
     }
+    // Typing in a field chooses its row first, because the program keeps one text for the
+    // chosen row.
+    const textFields = [
+      ['subfolder', 'set_place', 'set_place_text', 'subfolder'],
+      ['folder', 'set_place', 'set_place_text', 'folder'],
+      ['numberSuffix', 'set_conflict', 'set_conflict_text', 'number'],
+      ['oldSuffix', 'set_conflict', 'set_conflict_text', 'rename_existing'],
+    ];
+    for (const [id, choose, set, choice] of textFields) {
+      $(id).addEventListener('change', async (e) => {
+        await call(choose, { id: choice });
+        await call(set, { text: e.target.value });
+      });
+    }
+    $('deleteOriginal').addEventListener('change', (e) => call('set_delete_original', { on: e.target.checked }));
     $('browse').addEventListener('click', async () => {
       const folder = await pickFolder();
       if (folder) {
-        await call('set_strategy_text', { text: folder });
+        await call('set_place', { id: 'folder' });
+        await call('set_place_text', { text: folder });
+      }
+    });
+
+    $('clearCompleted').addEventListener('click', () => call('clear_completed'));
+    $('clearAll').addEventListener('click', () => call('clear_list'));
+
+    // Tick boxes switch songs (or whole albums) in or out of the run.
+    $('rows').addEventListener('change', (e) => {
+      const box = e.target.closest('input.include');
+      if (!box) {
+        return;
+      }
+      const args = { group: Number(box.dataset.group), on: box.checked };
+      args.track = box.dataset.track === undefined ? null : Number(box.dataset.track);
+      call('set_included', args);
+    });
+
+    // Right-click a row for the same actions plus removing it.
+    $('rows').addEventListener('contextmenu', (e) => {
+      const row = e.target.closest('tr[data-group]');
+      if (!row || !state) {
+        return;
+      }
+      e.preventDefault();
+      const track = row.dataset.track === undefined ? null : Number(row.dataset.track);
+      openMenu(e.clientX, e.clientY, Render.menuItems(state, Number(row.dataset.group), track));
+    });
+    $('menu').addEventListener('click', (e) => {
+      const button = e.target.closest('button[data-item]');
+      if (button && currentMenu) {
+        runMenuItem(currentMenu[Number(button.dataset.item)]);
+      }
+    });
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#menu')) {
+        closeMenu();
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeMenu();
       }
     });
 

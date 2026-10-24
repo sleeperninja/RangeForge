@@ -39,12 +39,16 @@
     return `<td class="${cls}"${title}>${signed(track.adjust_db, 2)}${star}</td>`;
   }
 
-  function trackRowHtml(track, outputCodec) {
+  function trackRowHtml(track, outputCodec, groupIndex, trackIndex) {
     const mark = track.saved ? '✓' : '↳';
-    const cls = track.saved ? 'track saved' : 'track';
+    const cls = ['track', track.saved ? 'saved' : '', track.included ? '' : 'excluded']
+      .filter(Boolean)
+      .join(' ');
+    const checked = track.included ? ' checked' : '';
     return (
-      `<tr class="${cls}">` +
-      `<td class="name"><span class="mark">${mark}</span> ${esc(track.label)}</td>` +
+      `<tr class="${cls}" data-group="${groupIndex}" data-track="${trackIndex}">` +
+      `<td class="name"><input type="checkbox" class="include" data-group="${groupIndex}" data-track="${trackIndex}"${checked} title="Include this song in the run">` +
+      `<span class="mark">${mark}</span>${esc(track.label)}</td>` +
       `<td class="codec">${esc(outputCodec)}</td>` +
       `<td class="num">${fixed(track.loudness_lufs, 2)}</td>` +
       `<td class="num">${fixed(track.true_peak_dbtp, 2)}</td>` +
@@ -66,10 +70,21 @@
     return '<td class="num status"></td>';
   }
 
-  function groupRowsHtml(group, outputCodec) {
+  // Whether every, some or none of a group's songs are in the run.
+  function includedState(group) {
+    const on = group.tracks.filter((track) => track.included).length;
+    if (on === 0) {
+      return 'none';
+    }
+    return on === group.tracks.length ? 'all' : 'some';
+  }
+
+  function groupRowsHtml(group, outputCodec, groupIndex) {
+    const included = includedState(group);
+    const checked = included === 'all' ? ' checked' : '';
     let html =
-      `<tr class="group ${esc(group.kind)}">` +
-      `<td class="name">${esc(group.name)}</td>` +
+      `<tr class="group ${esc(group.kind)}" data-group="${groupIndex}">` +
+      `<td class="name"><input type="checkbox" class="include" data-group="${groupIndex}" data-state="${included}"${checked} title="Include every song of this album in the run">${esc(group.name)}</td>` +
       `<td class="codec">${esc(group.codec_label)}</td>` +
       progressCell(group) +
       '<td class="num"></td><td class="num"></td><td class="num"></td><td class="tags"></td>' +
@@ -80,14 +95,64 @@
     if (group.run_failure) {
       html += `<tr class="message error"><td colspan="7">! could not write: ${esc(group.run_failure)}</td></tr>`;
     }
-    for (const track of group.tracks) {
-      html += trackRowHtml(track, outputCodec);
-    }
+    group.tracks.forEach((track, trackIndex) => {
+      html += trackRowHtml(track, outputCodec, groupIndex, trackIndex);
+    });
     return html;
   }
 
   function tableBodyHtml(state) {
-    return state.groups.map((group) => groupRowsHtml(group, state.output.codec)).join('');
+    return state.groups
+      .map((group, index) => groupRowsHtml(group, state.output.codec, index))
+      .join('');
+  }
+
+  // What the right-click menu offers for a row. `trackIndex` is null on an album's own row.
+  function menuItems(state, groupIndex, trackIndex) {
+    const group = state.groups[groupIndex];
+    if (!group) {
+      return [];
+    }
+    const items = [];
+    if (trackIndex !== null && group.tracks[trackIndex]) {
+      const on = group.tracks[trackIndex].included;
+      items.push({
+        action: 'toggle_track',
+        label: on ? 'Leave this song out' : 'Include this song',
+        group: groupIndex,
+        track: trackIndex,
+        on: !on,
+      });
+    }
+    const all = includedState(group) === 'all';
+    items.push({
+      action: 'toggle_group',
+      label: all ? 'Leave out every song of this album' : 'Include every song of this album',
+      group: groupIndex,
+      on: !all,
+    });
+    items.push({ action: 'remove', label: 'Remove from the list', group: groupIndex });
+    return items;
+  }
+
+  function menuHtml(items) {
+    return items
+      .map((item, index) => `<button type="button" role="menuitem" data-item="${index}">${esc(item.label)}</button>`)
+      .join('');
+  }
+
+  // What to tell the user before a run that overwrites files or deletes originals.
+  function confirmText(strategy) {
+    const parts = [];
+    if (strategy.conflict === 'overwrite') {
+      parts.push('A file already at a new file’s path will be overwritten.');
+    }
+    if (strategy.delete_original) {
+      parts.push(
+        'Each original is deleted once every song from it has been written. An original is kept if any of its songs was left out.',
+      );
+    }
+    return parts.join(' ');
   }
 
   // The line under the Run button.
@@ -144,6 +209,10 @@
     trackRowHtml,
     groupRowsHtml,
     tableBodyHtml,
+    includedState,
+    menuItems,
+    menuHtml,
+    confirmText,
     statusText,
     runLabel,
     presetListHtml,

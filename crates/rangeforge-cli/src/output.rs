@@ -6,7 +6,7 @@ use clap::{Args, ValueEnum};
 use rangeforge_export::format::{BitDepth, Codec};
 use rangeforge_export::strategy::Strategy;
 
-use rangeforge_session::controls::{OutputSettings, StrategyKind, StrategySettings};
+use rangeforge_session::controls::{ConflictKind, OutputSettings, StrategySettings, WhereKind};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum CodecArg {
@@ -48,13 +48,13 @@ impl From<BitDepthArg> for BitDepth {
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
-enum StrategyArg {
-    /// New files get a serial suffix such as _00; nothing existing is touched
-    Serialize,
-    /// An existing file at the same name is renamed with the suffix _old
-    RenameOld,
-    /// A file at exactly the same path is overwritten (needs --yes)
-    Replace,
+enum ConflictArg {
+    /// The new file gets a serial suffix such as _00; the file already there is untouched
+    Number,
+    /// The file already there is renamed with a suffix (default _old)
+    RenameExisting,
+    /// The file already there is overwritten (needs --yes)
+    Overwrite,
 }
 
 /// What to write and where. These are the same choices as the Output Format and File
@@ -67,15 +67,21 @@ pub struct OutputArgs {
     /// How precisely to store each sample
     #[arg(long, value_enum, default_value = "source")]
     bit_depth: BitDepthArg,
-    /// What to do about files that already exist
-    #[arg(long, value_enum, default_value = "serialize", conflicts_with = "out")]
-    strategy: StrategyArg,
-    /// Suffix for --strategy serialize (default _00) or rename-old (default _old)
-    #[arg(long, conflicts_with = "out")]
-    suffix: Option<String>,
-    /// Write into this folder instead of next to the sources
-    #[arg(long)]
+    /// Write all files into this one folder instead of next to the originals
+    #[arg(long, conflicts_with = "subfolder")]
     out: Option<PathBuf>,
+    /// Write into a folder of this name inside each original's folder
+    #[arg(long)]
+    subfolder: Option<String>,
+    /// What to do when a file is already at the new file's path
+    #[arg(long, value_enum, default_value = "number")]
+    on_conflict: ConflictArg,
+    /// Suffix for --on-conflict number (default _00) or rename-existing (default _old)
+    #[arg(long)]
+    suffix: Option<String>,
+    /// Delete each original once every song from it has been written (needs --yes)
+    #[arg(long)]
+    delete_original: bool,
 }
 
 impl OutputArgs {
@@ -89,25 +95,28 @@ impl OutputArgs {
     pub fn strategy_settings(&self) -> StrategySettings {
         let mut settings = StrategySettings::default();
         if let Some(folder) = &self.out {
-            settings.kind = StrategyKind::SaveTo;
+            settings.where_kind = WhereKind::Folder;
             settings.folder = folder.display().to_string();
-            return settings;
+        } else if let Some(name) = &self.subfolder {
+            settings.where_kind = WhereKind::Subfolder;
+            settings.subfolder.clone_from(name);
         }
-        match self.strategy {
-            StrategyArg::Serialize => {
-                settings.kind = StrategyKind::Serialize;
+        match self.on_conflict {
+            ConflictArg::Number => {
+                settings.conflict_kind = ConflictKind::Number;
                 if let Some(suffix) = &self.suffix {
-                    settings.serial_suffix.clone_from(suffix);
+                    settings.number_suffix.clone_from(suffix);
                 }
             }
-            StrategyArg::RenameOld => {
-                settings.kind = StrategyKind::RenameOld;
+            ConflictArg::RenameExisting => {
+                settings.conflict_kind = ConflictKind::RenameExisting;
                 if let Some(suffix) = &self.suffix {
                     settings.old_suffix.clone_from(suffix);
                 }
             }
-            StrategyArg::Replace => settings.kind = StrategyKind::Replace,
+            ConflictArg::Overwrite => settings.conflict_kind = ConflictKind::Overwrite,
         }
+        settings.delete_original = self.delete_original;
         settings
     }
 
@@ -121,6 +130,7 @@ impl OutputArgs {
 mod tests {
     use super::*;
     use clap::Parser;
+    use rangeforge_export::strategy::{Conflict, Destination};
 
     #[derive(Debug, Parser)]
     struct Wrapper {
@@ -135,15 +145,10 @@ mod tests {
     }
 
     #[test]
-    fn defaults_are_alac_at_source_depth_with_a_serial_suffix() {
+    fn defaults_are_alac_at_source_depth_next_to_the_original() {
         let args = parse(&[]);
         assert_eq!(args.output_settings(), OutputSettings::default());
-        assert_eq!(
-            args.strategy(),
-            Ok(Strategy::Serialize {
-                suffix: "_00".to_string()
-            })
-        );
+        assert_eq!(args.strategy(), Ok(Strategy::safe()));
     }
 
     #[test]
@@ -155,58 +160,79 @@ mod tests {
     }
 
     #[test]
-    fn suffixes_apply_to_the_strategy_that_uses_them() {
-        let serialize = parse(&["--suffix", "_v01"]);
+    fn suffixes_apply_to_the_conflict_choice_that_uses_them() {
+        let number = parse(&["--suffix", "_v01"]).strategy().unwrap();
         assert_eq!(
-            serialize.strategy(),
-            Ok(Strategy::Serialize {
+            number.conflict,
+            Conflict::Number {
                 suffix: "_v01".to_string()
-            })
+            }
         );
-        let rename = parse(&["--strategy", "rename-old", "--suffix", "_backup"]);
+        let rename = parse(&["--on-conflict", "rename-existing", "--suffix", "_backup"])
+            .strategy()
+            .unwrap();
         assert_eq!(
-            rename.strategy(),
-            Ok(Strategy::RenameOld {
+            rename.conflict,
+            Conflict::RenameExisting {
                 suffix: "_backup".to_string()
-            })
+            }
         );
+        let default_rename = parse(&["--on-conflict", "rename-existing"])
+            .strategy()
+            .unwrap();
         assert_eq!(
-            parse(&["--strategy", "rename-old"]).strategy(),
-            Ok(Strategy::RenameOld {
+            default_rename.conflict,
+            Conflict::RenameExisting {
                 suffix: "_old".to_string()
-            })
+            }
         );
     }
 
     #[test]
-    fn replace_has_no_suffix() {
+    fn overwrite_has_no_suffix() {
+        let strategy = parse(&["--on-conflict", "overwrite"]).strategy().unwrap();
+        assert_eq!(strategy.conflict, Conflict::Overwrite);
+    }
+
+    #[test]
+    fn out_and_subfolder_choose_where_files_go() {
+        let out = parse(&["--out", "C:\\music\\out"]);
+        assert_eq!(out.strategy_settings().where_kind, WhereKind::Folder);
         assert_eq!(
-            parse(&["--strategy", "replace"]).strategy(),
-            Ok(Strategy::Replace)
+            out.strategy().unwrap().destination,
+            Destination::Folder(PathBuf::from("C:\\music\\out"))
         );
-    }
 
-    #[test]
-    fn out_means_save_to_that_folder() {
-        let args = parse(&["--out", "C:\\music\\out"]);
-        assert_eq!(args.strategy_settings().kind, StrategyKind::SaveTo);
+        let sub = parse(&["--subfolder", "Balanced"]).strategy().unwrap();
         assert_eq!(
-            args.strategy(),
-            Ok(Strategy::SaveTo {
-                directory: PathBuf::from("C:\\music\\out")
-            })
+            sub.destination,
+            Destination::Subfolder("Balanced".to_string())
         );
     }
 
     #[test]
-    fn out_cannot_be_combined_with_a_strategy() {
-        let result = Wrapper::try_parse_from(["test", "--out", "x", "--strategy", "replace"]);
+    fn out_and_subfolder_cannot_be_combined() {
+        let result = Wrapper::try_parse_from(["test", "--out", "x", "--subfolder", "y"]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn deleting_originals_is_opt_in() {
+        assert!(!parse(&[]).strategy().unwrap().delete_original);
+        let strategy = parse(&["--delete-original"]).strategy().unwrap();
+        assert!(strategy.delete_original);
+        assert!(strategy.needs_confirmation());
     }
 
     #[test]
     fn a_serial_suffix_without_digits_is_reported() {
         let error = parse(&["--suffix", "_new"]).strategy().unwrap_err();
         assert!(error.contains("digits"), "{error}");
+    }
+
+    #[test]
+    fn a_bad_subfolder_name_is_reported() {
+        let error = parse(&["--subfolder", "a/b"]).strategy().unwrap_err();
+        assert!(error.contains("folder name"), "{error}");
     }
 }

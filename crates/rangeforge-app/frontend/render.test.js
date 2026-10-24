@@ -3,6 +3,8 @@ const assert = require('node:assert');
 const Render = require('./render.js');
 const demo = require('./demo-state.json');
 
+const [houses, coda, single] = demo.groups;
+
 test('text from files is escaped', () => {
   assert.strictEqual(Render.esc('<b>"Tom" & \'Jerry\'</b>'), '&lt;b&gt;&quot;Tom&quot; &amp; &#39;Jerry&#39;&lt;/b&gt;');
 });
@@ -14,29 +16,78 @@ test('gains show their sign', () => {
 });
 
 test('a held-back song is starred', () => {
-  const html = Render.trackRowHtml(demo.groups[0].tracks[1], 'alac');
+  const html = Render.trackRowHtml(houses.tracks[1], 'alac', 0, 1);
   assert.match(html, /\+1\.31\*/);
   assert.match(html, /limited/);
 });
 
 test('silence says n/a and an unmeasured song shows dashes', () => {
-  assert.match(Render.trackRowHtml(demo.groups[0].tracks[3], 'alac'), /n\/a/);
-  const pending = Render.trackRowHtml(demo.groups[0].tracks[4], 'alac');
+  assert.match(Render.trackRowHtml(coda.tracks[2], 'alac', 1, 2), /n\/a/);
+  const pending = Render.trackRowHtml(coda.tracks[3], 'alac', 1, 3);
   assert.match(pending, /<td class="num">-<\/td>/);
 });
 
 test('a measuring file says so', () => {
-  assert.match(Render.groupRowsHtml(demo.groups[1], 'alac'), /measuring/);
+  assert.match(Render.groupRowsHtml(single, 'alac', 2), /measuring/);
 });
 
 test('a failure is shown and escaped', () => {
-  const group = { ...demo.groups[1], measuring: false, failure: '<gone>' };
-  assert.match(Render.groupRowsHtml(group, 'alac'), /! &lt;gone&gt;/);
+  const group = { ...single, measuring: false, failure: '<gone>' };
+  assert.match(Render.groupRowsHtml(group, 'alac', 2), /! &lt;gone&gt;/);
+});
+
+test('rows carry their place in the list so actions can find them', () => {
+  const html = Render.trackRowHtml(coda.tracks[0], 'alac', 1, 0);
+  assert.match(html, /<tr class="track" data-group="1" data-track="0">/);
+  assert.match(html, /<input type="checkbox" class="include" data-group="1" data-track="0" checked/);
+  assert.match(Render.groupRowsHtml(coda, 'alac', 1), /<tr class="group cue" data-group="1">/);
+});
+
+test('a song left out is dimmed and unticked', () => {
+  const html = Render.trackRowHtml(coda.tracks[1], 'alac', 1, 1);
+  assert.match(html, /class="track excluded"/);
+  assert.doesNotMatch(html, /include" data-group="1" data-track="1" checked/);
+});
+
+test('an album box shows whether all, some or none of its songs are in', () => {
+  assert.strictEqual(Render.includedState(houses), 'all');
+  assert.strictEqual(Render.includedState(coda), 'some');
+  const none = { tracks: [{ included: false }] };
+  assert.strictEqual(Render.includedState(none), 'none');
+  assert.match(Render.groupRowsHtml(coda, 'alac', 1), /data-state="some"/);
+  assert.match(Render.groupRowsHtml(houses, 'alac', 0), /data-state="all" checked/);
+});
+
+test('the right-click menu depends on the row and what is switched on', () => {
+  const song = Render.menuItems(demo, 1, 1);
+  assert.deepStrictEqual(
+    song.map((item) => item.label),
+    ['Include this song', 'Include every song of this album', 'Remove from the list'],
+  );
+  assert.deepStrictEqual(song[0], { action: 'toggle_track', label: 'Include this song', group: 1, track: 1, on: true });
+
+  const album = Render.menuItems(demo, 0, null);
+  assert.deepStrictEqual(
+    album.map((item) => item.label),
+    ['Leave out every song of this album', 'Remove from the list'],
+  );
+  assert.strictEqual(album[0].on, false);
+
+  assert.deepStrictEqual(Render.menuItems(demo, 99, null), []);
+  assert.match(Render.menuHtml(album), /data-item="1">Remove from the list/);
+});
+
+test('the confirmation says what will happen', () => {
+  assert.strictEqual(Render.confirmText({ conflict: 'number', delete_original: false }), '');
+  assert.match(Render.confirmText({ conflict: 'overwrite', delete_original: false }), /overwritten/);
+  const both = Render.confirmText({ conflict: 'overwrite', delete_original: true });
+  assert.match(both, /overwritten/);
+  assert.match(both, /original is deleted/);
 });
 
 test('status line and run label', () => {
-  assert.strictEqual(Render.runLabel(demo), 'Run (4)');
-  assert.match(Render.statusText(demo), /measuring 1 of 2/);
+  assert.strictEqual(Render.runLabel(demo), 'Run (5)');
+  assert.match(Render.statusText(demo), /measuring 1 of 3/);
   assert.match(Render.statusText(demo), /held back/);
 });
 

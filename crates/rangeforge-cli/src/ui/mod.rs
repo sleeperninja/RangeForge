@@ -179,7 +179,7 @@ fn run_and_wait(app: &mut App, confirm: bool) -> Result<()> {
     app.handle_key(Key::Enter);
     if app.mode == Mode::ConfirmRun {
         if !confirm {
-            bail!("this File Strategy overwrites files. Add --yes to confirm");
+            bail!("this File Strategy overwrites files or deletes originals. Add --yes to confirm");
         }
         app.handle_key(Key::Char('y'));
     }

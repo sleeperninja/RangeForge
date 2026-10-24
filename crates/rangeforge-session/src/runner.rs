@@ -68,6 +68,10 @@ fn write_item(
                     index: *index,
                     path: path.clone(),
                 }),
+                Progress::RemovedOriginal { path } => sender.send(RunEvent::RemovedOriginal {
+                    group: item.group,
+                    path: path.clone(),
+                }),
             };
         },
     )
@@ -144,6 +148,7 @@ mod tests {
                 gain_db: -3.0,
                 file_name: file_name.to_string(),
                 tags: Tags::default(),
+                skip: false,
             }],
             directory,
         }
@@ -172,9 +177,7 @@ mod tests {
         let spec = RunSpec {
             items: vec![item(0, first, "one.m4a"), item(1, second, "two.m4a")],
             format: OutputFormat::new(Codec::Alac, BitDepth::Source),
-            strategy: Strategy::Serialize {
-                suffix: "_00".to_string(),
-            },
+            strategy: Strategy::safe(),
         };
 
         let events = collect(&start(spec, ffmpeg));
@@ -195,13 +198,13 @@ mod tests {
             ]
         };
         let mut all = Vec::new();
-        all.extend(expected(0, "one_00.m4a"));
-        all.extend(expected(1, "two_00.m4a"));
+        all.extend(expected(0, "one.m4a"));
+        all.extend(expected(1, "two.m4a"));
         all.push(RunEvent::AllDone);
         assert_eq!(events, all);
 
-        assert!(dir.path().join("one_00.m4a").exists());
-        assert!(dir.path().join("two_00.m4a").exists());
+        assert!(dir.path().join("one.m4a").exists());
+        assert!(dir.path().join("two.m4a").exists());
         assert!(
             dir.path().join("one.wav").exists(),
             "the sources are untouched"
@@ -219,9 +222,7 @@ mod tests {
         let spec = RunSpec {
             items: vec![item(0, bad, "bad.m4a"), item(1, good, "good.m4a")],
             format: OutputFormat::new(Codec::Alac, BitDepth::Source),
-            strategy: Strategy::Serialize {
-                suffix: "_00".to_string(),
-            },
+            strategy: Strategy::safe(),
         };
 
         let events = collect(&start(spec, ffmpeg));
@@ -237,7 +238,7 @@ mod tests {
                 .any(|e| matches!(e, RunEvent::Finished { group: 1 }))
         );
         assert_eq!(events.last(), Some(&RunEvent::AllDone));
-        assert!(dir.path().join("good_00.m4a").exists());
-        assert!(!dir.path().join("bad_00.m4a").exists());
+        assert!(dir.path().join("good.m4a").exists());
+        assert!(!dir.path().join("bad.m4a").exists());
     }
 }

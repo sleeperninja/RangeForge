@@ -12,14 +12,15 @@ use serde::Serialize;
 
 use rangeforge_export::format::{BitDepth, Codec};
 
-use crate::controls::StrategyKind;
+use crate::controls::{ConflictKind, WhereKind};
 use crate::model::{App, Group, Kind, RunState, Status, TrackRow};
 
 fn finite(value: f64) -> Option<f64> {
     value.is_finite().then_some(value)
 }
 
-/// One song as a window shows it.
+/// One song as a window shows it. The flags are independent facts a window shows separately.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct TrackView {
     pub label: String,
@@ -34,6 +35,8 @@ pub struct TrackView {
     pub unadjustable: bool,
     /// Its output file has been written.
     pub saved: bool,
+    /// It is part of the next run. The user can switch songs off.
+    pub included: bool,
 }
 
 /// An album or a single file.
@@ -78,10 +81,15 @@ pub struct OutputView {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StrategyView {
-    pub kind: String,
-    pub serial_suffix: String,
-    pub old_suffix: String,
+    /// Where files go: `next`, `subfolder` or `folder`.
+    pub place: String,
+    pub subfolder: String,
     pub folder: String,
+    /// What to do about a name that is taken: `number`, `rename_existing` or `overwrite`.
+    pub conflict: String,
+    pub number_suffix: String,
+    pub old_suffix: String,
+    pub delete_original: bool,
     /// Why the current choice cannot be used yet, such as a missing folder.
     pub problem: Option<String>,
     /// Running with this choice should ask the user first.
@@ -103,7 +111,8 @@ pub struct PresetsView {
 pub struct Options {
     pub codecs: Vec<Choice>,
     pub bit_depths: Vec<Choice>,
-    pub strategies: Vec<Choice>,
+    pub places: Vec<Choice>,
+    pub conflicts: Vec<Choice>,
 }
 
 /// The whole screen.
@@ -128,21 +137,36 @@ pub struct Snapshot {
     pub log: Vec<String>,
 }
 
-fn strategy_id(kind: StrategyKind) -> &'static str {
+fn place_id(kind: WhereKind) -> &'static str {
     match kind {
-        StrategyKind::Serialize => "serialize",
-        StrategyKind::RenameOld => "rename_old",
-        StrategyKind::Replace => "replace",
-        StrategyKind::SaveTo => "save_to",
+        WhereKind::NextToOriginal => "next",
+        WhereKind::Subfolder => "subfolder",
+        WhereKind::Folder => "folder",
     }
 }
 
-/// The choice of File Strategy with this id, as used by a window.
+fn conflict_id(kind: ConflictKind) -> &'static str {
+    match kind {
+        ConflictKind::Number => "number",
+        ConflictKind::RenameExisting => "rename_existing",
+        ConflictKind::Overwrite => "overwrite",
+    }
+}
+
+/// The place for files with this id, as used by a window.
 #[must_use]
-pub fn strategy_from_id(id: &str) -> Option<StrategyKind> {
-    StrategyKind::ALL
+pub fn place_from_id(id: &str) -> Option<WhereKind> {
+    WhereKind::ALL
         .into_iter()
-        .find(|kind| strategy_id(*kind) == id)
+        .find(|kind| place_id(*kind) == id)
+}
+
+/// The way of handling a taken name with this id, as used by a window.
+#[must_use]
+pub fn conflict_from_id(id: &str) -> Option<ConflictKind> {
+    ConflictKind::ALL
+        .into_iter()
+        .find(|kind| conflict_id(*kind) == id)
 }
 
 fn track_view(app: &App, track: &TrackRow) -> TrackView {
@@ -160,6 +184,7 @@ fn track_view(app: &App, track: &TrackRow) -> TrackView {
         limited,
         unadjustable,
         saved: track.saved,
+        included: track.included,
     }
 }
 
@@ -212,10 +237,17 @@ fn options() -> Options {
                 label: depth.label().to_string(),
             })
             .collect(),
-        strategies: StrategyKind::ALL
+        places: WhereKind::ALL
             .into_iter()
             .map(|kind| Choice {
-                id: strategy_id(kind).to_string(),
+                id: place_id(kind).to_string(),
+                label: kind.label().to_string(),
+            })
+            .collect(),
+        conflicts: ConflictKind::ALL
+            .into_iter()
+            .map(|kind| Choice {
+                id: conflict_id(kind).to_string(),
                 label: kind.label().to_string(),
             })
             .collect(),
@@ -243,12 +275,15 @@ impl App {
                 bit_depth: self.output.bit_depth.name().to_string(),
             },
             strategy: StrategyView {
-                kind: strategy_id(self.strategy.kind).to_string(),
-                serial_suffix: self.strategy.serial_suffix.clone(),
-                old_suffix: self.strategy.old_suffix.clone(),
+                place: place_id(self.strategy.where_kind).to_string(),
+                subfolder: self.strategy.subfolder.clone(),
                 folder: self.strategy.folder.clone(),
+                conflict: conflict_id(self.strategy.conflict_kind).to_string(),
+                number_suffix: self.strategy.number_suffix.clone(),
+                old_suffix: self.strategy.old_suffix.clone(),
+                delete_original: self.strategy.delete_original,
                 problem: self.strategy.to_strategy().err(),
-                needs_confirmation: self.strategy.kind.needs_confirmation(),
+                needs_confirmation: self.strategy.needs_confirmation(),
             },
             presets: PresetsView {
                 names: self.presets.items.iter().map(|p| p.name.clone()).collect(),
@@ -287,9 +322,8 @@ mod tests {
 
     fn track(label: &str, measurement: Option<Measurement>) -> TrackRow {
         TrackRow {
-            label: label.to_string(),
             measurement,
-            saved: false,
+            ..TrackRow::new(label.to_string())
         }
     }
 
@@ -371,8 +405,11 @@ mod tests {
         assert_eq!(snapshot.output.codec, "alac");
         assert_eq!(snapshot.output.container, "m4a");
         assert_eq!(snapshot.output.bit_depth, "source");
-        assert_eq!(snapshot.strategy.kind, "serialize");
-        assert_eq!(snapshot.strategy.serial_suffix, "_00");
+        assert_eq!(snapshot.strategy.place, "next");
+        assert_eq!(snapshot.strategy.conflict, "number");
+        assert_eq!(snapshot.strategy.number_suffix, "_00");
+        assert_eq!(snapshot.strategy.subfolder, "RangeForge");
+        assert!(!snapshot.strategy.delete_original);
         assert_eq!(snapshot.strategy.problem, None);
         assert!(!snapshot.strategy.needs_confirmation);
         assert_eq!(snapshot.log, ["Added x"]);
@@ -384,20 +421,25 @@ mod tests {
         let ids = |choices: &[Choice]| choices.iter().map(|c| c.id.clone()).collect::<Vec<_>>();
         assert_eq!(ids(&options.codecs), ["alac", "flac", "wav", "aac"]);
         assert_eq!(ids(&options.bit_depths), ["source", "16", "24"]);
+        assert_eq!(ids(&options.places), ["next", "subfolder", "folder"]);
         assert_eq!(
-            ids(&options.strategies),
-            ["serialize", "rename_old", "replace", "save_to"]
+            ids(&options.conflicts),
+            ["number", "rename_existing", "overwrite"]
         );
-        assert_eq!(options.strategies[1].label, "Rename old file");
+        assert_eq!(options.conflicts[1].label, "Rename the existing file");
         assert_eq!(options.bit_depths[1].label, "16-bit");
     }
 
     #[test]
     fn strategy_ids_round_trip() {
-        for kind in StrategyKind::ALL {
-            assert_eq!(strategy_from_id(strategy_id(kind)), Some(kind));
+        for kind in WhereKind::ALL {
+            assert_eq!(place_from_id(place_id(kind)), Some(kind));
         }
-        assert_eq!(strategy_from_id("nonsense"), None);
+        for kind in ConflictKind::ALL {
+            assert_eq!(conflict_from_id(conflict_id(kind)), Some(kind));
+        }
+        assert_eq!(place_from_id("nonsense"), None);
+        assert_eq!(conflict_from_id("nonsense"), None);
     }
 
     #[test]
@@ -419,15 +461,26 @@ mod tests {
     #[test]
     fn a_strategy_that_cannot_work_says_why_and_blocks_run() {
         let mut app = sample_app();
-        app.set_strategy_kind(StrategyKind::SaveTo);
+        app.set_where(WhereKind::Folder);
         let snapshot = app.snapshot();
         assert_eq!(
             snapshot.strategy.problem.as_deref(),
             Some("choose a folder to save to")
         );
 
-        app.set_strategy_kind(StrategyKind::Replace);
+        app.set_where(WhereKind::NextToOriginal);
+        app.set_conflict(ConflictKind::Overwrite);
         assert!(app.snapshot().strategy.needs_confirmation);
+    }
+
+    #[test]
+    fn songs_report_whether_they_are_switched_on() {
+        let mut app = sample_app();
+        assert!(app.snapshot().groups[0].tracks[1].included);
+        app.set_track_included(0, 1, false);
+        let snapshot = app.snapshot();
+        assert!(!snapshot.groups[0].tracks[1].included);
+        assert_eq!(snapshot.queued_songs, 3);
     }
 
     #[test]

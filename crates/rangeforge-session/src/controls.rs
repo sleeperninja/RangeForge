@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 use rangeforge_export::format::{BitDepth, Codec, OutputFormat};
-use rangeforge_export::strategy::Strategy;
+use rangeforge_export::strategy::{Conflict, Destination, Strategy};
 
 use crate::model::Settings;
 use crate::presets::Preset;
@@ -57,124 +57,172 @@ impl OutputSettings {
     }
 }
 
-/// The four File Strategy choices from the mockup.
+/// Where the finished files go.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StrategyKind {
-    Serialize,
-    RenameOld,
-    Replace,
-    SaveTo,
+pub enum WhereKind {
+    NextToOriginal,
+    Subfolder,
+    Folder,
 }
 
-impl StrategyKind {
-    pub const ALL: [Self; 4] = [
-        Self::Serialize,
-        Self::RenameOld,
-        Self::Replace,
-        Self::SaveTo,
-    ];
+impl WhereKind {
+    pub const ALL: [Self; 3] = [Self::NextToOriginal, Self::Subfolder, Self::Folder];
 
-    /// The wording used in the mockup.
     pub fn label(self) -> &'static str {
         match self {
-            Self::Serialize => "Serialize new filename",
-            Self::RenameOld => "Rename old file",
-            Self::Replace => "Replace original",
-            Self::SaveTo => "Save to location",
+            Self::NextToOriginal => "Next to the original",
+            Self::Subfolder => "In a subfolder of the original's folder",
+            Self::Folder => "All in one folder",
         }
-    }
-
-    /// Strategies that overwrite or move existing files need a confirmation before running.
-    pub fn needs_confirmation(self) -> bool {
-        matches!(self, Self::Replace)
     }
 }
 
-/// The File Strategy panel: which choice is selected, and the text next to each choice.
+/// What to do when a file is already at the new file's path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConflictKind {
+    Number,
+    RenameExisting,
+    Overwrite,
+}
+
+impl ConflictKind {
+    pub const ALL: [Self; 3] = [Self::Number, Self::RenameExisting, Self::Overwrite];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Number => "Add a number to the new file",
+            Self::RenameExisting => "Rename the existing file",
+            Self::Overwrite => "Overwrite the existing file",
+        }
+    }
+}
+
+/// The File Strategy panel: where files go, what to do about a name that is taken, and
+/// whether to delete the original afterwards.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StrategySettings {
-    pub kind: StrategyKind,
-    pub serial_suffix: String,
-    pub old_suffix: String,
+    pub where_kind: WhereKind,
+    pub subfolder: String,
     pub folder: String,
+    pub conflict_kind: ConflictKind,
+    pub number_suffix: String,
+    pub old_suffix: String,
+    pub delete_original: bool,
 }
 
 impl Default for StrategySettings {
-    /// Serialize is the safe starting choice. The mockup's default, Replace, is expected to
-    /// become the default once it has proven itself (decision D-14).
+    /// Next to the original, numbering a clash, deleting nothing: the safe starting choice.
+    /// Overwriting and deleting are opt-in until they have proven themselves (decision D-14).
     fn default() -> Self {
         Self {
-            kind: StrategyKind::Serialize,
-            serial_suffix: Strategy::DEFAULT_SERIAL.to_string(),
-            old_suffix: Strategy::DEFAULT_OLD.to_string(),
+            where_kind: WhereKind::NextToOriginal,
+            subfolder: Strategy::DEFAULT_SUBFOLDER.to_string(),
             folder: String::new(),
+            conflict_kind: ConflictKind::Number,
+            number_suffix: Strategy::DEFAULT_NUMBER.to_string(),
+            old_suffix: Strategy::DEFAULT_OLD.to_string(),
+            delete_original: false,
         }
     }
 }
 
 impl StrategySettings {
-    pub fn cycle_kind(&mut self, steps: i32) {
-        self.kind = cycle(&StrategyKind::ALL, self.kind, steps);
+    pub fn cycle_where(&mut self, steps: i32) {
+        self.where_kind = cycle(&WhereKind::ALL, self.where_kind, steps);
     }
 
-    /// The text field belonging to the selected choice, if it has one.
-    pub fn text(&self) -> Option<&str> {
-        match self.kind {
-            StrategyKind::Serialize => Some(&self.serial_suffix),
-            StrategyKind::RenameOld => Some(&self.old_suffix),
-            StrategyKind::SaveTo => Some(&self.folder),
-            StrategyKind::Replace => None,
+    pub fn cycle_conflict(&mut self, steps: i32) {
+        self.conflict_kind = cycle(&ConflictKind::ALL, self.conflict_kind, steps);
+    }
+
+    /// The text belonging to the selected place, if it has one.
+    pub fn where_text(&self) -> Option<&str> {
+        match self.where_kind {
+            WhereKind::NextToOriginal => None,
+            WhereKind::Subfolder => Some(&self.subfolder),
+            WhereKind::Folder => Some(&self.folder),
         }
     }
 
-    /// Replaces the text of the selected choice's field.
-    pub fn set_text(&mut self, text: String) {
-        match self.kind {
-            StrategyKind::Serialize => self.serial_suffix = text,
-            StrategyKind::RenameOld => self.old_suffix = text,
-            StrategyKind::SaveTo => self.folder = text,
-            StrategyKind::Replace => {}
+    pub fn set_where_text(&mut self, text: String) {
+        match self.where_kind {
+            WhereKind::NextToOriginal => {}
+            WhereKind::Subfolder => self.subfolder = text,
+            WhereKind::Folder => self.folder = text,
         }
+    }
+
+    /// The suffix belonging to the selected way of handling a clash, if it has one.
+    pub fn conflict_text(&self) -> Option<&str> {
+        match self.conflict_kind {
+            ConflictKind::Number => Some(&self.number_suffix),
+            ConflictKind::RenameExisting => Some(&self.old_suffix),
+            ConflictKind::Overwrite => None,
+        }
+    }
+
+    pub fn set_conflict_text(&mut self, text: String) {
+        match self.conflict_kind {
+            ConflictKind::Number => self.number_suffix = text,
+            ConflictKind::RenameExisting => self.old_suffix = text,
+            ConflictKind::Overwrite => {}
+        }
+    }
+
+    /// Overwriting files or deleting originals needs a confirmation before running.
+    pub fn needs_confirmation(&self) -> bool {
+        self.delete_original || self.conflict_kind == ConflictKind::Overwrite
     }
 
     /// The strategy to run with, or a plain-words reason it cannot be used yet.
     pub fn to_strategy(&self) -> Result<Strategy, String> {
-        match self.kind {
-            StrategyKind::Serialize => {
-                if self
-                    .serial_suffix
+        let destination = match self.where_kind {
+            WhereKind::NextToOriginal => Destination::NextToOriginal,
+            WhereKind::Subfolder => {
+                if self.subfolder.trim().is_empty() {
+                    return Err("name the subfolder to save into".to_string());
+                }
+                Destination::Subfolder(self.subfolder.trim().to_string())
+            }
+            WhereKind::Folder => {
+                let folder = self.folder.trim();
+                if folder.is_empty() {
+                    return Err("choose a folder to save to".to_string());
+                }
+                Destination::Folder(PathBuf::from(folder))
+            }
+        };
+        let conflict = match self.conflict_kind {
+            ConflictKind::Number => {
+                if !self
+                    .number_suffix
                     .chars()
                     .last()
                     .is_some_and(|c| c.is_ascii_digit())
                 {
-                    Ok(Strategy::Serialize {
-                        suffix: self.serial_suffix.clone(),
-                    })
-                } else {
-                    Err("the serial suffix must end in digits, like _00".to_string())
+                    return Err("the serial suffix must end in digits, like _00".to_string());
+                }
+                Conflict::Number {
+                    suffix: self.number_suffix.clone(),
                 }
             }
-            StrategyKind::RenameOld => {
+            ConflictKind::RenameExisting => {
                 if self.old_suffix.trim().is_empty() {
-                    Err("the suffix for renamed files cannot be empty".to_string())
-                } else {
-                    Ok(Strategy::RenameOld {
-                        suffix: self.old_suffix.clone(),
-                    })
+                    return Err("the suffix for renamed files cannot be empty".to_string());
+                }
+                Conflict::RenameExisting {
+                    suffix: self.old_suffix.clone(),
                 }
             }
-            StrategyKind::Replace => Ok(Strategy::Replace),
-            StrategyKind::SaveTo => {
-                let folder = self.folder.trim();
-                if folder.is_empty() {
-                    Err("choose a folder to save to".to_string())
-                } else {
-                    Ok(Strategy::SaveTo {
-                        directory: PathBuf::from(folder),
-                    })
-                }
-            }
-        }
+            ConflictKind::Overwrite => Conflict::Overwrite,
+        };
+        let strategy = Strategy {
+            destination,
+            conflict,
+            delete_original: self.delete_original,
+        };
+        strategy.validate().map_err(|error| error.to_string())?;
+        Ok(strategy)
     }
 }
 
@@ -187,34 +235,35 @@ pub enum Focus {
     Codec,
     BitDepth,
     Preset,
-    Strategy,
-    /// The suffix of Serialize or Rename old, or nothing for the other choices.
-    Suffix,
-    Folder,
+    Where,
+    /// The subfolder name or folder, when the place has one.
+    WhereText,
+    Conflict,
+    /// The suffix, when the way of handling a clash has one.
+    ConflictText,
+    DeleteOriginal,
 }
 
 impl Focus {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 11] = [
         Self::Target,
         Self::PeakProtection,
         Self::Ceiling,
         Self::Codec,
         Self::BitDepth,
         Self::Preset,
-        Self::Strategy,
-        Self::Suffix,
-        Self::Folder,
+        Self::Where,
+        Self::WhereText,
+        Self::Conflict,
+        Self::ConflictText,
+        Self::DeleteOriginal,
     ];
 
-    /// A control is only visited when it is showing: the suffix for the two choices that
-    /// have one, and the folder for Save to location.
+    /// A text control is only visited when it is showing.
     fn is_active(self, strategy: &StrategySettings) -> bool {
         match self {
-            Self::Suffix => matches!(
-                strategy.kind,
-                StrategyKind::Serialize | StrategyKind::RenameOld
-            ),
-            Self::Folder => strategy.kind == StrategyKind::SaveTo,
+            Self::WhereText => strategy.where_text().is_some(),
+            Self::ConflictText => strategy.conflict_text().is_some(),
             _ => true,
         }
     }
@@ -231,7 +280,7 @@ impl Focus {
 
     /// True for controls whose value is typed text.
     pub fn is_text(self) -> bool {
-        matches!(self, Self::Suffix | Self::Folder)
+        matches!(self, Self::WhereText | Self::ConflictText)
     }
 }
 
@@ -385,82 +434,107 @@ mod tests {
     }
 
     #[test]
-    fn strategy_defaults_are_the_safe_choice_with_the_mockups_suffixes() {
+    fn strategy_defaults_are_the_safe_choice_with_the_usual_suffixes() {
         let strategy = StrategySettings::default();
-        assert_eq!(strategy.kind, StrategyKind::Serialize);
-        assert_eq!(strategy.serial_suffix, "_00");
+        assert_eq!(strategy.where_kind, WhereKind::NextToOriginal);
+        assert_eq!(strategy.conflict_kind, ConflictKind::Number);
+        assert_eq!(strategy.number_suffix, "_00");
         assert_eq!(strategy.old_suffix, "_old");
-        assert_eq!(
-            strategy.to_strategy(),
-            Ok(Strategy::Serialize {
-                suffix: "_00".to_string()
-            })
-        );
+        assert!(!strategy.delete_original);
+        assert_eq!(strategy.to_strategy(), Ok(Strategy::safe()));
+        assert!(!strategy.needs_confirmation());
     }
 
     #[test]
     fn each_choice_converts_or_explains_what_is_missing() {
         let mut strategy = StrategySettings {
-            serial_suffix: "_new".to_string(),
+            number_suffix: "_new".to_string(),
             ..StrategySettings::default()
         };
         assert!(strategy.to_strategy().unwrap_err().contains("digits"));
 
-        strategy.kind = StrategyKind::RenameOld;
+        strategy.conflict_kind = ConflictKind::RenameExisting;
         assert_eq!(
-            strategy.to_strategy(),
-            Ok(Strategy::RenameOld {
+            strategy.to_strategy().unwrap().conflict,
+            Conflict::RenameExisting {
                 suffix: "_old".to_string()
-            })
+            }
         );
         strategy.old_suffix = "  ".to_string();
         assert!(strategy.to_strategy().is_err());
 
-        strategy.kind = StrategyKind::Replace;
-        assert_eq!(strategy.to_strategy(), Ok(Strategy::Replace));
+        strategy.conflict_kind = ConflictKind::Overwrite;
+        assert_eq!(
+            strategy.to_strategy().unwrap().conflict,
+            Conflict::Overwrite
+        );
 
-        strategy.kind = StrategyKind::SaveTo;
+        strategy.where_kind = WhereKind::Folder;
         assert!(strategy.to_strategy().unwrap_err().contains("folder"));
         strategy.folder = " C:\\music\\out ".to_string();
         assert_eq!(
-            strategy.to_strategy(),
-            Ok(Strategy::SaveTo {
-                directory: PathBuf::from("C:\\music\\out")
-            })
+            strategy.to_strategy().unwrap().destination,
+            Destination::Folder(PathBuf::from("C:\\music\\out"))
+        );
+
+        strategy.where_kind = WhereKind::Subfolder;
+        strategy.subfolder = "  ".to_string();
+        assert!(strategy.to_strategy().unwrap_err().contains("subfolder"));
+        strategy.subfolder = "a/b".to_string();
+        assert!(strategy.to_strategy().unwrap_err().contains("folder name"));
+        strategy.subfolder = " Balanced ".to_string();
+        assert_eq!(
+            strategy.to_strategy().unwrap().destination,
+            Destination::Subfolder("Balanced".to_string())
         );
     }
 
     #[test]
     fn text_belongs_to_the_selected_choice() {
         let mut strategy = StrategySettings::default();
-        assert_eq!(strategy.text(), Some("_00"));
-        strategy.set_text("_07".to_string());
-        assert_eq!(strategy.serial_suffix, "_07");
+        assert_eq!(strategy.where_text(), None);
+        strategy.set_where_text("ignored".to_string());
+        assert_eq!(strategy.subfolder, "RangeForge");
 
-        strategy.kind = StrategyKind::RenameOld;
-        assert_eq!(strategy.text(), Some("_old"));
-        strategy.kind = StrategyKind::Replace;
-        assert_eq!(strategy.text(), None);
-        strategy.set_text("ignored".to_string());
-        assert_eq!(strategy.serial_suffix, "_07");
+        strategy.where_kind = WhereKind::Subfolder;
+        assert_eq!(strategy.where_text(), Some("RangeForge"));
+        strategy.set_where_text("Balanced".to_string());
+        assert_eq!(strategy.subfolder, "Balanced");
+
+        assert_eq!(strategy.conflict_text(), Some("_00"));
+        strategy.set_conflict_text("_07".to_string());
+        assert_eq!(strategy.number_suffix, "_07");
+
+        strategy.conflict_kind = ConflictKind::RenameExisting;
+        assert_eq!(strategy.conflict_text(), Some("_old"));
+        strategy.conflict_kind = ConflictKind::Overwrite;
+        assert_eq!(strategy.conflict_text(), None);
+        strategy.set_conflict_text("ignored".to_string());
+        assert_eq!(strategy.number_suffix, "_07");
     }
 
     #[test]
-    fn only_replace_asks_for_confirmation() {
-        for kind in StrategyKind::ALL {
+    fn only_overwriting_or_deleting_asks_for_confirmation() {
+        let mut strategy = StrategySettings::default();
+        for kind in ConflictKind::ALL {
+            strategy.conflict_kind = kind;
             assert_eq!(
-                kind.needs_confirmation(),
-                kind == StrategyKind::Replace,
+                strategy.needs_confirmation(),
+                kind == ConflictKind::Overwrite,
                 "{kind:?}"
             );
         }
+        strategy.conflict_kind = ConflictKind::Number;
+        strategy.delete_original = true;
+        assert!(strategy.needs_confirmation());
+        assert!(strategy.to_strategy().unwrap().delete_original);
     }
 
     #[test]
     fn focus_skips_text_fields_that_are_not_showing() {
         let mut strategy = StrategySettings::default();
-        // Serialize shows its suffix but not the folder.
-        let order: Vec<Focus> = (0..9)
+        // Next to the original has no text, numbering has a suffix.
+        let order: Vec<Focus> = (0..10)
             .scan(Focus::Target, |at, _| {
                 let current = *at;
                 *at = at.step(1, &strategy);
@@ -476,33 +550,34 @@ mod tests {
                 Focus::Codec,
                 Focus::BitDepth,
                 Focus::Preset,
-                Focus::Strategy,
-                Focus::Suffix,
-                Focus::Target
+                Focus::Where,
+                Focus::Conflict,
+                Focus::ConflictText,
+                Focus::DeleteOriginal
             ]
         );
 
-        strategy.kind = StrategyKind::Replace;
+        strategy.where_kind = WhereKind::Folder;
+        assert_eq!(Focus::Where.step(1, &strategy), Focus::WhereText);
+        strategy.conflict_kind = ConflictKind::Overwrite;
         assert_eq!(
-            Focus::Strategy.step(1, &strategy),
-            Focus::Target,
-            "Replace has no field"
+            Focus::Conflict.step(1, &strategy),
+            Focus::DeleteOriginal,
+            "overwrite has no suffix"
         );
-        strategy.kind = StrategyKind::SaveTo;
-        assert_eq!(Focus::Strategy.step(1, &strategy), Focus::Folder);
-        assert_eq!(Focus::Folder.step(1, &strategy), Focus::Target);
         assert_eq!(
             Focus::Target.step(-1, &strategy),
-            Focus::Folder,
+            Focus::DeleteOriginal,
             "backward wraps"
         );
     }
 
     #[test]
     fn only_the_two_text_controls_are_text() {
-        assert!(Focus::Suffix.is_text());
-        assert!(Focus::Folder.is_text());
+        assert!(Focus::WhereText.is_text());
+        assert!(Focus::ConflictText.is_text());
         assert!(!Focus::Codec.is_text());
+        assert!(!Focus::DeleteOriginal.is_text());
     }
 
     fn list() -> PresetList {

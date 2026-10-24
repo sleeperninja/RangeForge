@@ -13,7 +13,7 @@ use rangeforge_session::controls::PresetList;
 use rangeforge_session::load::Job;
 use rangeforge_session::model::{App, MeasureOutcome, RunEvent, RunRequest, RunSpec, Settings};
 use rangeforge_session::presets;
-use rangeforge_session::snapshot::{Snapshot, strategy_from_id};
+use rangeforge_session::snapshot::{Snapshot, conflict_from_id, place_from_id};
 use serde::Serialize;
 
 /// The screen state, shared between the window's commands and the background threads.
@@ -158,23 +158,65 @@ pub fn delete_preset(shared: &Shared) -> Reply {
     with_app(shared, App::delete_preset)
 }
 
-pub fn set_strategy(shared: &Shared, id: &str) -> Reply {
+pub fn set_place(shared: &Shared, id: &str) -> Reply {
     with_app(shared, |app| {
-        let kind = strategy_from_id(id).ok_or_else(|| format!("Unknown File Strategy {id:?}"))?;
-        app.set_strategy_kind(kind);
+        let kind = place_from_id(id).ok_or_else(|| format!("Unknown place {id:?}"))?;
+        app.set_where(kind);
         Ok(())
     })
 }
 
-pub fn set_strategy_text(shared: &Shared, text: String) -> Reply {
+pub fn set_place_text(shared: &Shared, text: String) -> Reply {
     with_app(shared, |app| {
-        app.set_strategy_text(text);
+        app.set_where_text(text);
+        Ok(())
+    })
+}
+
+pub fn set_conflict(shared: &Shared, id: &str) -> Reply {
+    with_app(shared, |app| {
+        let kind = conflict_from_id(id).ok_or_else(|| format!("Unknown choice {id:?}"))?;
+        app.set_conflict(kind);
+        Ok(())
+    })
+}
+
+pub fn set_conflict_text(shared: &Shared, text: String) -> Reply {
+    with_app(shared, |app| {
+        app.set_conflict_text(text);
+        Ok(())
+    })
+}
+
+pub fn set_delete_original(shared: &Shared, on: bool) -> Reply {
+    with_app(shared, |app| {
+        app.set_delete_original(on);
         Ok(())
     })
 }
 
 pub fn clear_list(shared: &Shared) -> Reply {
     with_app(shared, App::clear)
+}
+
+/// Removes the albums and files that have been written from the list.
+pub fn clear_completed(shared: &Shared) -> Reply {
+    with_app(shared, |app| app.clear_completed().map(|_| ()))
+}
+
+pub fn remove_group(shared: &Shared, group: usize) -> Reply {
+    with_app(shared, |app| app.remove_group(group))
+}
+
+/// Switches one song on or off, or with no song given, every song of the group.
+pub fn set_included(shared: &Shared, group: usize, track: Option<usize>, on: bool) -> Reply {
+    with_app(shared, |app| {
+        match track {
+            Some(track) => app.set_track_included(group, track, on),
+            None => app.set_group_included(group, on),
+        }
+        Ok(())
+    })
 }
 
 /// Adds files, CUE sheets or folders. The caller starts measuring the returned jobs.
@@ -321,11 +363,26 @@ mod tests {
         assert_eq!(set_codec(&shared, "flac").state.output.container, "flac");
         assert_eq!(set_bit_depth(&shared, "24").state.output.bit_depth, "24");
         assert_eq!(
-            set_strategy(&shared, "rename_old").state.strategy.kind,
-            "rename_old"
+            set_conflict(&shared, "rename_existing")
+                .state
+                .strategy
+                .conflict,
+            "rename_existing"
         );
-        let reply = set_strategy_text(&shared, "_backup".to_string());
+        let reply = set_conflict_text(&shared, "_backup".to_string());
         assert_eq!(reply.state.strategy.old_suffix, "_backup");
+        assert_eq!(
+            set_place(&shared, "subfolder").state.strategy.place,
+            "subfolder"
+        );
+        let reply = set_place_text(&shared, "Balanced".to_string());
+        assert_eq!(reply.state.strategy.subfolder, "Balanced");
+        assert!(
+            set_delete_original(&shared, true)
+                .state
+                .strategy
+                .delete_original
+        );
     }
 
     #[test]
@@ -338,7 +395,8 @@ mod tests {
         assert_eq!(reply.state.output.codec, "alac");
 
         assert!(set_bit_depth(&shared, "32").error.is_some());
-        assert!(set_strategy(&shared, "shred").error.is_some());
+        assert!(set_place(&shared, "shred").error.is_some());
+        assert!(set_conflict(&shared, "shred").error.is_some());
         assert!(
             set_target(&shared, f64::NAN)
                 .error
@@ -435,12 +493,12 @@ mod tests {
                 break;
             }
         }
-        assert!(dir.path().join("song_00.m4a").exists());
+        assert!(dir.path().join("song.m4a").exists());
         assert!(song.exists(), "the source is untouched");
     }
 
     #[test]
-    fn replace_asks_the_window_to_confirm_before_anything_runs() {
+    fn finished_albums_can_be_cleared_and_songs_left_out() {
         let dir = tempdir().unwrap();
         let song = dir.path().join("song.wav");
         write_wav(&song);
@@ -451,7 +509,34 @@ mod tests {
             &shared,
             outcomes.recv_timeout(Duration::from_secs(60)).unwrap(),
         );
-        set_strategy(&shared, "replace");
+
+        let reply = set_included(&shared, 0, Some(0), false);
+        assert!(!reply.state.groups[0].tracks[0].included);
+        assert_eq!(reply.state.queued_songs, 0);
+        let reply = set_included(&shared, 0, None, true);
+        assert!(reply.state.groups[0].tracks[0].included);
+
+        // Nothing is finished yet, so nothing is cleared.
+        assert_eq!(clear_completed(&shared).state.groups.len(), 1);
+
+        let reply = remove_group(&shared, 0);
+        assert_eq!(reply.error, None);
+        assert_eq!(reply.state.groups.len(), 0);
+    }
+
+    #[test]
+    fn overwriting_asks_the_window_to_confirm_before_anything_runs() {
+        let dir = tempdir().unwrap();
+        let song = dir.path().join("song.wav");
+        write_wav(&song);
+        let shared = shared_with_presets(dir.path());
+        let (_, jobs) = add_paths(&shared, &[song.display().to_string()]);
+        let outcomes = engine::start(jobs, shared.cache());
+        apply_outcome(
+            &shared,
+            outcomes.recv_timeout(Duration::from_secs(60)).unwrap(),
+        );
+        set_conflict(&shared, "overwrite");
 
         let (run, spec) = begin_run(&shared, false);
         assert_eq!(run.outcome, "needs_confirmation");

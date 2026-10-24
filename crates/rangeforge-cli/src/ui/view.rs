@@ -7,12 +7,12 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Cell, List, ListItem, Paragraph, Row, Table};
 use ratatui::{Frame, Terminal};
 
-use rangeforge_session::controls::{Focus, Mode, StrategyKind};
+use rangeforge_session::controls::{ConflictKind, Focus, Mode, WhereKind};
 use rangeforge_session::model::{App, Group, RunState, Status, TrackRow};
 
 const LOG_WIDTH: u16 = 36;
-/// Six lines of controls plus the border.
-const CONTROLS_HEIGHT: u16 = 8;
+/// Seven lines of controls plus the border.
+const CONTROLS_HEIGHT: u16 = 9;
 
 /// Draws the whole screen: the table, the controls strip, and the log panel if it is open.
 pub fn draw(frame: &mut Frame, app: &App) {
@@ -128,8 +128,10 @@ fn track_row(app: &App, track: &TrackRow) -> Row<'static> {
         }
     };
 
-    // A tick marks a song whose output file has been written.
-    let (mark, name_style) = if track.saved {
+    // A tick marks a song whose output file has been written; a dash, one left out of the run.
+    let (mark, name_style) = if !track.included {
+        ("\u{2013}", Style::new().add_modifier(Modifier::DIM))
+    } else if track.saved {
         ("\u{2713}", Style::new().fg(Color::Green))
     } else {
         ("\u{21b3}", Style::new())
@@ -247,38 +249,65 @@ fn preset_line(app: &App) -> Line<'static> {
     Line::from(spans)
 }
 
-fn strategy_line(app: &App) -> Line<'static> {
-    let mut spans = vec![label("File Strategy ")];
-    for kind in StrategyKind::ALL {
-        let selected = app.strategy.kind == kind;
-        let radio = if selected { "(\u{2022})" } else { "( )" };
-        let text = format!("{radio} {}", kind.label());
-        spans.push(if selected && app.focus == Focus::Strategy {
-            Span::styled(
-                text,
-                Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD),
-            )
-        } else if selected {
-            Span::styled(text, Style::new().add_modifier(Modifier::BOLD))
-        } else {
-            Span::from(text).dim()
-        });
-        if selected {
-            let focused = matches!(app.focus, Focus::Suffix | Focus::Folder);
-            match (kind, app.strategy.text()) {
-                (StrategyKind::SaveTo, Some("")) => {
-                    spans.push(Span::from(" "));
-                    spans.push(control("choose a folder", focused));
-                }
-                (_, Some(text)) => {
-                    spans.push(Span::from(" "));
-                    spans.push(control(text.to_string(), focused));
-                }
-                _ => {}
-            }
+/// One radio choice: filled when selected, bold when it also has the keyboard.
+fn radio(text: &str, selected: bool, focused: bool) -> Span<'static> {
+    let mark = if selected { "(\u{2022})" } else { "( )" };
+    let text = format!("{mark} {text}");
+    if selected && focused {
+        Span::styled(
+            text,
+            Style::new().add_modifier(Modifier::REVERSED | Modifier::BOLD),
+        )
+    } else if selected {
+        Span::styled(text, Style::new().add_modifier(Modifier::BOLD))
+    } else {
+        Span::from(text).dim()
+    }
+}
+
+/// Where the finished files go.
+fn place_line(app: &App) -> Line<'static> {
+    let strategy = &app.strategy;
+    let mut spans = vec![label("Save files    ")];
+    for kind in WhereKind::ALL {
+        let selected = strategy.where_kind == kind;
+        spans.push(radio(kind.label(), selected, app.focus == Focus::Where));
+        if selected && let Some(text) = strategy.where_text() {
+            let text = if text.is_empty() {
+                "choose a folder"
+            } else {
+                text
+            };
+            spans.push(Span::from(" "));
+            spans.push(control(text.to_string(), app.focus == Focus::WhereText));
         }
         spans.push(Span::from("  "));
     }
+    Line::from(spans)
+}
+
+/// What to do about a name that is taken, and whether to delete the original.
+fn conflict_line(app: &App) -> Line<'static> {
+    let strategy = &app.strategy;
+    let mut spans = vec![label("If name taken ")];
+    for kind in ConflictKind::ALL {
+        let selected = strategy.conflict_kind == kind;
+        spans.push(radio(kind.label(), selected, app.focus == Focus::Conflict));
+        if selected && let Some(text) = strategy.conflict_text() {
+            spans.push(Span::from(" "));
+            spans.push(control(text.to_string(), app.focus == Focus::ConflictText));
+        }
+        spans.push(Span::from("  "));
+    }
+    spans.push(Span::from("Delete original "));
+    spans.push(control(
+        if strategy.delete_original {
+            "yes"
+        } else {
+            "no"
+        },
+        app.focus == Focus::DeleteOriginal,
+    ));
     Line::from(spans)
 }
 
@@ -296,7 +325,7 @@ fn prompt_line(app: &App) -> Line<'static> {
             Span::from("    Enter save, Esc cancel").dim(),
         ]),
         Mode::ConfirmRun => Line::from(
-            "Replace overwrites any file already at a new file's path. Run anyway? y = yes, any other key cancels",
+            "This overwrites files or deletes originals. Run anyway? y = yes, any other key cancels",
         )
         .yellow()
         .bold(),
@@ -334,7 +363,8 @@ fn draw_controls(frame: &mut Frame, app: &App, area: Rect) {
         volume_line(app),
         output_line(app),
         preset_line(app),
-        strategy_line(app),
+        place_line(app),
+        conflict_line(app),
         prompt_line(app),
     ];
     frame.render_widget(
@@ -376,9 +406,8 @@ mod tests {
 
     fn track(label: &str, measurement: Option<Measurement>) -> TrackRow {
         TrackRow {
-            label: label.to_string(),
             measurement,
-            saved: false,
+            ..TrackRow::new(label.to_string())
         }
     }
 
@@ -477,10 +506,13 @@ mod tests {
             "Sample Rate original",
             "Channels original",
             "Preset       [iTunes Lossless]",
-            "(\u{2022}) Serialize new filename [_00]",
-            "( ) Rename old file",
-            "( ) Replace original",
-            "( ) Save to location",
+            "(\u{2022}) Next to the original",
+            "( ) In a subfolder of the original's folder",
+            "( ) All in one folder",
+            "(\u{2022}) Add a number to the new file [_00]",
+            "( ) Rename the existing file",
+            "( ) Overwrite the existing file",
+            "Delete original [no]",
         ] {
             assert!(
                 screen.contains(expected),
@@ -517,29 +549,52 @@ mod tests {
     #[test]
     fn the_strategy_panel_shows_the_field_of_the_selected_choice() {
         let mut app = sample_app();
-        app.strategy.kind = StrategyKind::RenameOld;
+        app.strategy.conflict_kind = ConflictKind::RenameExisting;
         let screen = render(&app);
         assert!(
-            screen.contains("(\u{2022}) Rename old file [_old]"),
+            screen.contains("(\u{2022}) Rename the existing file [_old]"),
             "{screen}"
         );
-        assert!(screen.contains("( ) Serialize new filename"), "{screen}");
+        assert!(
+            screen.contains("( ) Add a number to the new file"),
+            "{screen}"
+        );
 
-        app.strategy.kind = StrategyKind::SaveTo;
+        app.strategy.where_kind = WhereKind::Folder;
         assert!(render(&app).contains("[choose a folder]"));
         app.strategy.folder = "D:\\music\\out".to_string();
-        assert!(render(&app).contains("(\u{2022}) Save to location [D:\\music\\out]"));
+        assert!(render(&app).contains("(\u{2022}) All in one folder [D:\\music\\out]"));
 
-        app.strategy.kind = StrategyKind::Replace;
+        app.strategy.where_kind = WhereKind::Subfolder;
+        assert!(
+            render(&app)
+                .contains("(\u{2022}) In a subfolder of the original's folder [RangeForge]")
+        );
+
+        app.strategy.conflict_kind = ConflictKind::Overwrite;
+        app.strategy.delete_original = true;
         let screen = render(&app);
-        assert!(screen.contains("(\u{2022}) Replace original"), "{screen}");
+        assert!(
+            screen.contains("(\u{2022}) Overwrite the existing file"),
+            "{screen}"
+        );
+        assert!(screen.contains("Delete original [yes]"), "{screen}");
         assert!(!screen.contains("[_00]"), "{screen}");
+    }
+
+    #[test]
+    fn a_song_left_out_is_dimmed_with_a_dash() {
+        let mut app = sample_app();
+        app.groups[0].tracks[1].included = false;
+        let screen = render(&app);
+        assert!(screen.contains("\u{2013} 2 - The Rain Song"), "{screen}");
+        assert!(screen.contains("\u{21b3} 1 - The Song Remains"), "{screen}");
     }
 
     #[test]
     fn a_strategy_that_cannot_work_is_explained_in_red_text() {
         let mut app = sample_app();
-        app.strategy.serial_suffix = "_new".to_string();
+        app.strategy.number_suffix = "_new".to_string();
         let screen = render(&app);
         assert!(
             screen.contains("File Strategy: the serial suffix must end in digits"),
@@ -560,6 +615,7 @@ mod tests {
 
         app.mode = Mode::ConfirmRun;
         assert!(render(&app).contains("Run anyway? y = yes"));
+        // (The prompt names both ways a run can destroy something.)
     }
 
     #[test]

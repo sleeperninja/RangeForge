@@ -118,13 +118,48 @@ async fn delete_preset(state: Session<'_>) -> Result<Reply, String> {
 }
 
 #[tauri::command]
-async fn set_strategy(id: String, state: Session<'_>) -> Result<Reply, String> {
-    Ok(ops::set_strategy(&state, &id))
+async fn set_place(id: String, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_place(&state, &id))
 }
 
 #[tauri::command]
-async fn set_strategy_text(text: String, state: Session<'_>) -> Result<Reply, String> {
-    Ok(ops::set_strategy_text(&state, text))
+async fn set_place_text(text: String, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_place_text(&state, text))
+}
+
+#[tauri::command]
+async fn set_conflict(id: String, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_conflict(&state, &id))
+}
+
+#[tauri::command]
+async fn set_conflict_text(text: String, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_conflict_text(&state, text))
+}
+
+#[tauri::command]
+async fn set_delete_original(on: bool, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_delete_original(&state, on))
+}
+
+#[tauri::command]
+async fn clear_completed(state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::clear_completed(&state))
+}
+
+#[tauri::command]
+async fn remove_group(group: usize, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::remove_group(&state, group))
+}
+
+#[tauri::command]
+async fn set_included(
+    group: usize,
+    track: Option<usize>,
+    on: bool,
+    state: Session<'_>,
+) -> Result<Reply, String> {
+    Ok(ops::set_included(&state, group, track, on))
 }
 
 #[tauri::command]
@@ -163,8 +198,14 @@ fn main() {
             select_preset,
             save_preset,
             delete_preset,
-            set_strategy,
-            set_strategy_text,
+            set_place,
+            set_place_text,
+            set_conflict,
+            set_conflict_text,
+            set_delete_original,
+            clear_completed,
+            remove_group,
+            set_included,
             run,
         ])
         .setup(|app| {

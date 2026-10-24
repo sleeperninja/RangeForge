@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, Stdio};
 use std::thread::{self, JoinHandle};
 
 use rangeforge_audio::decode::StreamInfo;
@@ -106,7 +106,8 @@ impl Encoder {
         track: usize,
         spec: &EncodeSpec<'_>,
     ) -> Result<Self, ExportError> {
-        let mut child = Command::new(ffmpeg.path())
+        let mut child = ffmpeg
+            .command()
             .args(build_args(spec))
             .stdin(Stdio::piped())
             .stdout(Stdio::null())

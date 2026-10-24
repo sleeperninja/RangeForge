@@ -44,14 +44,15 @@ When you run, the app never changes an original until every new file has been wr
 2. Only after the whole source has been read and every song has encoded without error are the temporary files moved into place, following your File Strategy.
 3. If anything fails along the way, the temporary files are deleted and your originals are exactly as they were.
 
-The four File Strategy choices, and what each can and cannot do:
+The File Strategy is three separate choices. First, **where** the files go: next to the original, in a subfolder of the original's folder, or all in one folder. Second, **what to do if a file is already at the new file's path**, which is the only time a name is ever changed:
 
 | Choice | What happens | What it never does |
 | --- | --- | --- |
-| Serialize new filename | The new file always gets a serial suffix such as `_00`, counting up if that name is taken. | Touch an existing file. |
-| Rename old file | An existing file at the new file's path is renamed with the suffix (such as `_old`), and the new file takes its name. | Overwrite an earlier `_old` file; it stops with an error instead. |
-| Replace original | A file at exactly the new file's path is overwritten. | Delete a source with a different name, such as the FLAC when making ALAC. |
-| Save to location | Files go into the folder you choose. If a name is taken there, the new file gets a serial suffix. | Touch the source folder. |
+| Add a number | The new file gets a serial suffix such as `_00`, counting up until the name is free. | Touch the file that is already there. |
+| Rename the existing file | The file already there is renamed with the suffix (such as `_old`), and the new file takes its name. | Overwrite an earlier `_old` file; it stops with an error instead. |
+| Overwrite | The file at exactly the new file's path is replaced. | Delete a source with a different name, such as the FLAC when making ALAC. |
+
+Third, an optional **delete the original**, off by default. It happens last, after every new file has been placed, and only when every song from that source was written (none left out) and the source is not itself one of the files just written. A failed run deletes nothing. Overwriting and deleting both need an explicit confirmation (`--yes` on the command line).
 
 **Volume and quality.** Volume change is a single gain per song, applied to the sound in memory before it is encoded, so the dynamics are untouched. A song exported at 0 dB is sample for sample identical to its source. When a gain forces 16-bit audio between its steps, a tiny amount of triangular dither is used instead of plain rounding, which trades a faint distortion for a steady noise about 96 dB down. Audio kept at 0 dB is never dithered, so it stays exact. Audio written at 24 bits needs no dither.
 

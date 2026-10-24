@@ -23,7 +23,7 @@ use rangeforge_export::ffmpeg::Ffmpeg;
 use rangeforge_export::format::{BitDepth, Codec, OutputFormat};
 use rangeforge_export::naming::track_file_name;
 use rangeforge_export::pipeline::{Options, TrackPlan, export_file};
-use rangeforge_export::strategy::Strategy;
+use rangeforge_export::strategy::{Destination, Strategy};
 use rangeforge_export::tags::Tags;
 use tempfile::tempdir;
 
@@ -85,12 +85,14 @@ fn export_album(out_dir: &Path, gain_for: impl Fn(usize) -> f64) -> Vec<PathBuf>
             gain_db: gain_for(index),
             file_name: track_file_name(track.number, track.title.as_deref(), "m4a"),
             tags: Tags::for_cue_track(&sheet, track, file.tracks.len()),
+            skip: false,
         })
         .collect();
     let options = Options {
         format: OutputFormat::new(Codec::Alac, BitDepth::Source),
-        strategy: Strategy::SaveTo {
-            directory: out_dir.to_path_buf(),
+        strategy: Strategy {
+            destination: Destination::Folder(out_dir.to_path_buf()),
+            ..Strategy::safe()
         },
         directory: dir.clone(),
         copy_source_tags: false,

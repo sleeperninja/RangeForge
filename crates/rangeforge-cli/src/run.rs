@@ -59,8 +59,10 @@ pub fn run(options: &RunOptions) -> Result<()> {
     }
 
     let strategy = options.output.strategy().map_err(anyhow::Error::msg)?;
-    if matches!(strategy, Strategy::Replace) && !options.dry_run && !options.yes {
-        bail!("--strategy replace overwrites files. Add --yes to confirm, or --dry-run to preview");
+    if strategy.needs_confirmation() && !options.dry_run && !options.yes {
+        bail!(
+            "this overwrites files or deletes originals. Add --yes to confirm, or --dry-run to preview"
+        );
     }
     let ffmpeg = if options.dry_run {
         None
@@ -154,10 +156,14 @@ fn run_job(
         segments.as_deref(),
         &plans,
         &write_options,
-        &mut |progress| {
-            if let Progress::Saved { index, path } = progress {
+        &mut |progress| match progress {
+            Progress::Saved { index, path } => {
                 println!("  saved {}/{}: {}", index + 1, plans.len(), path.display());
             }
+            Progress::RemovedOriginal { path } => {
+                println!("  deleted original: {}", path.display());
+            }
+            Progress::Encoding { .. } => {}
         },
     )
     .with_context(|| format!("writing {}", job.audio.display()))?;

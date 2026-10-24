@@ -24,6 +24,10 @@ pub enum ExportError {
     },
     #[error("the suffix {0:?} must end in digits, such as _00, so it can count up")]
     InvalidSuffix(String),
+    #[error(
+        "{0:?} cannot be used as a folder name: use one plain name, with no slashes or : * ? \" < > |"
+    )]
+    InvalidSubfolder(String),
     #[error("could not find a free name for {} after many tries", .0.display())]
     NoFreeName(PathBuf),
     #[error("{} already exists, so it was not overwritten", .0.display())]
