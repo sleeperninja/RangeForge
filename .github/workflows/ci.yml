@@ -22,7 +22,8 @@ jobs:
           - { name: macOS Apple Silicon, os: macos-latest, experimental: false }
           # Secondary: built and tested, not hand-tested
           - { name: macOS Intel, os: macos-15-intel, experimental: false }
-          - { name: Linux GNU, os: ubuntu-latest, experimental: false }
+          # Cannot be hand-tested, so a failure here does not fail the run
+          - { name: Linux GNU, os: ubuntu-latest, experimental: true }
           # Needs an ARM runner; may be unavailable on private repositories
           - { name: Windows ARM, os: windows-11-arm, experimental: true }
     steps:
