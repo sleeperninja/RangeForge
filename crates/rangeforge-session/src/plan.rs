@@ -9,7 +9,7 @@ use rangeforge_export::naming::{converted_file_name, track_file_name};
 use rangeforge_export::pipeline::TrackPlan;
 use rangeforge_export::tags::Tags;
 
-use crate::ui::load::Job;
+use crate::load::Job;
 
 /// One song with its measurement and the gain chosen for it.
 #[derive(Debug, Clone)]

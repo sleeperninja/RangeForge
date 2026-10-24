@@ -1,0 +1,22 @@
+[package]
+name = "rangeforge-session"
+description = "The brain of the RangeForge screens: files, measurements, settings, presets, and running, shared by the terminal view and the desktop app."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+directories = "6"
+rangeforge-audio = { path = "../rangeforge-audio" }
+rangeforge-core = { path = "../rangeforge-core" }
+rangeforge-export = { path = "../rangeforge-export" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true

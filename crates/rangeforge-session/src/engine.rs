@@ -8,9 +8,9 @@ use std::time::Instant;
 use rangeforge_audio::cache::{Cache, Source};
 use rangeforge_core::planner::Measurement;
 
-use super::load::Job;
-use super::model::{MeasureOutcome, Origin};
-use crate::support::{measure_split, measure_whole};
+use crate::load::Job;
+use crate::measuring::{measure_split, measure_whole};
+use crate::model::{MeasureOutcome, Origin};
 
 /// More workers than this just fight over a network drive.
 const MAX_WORKERS: usize = 4;

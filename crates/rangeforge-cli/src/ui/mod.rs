@@ -1,15 +1,10 @@
 //! The interactive terminal view: a table of measurements with live volume targets, the
 //! mockup's settings panels, and a Run button.
 //!
-//! The layout follows the mockups in `docs/mockups`. The screen's state lives in [`model`] and
-//! [`controls`], drawing in [`view`], loading in [`load`], background measuring in [`engine`]
-//! and background writing in [`runner`], so each part can be tested without a terminal.
+//! The layout follows the mockups in `docs/mockups`. All the rules live in
+//! `rangeforge-session`, shared with the desktop app. This module only draws the screen
+//! ([`view`]) and turns terminal key presses into the shared [`Key`] type.
 
-pub mod controls;
-mod engine;
-pub mod load;
-pub mod model;
-mod runner;
 mod view;
 
 use std::path::{Path, PathBuf};
@@ -19,13 +14,12 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use rangeforge_audio::cache::Cache;
 use rangeforge_export::ffmpeg::Ffmpeg;
+use rangeforge_session::controls::{Mode, OutputSettings, PresetList, StrategySettings};
+use rangeforge_session::load::{self, Job};
+use rangeforge_session::model::{App, Key, MeasureOutcome, RunEvent, RunSpec, Settings};
+use rangeforge_session::{engine, presets, runner};
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
-
-use crate::presets;
-use controls::{Mode, OutputSettings, PresetList, StrategySettings};
-use load::Job;
-use model::{App, MeasureOutcome, RunEvent, RunSpec, Settings};
 
 /// Everything the view needs to start.
 #[derive(Debug)]
@@ -42,6 +36,28 @@ pub struct Options {
     pub run: bool,
     /// For the snapshot only: confirm a strategy that overwrites files.
     pub yes: bool,
+}
+
+/// Turns a terminal key code into the shared key type. Keys the screen does not use give
+/// `None`.
+fn translate(code: KeyCode) -> Option<Key> {
+    Some(match code {
+        KeyCode::Char(c) => Key::Char(c),
+        KeyCode::Left => Key::Left,
+        KeyCode::Right => Key::Right,
+        KeyCode::Up => Key::Up,
+        KeyCode::Down => Key::Down,
+        KeyCode::PageUp => Key::PageUp,
+        KeyCode::PageDown => Key::PageDown,
+        KeyCode::Home => Key::Home,
+        KeyCode::End => Key::End,
+        KeyCode::Tab => Key::Tab,
+        KeyCode::BackTab => Key::BackTab,
+        KeyCode::Enter => Key::Enter,
+        KeyCode::Esc => Key::Esc,
+        KeyCode::Backspace => Key::Backspace,
+        _ => return None,
+    })
 }
 
 /// Loads the paths and sets the screen up with the starting settings and the saved presets.
@@ -97,8 +113,9 @@ fn event_loop(
         if event::poll(Duration::from_millis(100))?
             && let Event::Key(key) = event::read()?
             && key.kind == KeyEventKind::Press
+            && let Some(key) = translate(key.code)
         {
-            app.handle_key(key.code);
+            app.handle_key(key);
         }
         if let Some(spec) = app.take_run_spec() {
             writing = start_writing(app, spec);
@@ -159,12 +176,12 @@ pub fn snapshot(options: &Options, width: u16, height: u16) -> Result<String> {
 
 /// Presses Run, answers the confirmation if there is one, and waits for the run to finish.
 fn run_and_wait(app: &mut App, confirm: bool) -> Result<()> {
-    app.handle_key(KeyCode::Enter);
+    app.handle_key(Key::Enter);
     if app.mode == Mode::ConfirmRun {
         if !confirm {
             bail!("this File Strategy overwrites files. Add --yes to confirm");
         }
-        app.handle_key(KeyCode::Char('y'));
+        app.handle_key(Key::Char('y'));
     }
     let Some(spec) = app.take_run_spec() else {
         bail!(
@@ -182,5 +199,21 @@ fn run_and_wait(app: &mut App, confirm: bool) -> Result<()> {
         if done {
             return Ok(());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn terminal_keys_become_shared_keys() {
+        assert_eq!(translate(KeyCode::Char('q')), Some(Key::Char('q')));
+        assert_eq!(translate(KeyCode::Enter), Some(Key::Enter));
+        assert_eq!(translate(KeyCode::BackTab), Some(Key::BackTab));
+        assert_eq!(translate(KeyCode::PageDown), Some(Key::PageDown));
+        // Keys the screen has no use for are ignored.
+        assert_eq!(translate(KeyCode::F(5)), None);
+        assert_eq!(translate(KeyCode::Insert), None);
     }
 }

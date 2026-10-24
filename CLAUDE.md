@@ -43,7 +43,7 @@ It replaces about seven tools (MediaHuman, an FFmpeg GUI, Adobe Audition, a Powe
 
 ## Code standards (Rust)
 
-- Layout: `crates/rangeforge-core` is a pure library (no UI, minimal I/O). `crates/rangeforge-cli` is a thin front end. A desktop UI will be a second thin front end on the same core.
+- Layout: `crates/rangeforge-core` is a pure library (no UI, minimal I/O). `rangeforge-audio` decodes and measures, `rangeforge-export` writes files, and `rangeforge-session` holds the rules the screens share. `rangeforge-cli` (terminal) and the desktop app are thin front ends on top of those.
 - `unsafe` is allowed only inside one small memory-map wrapper, with a comment explaining why it is sound.
 - Errors are typed (`thiserror`). No `unwrap()` or `expect()` outside tests.
 - Everything must pass `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace`.
@@ -54,3 +54,13 @@ It replaces about seven tools (MediaHuman, an FFmpeg GUI, Adobe Audition, a Powe
 
 - The folder is on a network share (`\\yggdrasil.local\...`). Git needs `safe.directory` set for it, and `cargo` should use a **local** target directory: set `CARGO_TARGET_DIR` to something like `C:\Local\rangeforge-target`. Details in [docs/06-development.md](docs/06-development.md).
 - Two GitHub SSH identities exist on this machine. Check which one `origin` uses before pushing.
+
+## Resuming after a long session or a context reset (for the AI)
+
+Long sessions get summarized, and details are lost. The files, not the summary, are the memory.
+
+1. Run `git log -5` and `git status`, then read the **Now** paragraph of [docs/05-roadmap.md](docs/05-roadmap.md). That says what is done and what is next.
+2. Check [docs/04-decisions.md](docs/04-decisions.md) before proposing anything. Settled items (for example D-12: gain only, the true-peak ceiling is the limit) are not reopened without a new reason.
+3. Before saying a change is done, run the three checks under *Code standards*. Say plainly what passed and what could not be tested (for example the interactive keyboard loop, or CI results the AI cannot see).
+4. Commit as you go, but **push only when asked**, and delete only with a go-ahead. Write commit messages to a file and use `git commit -F`.
+5. Keep the roadmap's **Now** paragraph short, and put detail in the phase list below it. If it grows into a wall of text, shorten it.

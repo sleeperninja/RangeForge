@@ -4,8 +4,6 @@
 //! this file only reads input and prints results.
 
 mod output;
-mod plan;
-mod presets;
 mod run;
 mod support;
 mod ui;
@@ -18,8 +16,9 @@ use clap::{Parser, Subcommand};
 use rangeforge_audio::cache::{Cache, Source};
 use rangeforge_audio::measure::Measured;
 
-use support::{CacheOptions, measure_split, measure_whole, read_sheet};
-use ui::model::Settings;
+use rangeforge_session::measuring::{measure_split, measure_whole, read_sheet};
+use rangeforge_session::model::Settings;
+use support::CacheOptions;
 
 #[derive(Debug, Parser)]
 #[command(

@@ -6,7 +6,7 @@ use clap::{Args, ValueEnum};
 use rangeforge_export::format::{BitDepth, Codec};
 use rangeforge_export::strategy::Strategy;
 
-use crate::ui::controls::{OutputSettings, StrategyKind, StrategySettings};
+use rangeforge_session::controls::{OutputSettings, StrategyKind, StrategySettings};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum CodecArg {

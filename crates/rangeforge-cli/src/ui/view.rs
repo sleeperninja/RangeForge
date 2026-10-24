@@ -7,8 +7,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Cell, List, ListItem, Paragraph, Row, Table};
 use ratatui::{Frame, Terminal};
 
-use super::controls::{Focus, Mode, StrategyKind};
-use super::model::{App, Group, RunState, Status, TrackRow};
+use rangeforge_session::controls::{Focus, Mode, StrategyKind};
+use rangeforge_session::model::{App, Group, RunState, Status, TrackRow};
 
 const LOG_WIDTH: u16 = 36;
 /// Six lines of controls plus the border.
@@ -359,11 +359,11 @@ fn draw_log(frame: &mut Frame, app: &App, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::presets::built_in;
-    use crate::ui::controls::PresetList;
-    use crate::ui::model::{Kind, Origin, RunEvent, Settings};
     use rangeforge_core::planner::Measurement;
     use rangeforge_export::format::{BitDepth, Codec};
+    use rangeforge_session::controls::PresetList;
+    use rangeforge_session::model::{Kind, Origin, RunEvent, Settings};
+    use rangeforge_session::presets::built_in;
     use std::path::PathBuf;
 
     fn measured(lufs: f64, peak: f64, range: f64) -> Measurement {

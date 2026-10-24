@@ -10,7 +10,7 @@ use rangeforge_core::cue::CueFile;
 use rangeforge_export::ffmpeg::Ffmpeg;
 use rangeforge_export::pipeline::{Options, Progress, export_file};
 
-use super::model::{RunEvent, RunItem, RunSpec};
+use crate::model::{RunEvent, RunItem, RunSpec};
 
 /// Starts writing the files in `spec` in the background. Progress arrives on the returned
 /// receiver, ending with [`RunEvent::AllDone`].
@@ -87,7 +87,7 @@ mod tests {
     use rangeforge_export::tags::Tags;
     use tempfile::tempdir;
 
-    use crate::ui::load::Job;
+    use crate::load::Job;
 
     fn ffmpeg() -> Option<Ffmpeg> {
         match Ffmpeg::locate() {

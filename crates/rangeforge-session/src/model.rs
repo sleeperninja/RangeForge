@@ -11,13 +11,32 @@ use rangeforge_core::planner::{self, GainPlan, Measurement, PlanError, Target};
 use rangeforge_export::format::OutputFormat;
 use rangeforge_export::pipeline::TrackPlan;
 use rangeforge_export::strategy::Strategy;
-use ratatui::crossterm::event::KeyCode;
 
-use super::controls::{
+use crate::controls::{
     Focus, Mode, OutputSettings, PresetList, Saved, StrategySettings, apply_preset,
 };
-use super::load::Job;
+use crate::load::Job;
 use crate::plan::{plan_tracks, track_plans};
+
+/// A key press, in terms the screens share. The terminal view translates real key codes into
+/// these. The desktop app does not use keys at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Key {
+    Char(char),
+    Left,
+    Right,
+    Up,
+    Down,
+    PageUp,
+    PageDown,
+    Home,
+    End,
+    Tab,
+    BackTab,
+    Enter,
+    Esc,
+    Backspace,
+}
 
 const TARGET_STEP: f64 = 0.5;
 const CEILING_STEP: f64 = 0.1;
@@ -525,7 +544,7 @@ impl App {
     }
 
     /// Reacts to a key press.
-    pub fn handle_key(&mut self, key: KeyCode) {
+    pub fn handle_key(&mut self, key: Key) {
         match self.mode.clone() {
             Mode::Normal => self.key_normal(key),
             Mode::Editing(buffer) => self.key_editing(key, buffer),
@@ -534,25 +553,25 @@ impl App {
         }
     }
 
-    fn key_normal(&mut self, key: KeyCode) {
+    fn key_normal(&mut self, key: Key) {
         match key {
-            KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-            KeyCode::Tab => self.focus = self.focus.step(1, &self.strategy),
-            KeyCode::BackTab => self.focus = self.focus.step(-1, &self.strategy),
-            KeyCode::Left => self.change(-1),
-            KeyCode::Right => self.change(1),
-            KeyCode::Char('[') => self.settings.nudge_ceiling(-1),
-            KeyCode::Char(']') => self.settings.nudge_ceiling(1),
-            KeyCode::Char('p') => self.settings.peak_protection = !self.settings.peak_protection,
-            KeyCode::Char('l') => self.show_log = !self.show_log,
-            KeyCode::Up => self.scroll_up(1),
-            KeyCode::Down => self.scroll_down(1),
-            KeyCode::PageUp => self.scroll_up(PAGE),
-            KeyCode::PageDown => self.scroll_down(PAGE),
-            KeyCode::Home => self.scroll = 0,
-            KeyCode::End => self.scroll = self.row_count().saturating_sub(1),
-            KeyCode::Char('e') => self.begin_edit(),
-            KeyCode::Char('s') => {
+            Key::Char('q') | Key::Esc => self.should_quit = true,
+            Key::Tab => self.focus = self.focus.step(1, &self.strategy),
+            Key::BackTab => self.focus = self.focus.step(-1, &self.strategy),
+            Key::Left => self.change(-1),
+            Key::Right => self.change(1),
+            Key::Char('[') => self.settings.nudge_ceiling(-1),
+            Key::Char(']') => self.settings.nudge_ceiling(1),
+            Key::Char('p') => self.settings.peak_protection = !self.settings.peak_protection,
+            Key::Char('l') => self.show_log = !self.show_log,
+            Key::Up => self.scroll_up(1),
+            Key::Down => self.scroll_down(1),
+            Key::PageUp => self.scroll_up(PAGE),
+            Key::PageDown => self.scroll_down(PAGE),
+            Key::Home => self.scroll = 0,
+            Key::End => self.scroll = self.row_count().saturating_sub(1),
+            Key::Char('e') => self.begin_edit(),
+            Key::Char('s') => {
                 if self.can_save_preset() {
                     let name = self
                         .presets
@@ -563,14 +582,14 @@ impl App {
                     self.log("Nothing has changed from this preset, so there is nothing to save");
                 }
             }
-            KeyCode::Char('d') => match self.presets.delete_selected() {
+            Key::Char('d') => match self.presets.delete_selected() {
                 Some(name) => {
                     self.presets_changed = true;
                     self.log(format!("Deleted preset {name}"));
                 }
                 None => self.log("No preset is selected to delete"),
             },
-            KeyCode::Enter | KeyCode::Char('r') => self.request_run(),
+            Key::Enter | Key::Char('r') => self.request_run(),
             _ => {}
         }
     }
@@ -585,18 +604,18 @@ impl App {
         }
     }
 
-    fn key_editing(&mut self, key: KeyCode, mut buffer: String) {
+    fn key_editing(&mut self, key: Key, mut buffer: String) {
         match key {
-            KeyCode::Esc => self.mode = Mode::Normal,
-            KeyCode::Enter => {
+            Key::Esc => self.mode = Mode::Normal,
+            Key::Enter => {
                 self.strategy.set_text(buffer);
                 self.mode = Mode::Normal;
             }
-            KeyCode::Backspace => {
+            Key::Backspace => {
                 buffer.pop();
                 self.mode = Mode::Editing(buffer);
             }
-            KeyCode::Char(c) if !c.is_control() => {
+            Key::Char(c) if !c.is_control() => {
                 buffer.push(c);
                 self.mode = Mode::Editing(buffer);
             }
@@ -604,10 +623,10 @@ impl App {
         }
     }
 
-    fn key_naming(&mut self, key: KeyCode, mut buffer: String) {
+    fn key_naming(&mut self, key: Key, mut buffer: String) {
         match key {
-            KeyCode::Esc => self.mode = Mode::Normal,
-            KeyCode::Enter => {
+            Key::Esc => self.mode = Mode::Normal,
+            Key::Enter => {
                 self.mode = Mode::Normal;
                 let name = buffer.trim().to_string();
                 if name.is_empty() {
@@ -621,11 +640,11 @@ impl App {
                     Saved::Updated => format!("Updated preset {name}"),
                 });
             }
-            KeyCode::Backspace => {
+            Key::Backspace => {
                 buffer.pop();
                 self.mode = Mode::NamingPreset(buffer);
             }
-            KeyCode::Char(c) if !c.is_control() => {
+            Key::Char(c) if !c.is_control() => {
                 buffer.push(c);
                 self.mode = Mode::NamingPreset(buffer);
             }
@@ -633,9 +652,9 @@ impl App {
         }
     }
 
-    fn key_confirm(&mut self, key: KeyCode) {
+    fn key_confirm(&mut self, key: Key) {
         self.mode = Mode::Normal;
-        if matches!(key, KeyCode::Char('y' | 'Y')) {
+        if matches!(key, Key::Char('y' | 'Y')) {
             self.start_run();
         } else {
             self.log("Run cancelled");
@@ -646,8 +665,8 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controls::StrategyKind;
     use crate::presets::built_in;
-    use crate::ui::controls::StrategyKind;
     use rangeforge_core::cue;
     use rangeforge_export::format::{BitDepth, Codec};
 
@@ -771,7 +790,7 @@ mod tests {
         app.settings.target_lufs = -14.0;
         assert!(app.any_limited());
         // Turning protection off removes the limit.
-        app.handle_key(KeyCode::Char('p'));
+        app.handle_key(Key::Char('p'));
         assert!(!app.any_limited());
     }
 
@@ -848,28 +867,28 @@ mod tests {
         )]);
 
         // Target is focused to begin with, so left and right change it.
-        app.handle_key(KeyCode::Right);
+        app.handle_key(Key::Right);
         assert!((app.settings.target_lufs - -21.5).abs() < 1e-9);
-        app.handle_key(KeyCode::Left);
-        app.handle_key(KeyCode::Left);
+        app.handle_key(Key::Left);
+        app.handle_key(Key::Left);
         assert!((app.settings.target_lufs - -22.5).abs() < 1e-9);
 
-        app.handle_key(KeyCode::Char('l'));
+        app.handle_key(Key::Char('l'));
         assert!(app.show_log);
 
-        app.handle_key(KeyCode::PageDown);
+        app.handle_key(Key::PageDown);
         assert_eq!(app.scroll, 10);
-        app.handle_key(KeyCode::End);
+        app.handle_key(Key::End);
         assert_eq!(app.scroll, 30);
-        app.handle_key(KeyCode::Down);
+        app.handle_key(Key::Down);
         assert_eq!(app.scroll, 30, "cannot scroll past the last row");
-        app.handle_key(KeyCode::Home);
+        app.handle_key(Key::Home);
         assert_eq!(app.scroll, 0);
-        app.handle_key(KeyCode::Up);
+        app.handle_key(Key::Up);
         assert_eq!(app.scroll, 0);
 
         assert!(!app.should_quit);
-        app.handle_key(KeyCode::Char('q'));
+        app.handle_key(Key::Char('q'));
         assert!(app.should_quit);
     }
 
@@ -877,16 +896,16 @@ mod tests {
     fn tab_moves_between_controls_and_arrows_change_the_focused_one() {
         let mut app = ready_app();
         for _ in 0..3 {
-            app.handle_key(KeyCode::Tab);
+            app.handle_key(Key::Tab);
         }
         assert_eq!(app.focus, Focus::Codec);
-        app.handle_key(KeyCode::Right);
+        app.handle_key(Key::Right);
         assert_eq!(app.output.codec, Codec::Flac);
-        app.handle_key(KeyCode::Tab);
+        app.handle_key(Key::Tab);
         assert_eq!(app.focus, Focus::BitDepth);
-        app.handle_key(KeyCode::Left);
+        app.handle_key(Key::Left);
         assert_eq!(app.output.bit_depth, BitDepth::TwentyFour);
-        app.handle_key(KeyCode::BackTab);
+        app.handle_key(Key::BackTab);
         assert_eq!(app.focus, Focus::Codec);
 
         // The volume did not move while another control had the keyboard.
@@ -896,11 +915,11 @@ mod tests {
     #[test]
     fn the_peak_protection_control_toggles_with_either_arrow() {
         let mut app = ready_app();
-        app.handle_key(KeyCode::Tab);
+        app.handle_key(Key::Tab);
         assert_eq!(app.focus, Focus::PeakProtection);
-        app.handle_key(KeyCode::Right);
+        app.handle_key(Key::Right);
         assert!(!app.settings.peak_protection);
-        app.handle_key(KeyCode::Left);
+        app.handle_key(Key::Left);
         assert!(app.settings.peak_protection);
     }
 
@@ -908,14 +927,14 @@ mod tests {
     fn choosing_a_preset_fills_the_output_and_volume() {
         let mut app = ready_app();
         app.focus = Focus::Preset;
-        app.handle_key(KeyCode::Right);
+        app.handle_key(Key::Right);
         assert_eq!(app.presets.selected_preset().unwrap().name, "CD Quality");
         assert_eq!(app.output.codec, Codec::Flac);
         assert_eq!(app.output.bit_depth, BitDepth::Sixteen);
         assert!(!app.preset_modified());
 
         app.focus = Focus::Codec;
-        app.handle_key(KeyCode::Right);
+        app.handle_key(Key::Right);
         assert!(
             app.preset_modified(),
             "changing a setting marks the preset modified"
@@ -927,16 +946,16 @@ mod tests {
         let mut app = ready_app();
         app.settings.nudge_target(2);
 
-        app.handle_key(KeyCode::Char('s'));
+        app.handle_key(Key::Char('s'));
         assert!(matches!(&app.mode, Mode::NamingPreset(name) if name == "iTunes Lossless"));
         // Replace the suggested name.
         for _ in 0..20 {
-            app.handle_key(KeyCode::Backspace);
+            app.handle_key(Key::Backspace);
         }
         for c in "Quiet car".chars() {
-            app.handle_key(KeyCode::Char(c));
+            app.handle_key(Key::Char(c));
         }
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
 
         assert_eq!(app.mode, Mode::Normal);
         assert_eq!(app.presets.selected_preset().unwrap().name, "Quiet car");
@@ -953,7 +972,7 @@ mod tests {
     fn saving_is_only_offered_when_something_has_changed() {
         let mut app = ready_app();
         assert!(!app.can_save_preset());
-        app.handle_key(KeyCode::Char('s'));
+        app.handle_key(Key::Char('s'));
         assert_eq!(app.mode, Mode::Normal);
         assert!(last_log(&app).contains("nothing to save"));
 
@@ -969,7 +988,7 @@ mod tests {
     #[test]
     fn a_run_that_cannot_start_puts_the_rows_back() {
         let mut app = ready_app();
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
         let _ = app.take_run_spec();
         assert_eq!(app.groups[0].run, RunState::Queued);
 
@@ -984,16 +1003,16 @@ mod tests {
     fn naming_can_be_cancelled_and_an_empty_name_is_refused() {
         let mut app = ready_app();
         app.settings.nudge_target(1);
-        app.handle_key(KeyCode::Char('s'));
-        app.handle_key(KeyCode::Esc);
+        app.handle_key(Key::Char('s'));
+        app.handle_key(Key::Esc);
         assert_eq!(app.mode, Mode::Normal);
         assert!(!app.take_presets_changed());
 
-        app.handle_key(KeyCode::Char('s'));
+        app.handle_key(Key::Char('s'));
         for _ in 0..20 {
-            app.handle_key(KeyCode::Backspace);
+            app.handle_key(Key::Backspace);
         }
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
         assert!(last_log(&app).contains("needs a name"));
         assert!(!app.take_presets_changed());
         assert_eq!(app.presets.items.len(), 5);
@@ -1002,12 +1021,12 @@ mod tests {
     #[test]
     fn deleting_a_preset_needs_one_selected() {
         let mut app = ready_app();
-        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(Key::Char('d'));
         assert_eq!(app.presets.items.len(), 4);
         assert!(app.take_presets_changed());
         assert!(last_log(&app).contains("Deleted preset iTunes Lossless"));
 
-        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(Key::Char('d'));
         assert_eq!(app.presets.items.len(), 4);
         assert!(last_log(&app).contains("No preset is selected"));
         assert!(!app.take_presets_changed());
@@ -1017,17 +1036,17 @@ mod tests {
     fn text_fields_are_edited_in_place() {
         let mut app = ready_app();
         app.focus = Focus::Suffix;
-        app.handle_key(KeyCode::Char('e'));
+        app.handle_key(Key::Char('e'));
         assert_eq!(app.mode, Mode::Editing("_00".to_string()));
 
-        app.handle_key(KeyCode::Backspace);
-        app.handle_key(KeyCode::Backspace);
-        app.handle_key(KeyCode::Char('1'));
-        app.handle_key(KeyCode::Char('2'));
+        app.handle_key(Key::Backspace);
+        app.handle_key(Key::Backspace);
+        app.handle_key(Key::Char('1'));
+        app.handle_key(Key::Char('2'));
         // Keys that would normally act, like q, are just letters while typing.
-        app.handle_key(KeyCode::Char('q'));
+        app.handle_key(Key::Char('q'));
         assert!(!app.should_quit);
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
 
         assert_eq!(app.mode, Mode::Normal);
         assert_eq!(app.strategy.serial_suffix, "_12q");
@@ -1037,9 +1056,9 @@ mod tests {
     fn editing_can_be_cancelled() {
         let mut app = ready_app();
         app.focus = Focus::Suffix;
-        app.handle_key(KeyCode::Char('e'));
-        app.handle_key(KeyCode::Char('9'));
-        app.handle_key(KeyCode::Esc);
+        app.handle_key(Key::Char('e'));
+        app.handle_key(Key::Char('9'));
+        app.handle_key(Key::Esc);
         assert_eq!(app.strategy.serial_suffix, "_00");
         assert_eq!(app.mode, Mode::Normal);
     }
@@ -1047,7 +1066,7 @@ mod tests {
     #[test]
     fn editing_only_starts_on_a_text_control() {
         let mut app = ready_app();
-        app.handle_key(KeyCode::Char('e'));
+        app.handle_key(Key::Char('e'));
         assert_eq!(app.mode, Mode::Normal);
         assert!(last_log(&app).contains("Tab to the suffix or folder"));
     }
@@ -1055,19 +1074,19 @@ mod tests {
     #[test]
     fn run_waits_for_measuring_and_for_something_to_run() {
         let mut app = app_with(vec![album(vec![row("1", None)])]);
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
         assert!(last_log(&app).contains("not finished"));
         assert!(app.take_run_spec().is_none());
 
         let mut empty = app_with(Vec::new());
-        empty.handle_key(KeyCode::Enter);
+        empty.handle_key(Key::Enter);
         assert!(last_log(&empty).contains("Nothing to run"));
     }
 
     #[test]
     fn run_builds_a_plan_for_every_song() {
         let mut app = ready_app();
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
 
         assert!(app.running);
         assert_eq!(app.groups[0].run, RunState::Queued);
@@ -1097,7 +1116,7 @@ mod tests {
     fn run_uses_the_output_format_on_screen() {
         let mut app = ready_app();
         app.output.codec = Codec::Flac;
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
         let spec = app.take_run_spec().unwrap();
         assert_eq!(spec.format.codec, Codec::Flac);
         assert_eq!(spec.items[0].plans[0].file_name, "01 - The Rain Song.flac");
@@ -1106,9 +1125,9 @@ mod tests {
     #[test]
     fn a_second_run_is_refused_while_one_is_going() {
         let mut app = ready_app();
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
         let _ = app.take_run_spec();
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
         assert!(last_log(&app).contains("already in progress"));
         assert!(app.take_run_spec().is_none());
     }
@@ -1118,18 +1137,18 @@ mod tests {
         let mut app = ready_app();
         app.strategy.kind = StrategyKind::Replace;
 
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
         assert_eq!(app.mode, Mode::ConfirmRun);
         assert!(!app.running);
         assert!(app.take_run_spec().is_none());
 
-        app.handle_key(KeyCode::Char('n'));
+        app.handle_key(Key::Char('n'));
         assert_eq!(app.mode, Mode::Normal);
         assert!(last_log(&app).contains("cancelled"));
         assert!(app.take_run_spec().is_none());
 
-        app.handle_key(KeyCode::Enter);
-        app.handle_key(KeyCode::Char('y'));
+        app.handle_key(Key::Enter);
+        app.handle_key(Key::Char('y'));
         assert_eq!(app.mode, Mode::Normal);
         assert!(app.running);
         assert!(app.take_run_spec().is_some());
@@ -1139,13 +1158,13 @@ mod tests {
     fn a_strategy_that_cannot_work_stops_the_run_with_a_reason() {
         let mut app = ready_app();
         app.strategy.kind = StrategyKind::SaveTo;
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
         assert!(!app.running);
         assert!(last_log(&app).contains("choose a folder"));
 
         app.strategy.kind = StrategyKind::Serialize;
         app.strategy.serial_suffix = "_new".to_string();
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
         assert!(last_log(&app).contains("must end in digits"));
         assert!(app.take_run_spec().is_none());
     }
@@ -1154,14 +1173,14 @@ mod tests {
     fn failed_files_are_left_out_of_a_run() {
         let mut app = ready_app();
         app.groups[0].status = Status::Failed("gone".to_string());
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
         assert!(last_log(&app).contains("Nothing to run"));
     }
 
     #[test]
     fn run_events_update_the_rows_and_the_log() {
         let mut app = ready_app();
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
         let _ = app.take_run_spec();
 
         app.apply_run_event(RunEvent::Encoding {
@@ -1191,7 +1210,7 @@ mod tests {
     #[test]
     fn a_failed_write_is_shown_and_counted() {
         let mut app = ready_app();
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
         let _ = app.take_run_spec();
         app.apply_run_event(RunEvent::Failed {
             group: 0,
@@ -1210,7 +1229,7 @@ mod tests {
         let mut app = ready_app();
         app.groups[0].tracks[0].saved = true;
         app.groups[0].run = RunState::Saved;
-        app.handle_key(KeyCode::Enter);
+        app.handle_key(Key::Enter);
         assert!(!app.groups[0].tracks[0].saved);
         assert_eq!(app.groups[0].run, RunState::Queued);
     }

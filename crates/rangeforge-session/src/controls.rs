@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use rangeforge_export::format::{BitDepth, Codec, OutputFormat};
 use rangeforge_export::strategy::Strategy;
 
-use super::model::Settings;
+use crate::model::Settings;
 use crate::presets::Preset;
 
 /// Steps to the next or previous item in a list, wrapping around at either end.
@@ -220,6 +220,7 @@ impl Focus {
     }
 
     /// The next (or, with a negative step, previous) active control, wrapping around.
+    #[must_use]
     pub fn step(self, steps: i32, strategy: &StrategySettings) -> Self {
         let active: Vec<Self> = Self::ALL
             .into_iter()

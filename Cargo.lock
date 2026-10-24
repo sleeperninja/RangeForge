@@ -1358,13 +1358,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "directories",
  "rangeforge-audio",
  "rangeforge-core",
  "rangeforge-export",
+ "rangeforge-session",
  "ratatui",
- "serde",
- "serde_json",
  "tempfile",
 ]
 
@@ -1384,6 +1382,20 @@ dependencies = [
  "rangeforge-core",
  "tempfile",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "rangeforge-session"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "directories",
+ "rangeforge-audio",
+ "rangeforge-core",
+ "rangeforge-export",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
