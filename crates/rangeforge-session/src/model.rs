@@ -8,14 +8,14 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use rangeforge_core::planner::{self, GainPlan, Measurement, PlanError, Target};
-use rangeforge_export::format::OutputFormat;
+use rangeforge_export::format::{BitDepth, Codec, OutputFormat};
 use rangeforge_export::pipeline::TrackPlan;
 use rangeforge_export::strategy::Strategy;
 
 use crate::controls::{
-    Focus, Mode, OutputSettings, PresetList, Saved, StrategySettings, apply_preset,
+    Focus, Mode, OutputSettings, PresetList, Saved, StrategyKind, StrategySettings, apply_preset,
 };
-use crate::load::Job;
+use crate::load::{Job, load_from};
 use crate::plan::{plan_tracks, track_plans};
 
 /// A key press, in terms the screens share. The terminal view translates real key codes into
@@ -222,6 +222,17 @@ pub struct RunSpec {
     pub items: Vec<RunItem>,
     pub format: OutputFormat,
     pub strategy: Strategy,
+}
+
+/// What happened when a window asked to run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunRequest {
+    /// The run is prepared and waiting for the caller to start it.
+    Started,
+    /// The File Strategy overwrites files, so the window must ask the user and call again.
+    NeedsConfirmation,
+    /// It cannot run, for this plain-words reason.
+    Refused(String),
 }
 
 // The screen's state is a flat set of independent switches, so the count of booleans is fine.
@@ -478,22 +489,151 @@ impl App {
         })
     }
 
+    /// Why a run cannot start right now, in plain words, or `None` if it can.
+    pub fn run_blocker(&self) -> Option<String> {
+        if self.running {
+            Some("A run is already in progress".to_string())
+        } else if self.pending() > 0 {
+            Some("Measuring is not finished yet".to_string())
+        } else if self.queued() == 0 {
+            Some("Nothing to run".to_string())
+        } else {
+            self.build_run()
+                .err()
+                .map(|reason| format!("Cannot run: {reason}"))
+        }
+    }
+
     /// The user pressed Run. Checks that it makes sense, asks for confirmation if the
     /// strategy overwrites files, and otherwise prepares the run.
     fn request_run(&mut self) {
-        if self.running {
-            self.log("A run is already in progress");
-        } else if self.pending() > 0 {
-            self.log("Measuring is not finished yet");
-        } else if self.queued() == 0 {
-            self.log("Nothing to run");
-        } else if let Err(reason) = self.build_run() {
-            self.log(format!("Cannot run: {reason}"));
+        if let Some(reason) = self.run_blocker() {
+            self.log(reason);
         } else if self.strategy.kind.needs_confirmation() {
             self.mode = Mode::ConfirmRun;
         } else {
             self.start_run();
         }
+    }
+
+    /// A window asked to run. Unlike the keyboard, a window asks for the confirmation itself
+    /// and calls again with `confirmed` set.
+    pub fn begin_run(&mut self, confirmed: bool) -> RunRequest {
+        if let Some(reason) = self.run_blocker() {
+            self.log(reason.clone());
+            return RunRequest::Refused(reason);
+        }
+        if self.strategy.kind.needs_confirmation() && !confirmed {
+            return RunRequest::NeedsConfirmation;
+        }
+        self.start_run();
+        if self.pending_run.is_some() {
+            RunRequest::Started
+        } else {
+            RunRequest::Refused(self.log.last().cloned().unwrap_or_default())
+        }
+    }
+
+    /// Sets the target loudness, kept inside its allowed range.
+    pub fn set_target(&mut self, lufs: f64) {
+        self.settings = Settings::new(
+            lufs,
+            self.settings.peak_protection,
+            self.settings.peak_ceiling_dbtp,
+        );
+    }
+
+    /// Sets the peak ceiling, kept inside its allowed range.
+    pub fn set_ceiling(&mut self, dbtp: f64) {
+        self.settings = Settings::new(
+            self.settings.target_lufs,
+            self.settings.peak_protection,
+            dbtp,
+        );
+    }
+
+    pub fn set_peak_protection(&mut self, on: bool) {
+        self.settings.peak_protection = on;
+    }
+
+    pub fn set_codec(&mut self, codec: Codec) {
+        self.output.codec = codec;
+    }
+
+    pub fn set_bit_depth(&mut self, depth: BitDepth) {
+        self.output.bit_depth = depth;
+    }
+
+    /// Selects the preset at `index` and applies its settings. An index past the end is
+    /// ignored.
+    pub fn select_preset(&mut self, index: usize) {
+        if let Some(preset) = self.presets.items.get(index).cloned() {
+            self.presets.selected = Some(index);
+            apply_preset(&preset, &mut self.settings, &mut self.output);
+        }
+    }
+
+    /// Saves the current settings as a preset, or says why not. As in the mockup, there must be
+    /// something to save.
+    pub fn save_preset(&mut self, name: &str) -> Result<(), String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("A preset needs a name".to_string());
+        }
+        if !self.can_save_preset() {
+            return Err(
+                "Nothing has changed from this preset, so there is nothing to save".to_string(),
+            );
+        }
+        let saved = self.presets.save_as(name, &self.settings, self.output);
+        self.presets_changed = true;
+        self.log(match saved {
+            Saved::Added => format!("Saved preset {name}"),
+            Saved::Updated => format!("Updated preset {name}"),
+        });
+        Ok(())
+    }
+
+    /// Deletes the selected preset, or says why not.
+    pub fn delete_preset(&mut self) -> Result<(), String> {
+        match self.presets.delete_selected() {
+            Some(name) => {
+                self.presets_changed = true;
+                self.log(format!("Deleted preset {name}"));
+                Ok(())
+            }
+            None => Err("No preset is selected to delete".to_string()),
+        }
+    }
+
+    pub fn set_strategy_kind(&mut self, kind: StrategyKind) {
+        self.strategy.kind = kind;
+    }
+
+    /// Sets the text of the selected File Strategy choice (its suffix or folder).
+    pub fn set_strategy_text(&mut self, text: String) {
+        self.strategy.set_text(text);
+    }
+
+    /// Adds files, CUE sheets or folders to the list and returns the measuring jobs for them.
+    /// The caller starts those jobs.
+    pub fn add_paths(&mut self, paths: &[PathBuf]) -> Vec<Job> {
+        let loaded = load_from(paths, self.groups.len());
+        self.groups.extend(loaded.groups);
+        self.jobs.extend(loaded.jobs.iter().cloned());
+        self.log.extend(loaded.log);
+        loaded.jobs
+    }
+
+    /// Empties the list, unless a run is writing files.
+    pub fn clear(&mut self) -> Result<(), String> {
+        if self.running {
+            return Err("Wait for the run to finish before clearing the list".to_string());
+        }
+        self.groups.clear();
+        self.jobs.clear();
+        self.scroll = 0;
+        Ok(())
     }
 
     fn start_run(&mut self) {
@@ -1240,5 +1380,187 @@ mod tests {
         assert_eq!(group.codec_label(), "Split(cue)");
         group.kind = Kind::SingleFile;
         assert_eq!(group.codec_label(), "(flac)");
+    }
+
+    #[test]
+    fn the_blocker_explains_why_a_run_cannot_start() {
+        let mut app = app_with(vec![album(vec![row("1", None)])]);
+        assert_eq!(
+            app.run_blocker().as_deref(),
+            Some("Measuring is not finished yet")
+        );
+
+        let empty = app_with(Vec::new());
+        assert_eq!(empty.run_blocker().as_deref(), Some("Nothing to run"));
+
+        let mut ready = ready_app();
+        assert_eq!(ready.run_blocker(), None);
+        ready.strategy.kind = StrategyKind::SaveTo;
+        assert!(
+            ready
+                .run_blocker()
+                .unwrap()
+                .starts_with("Cannot run: choose a folder")
+        );
+        ready.strategy.kind = StrategyKind::Serialize;
+        ready.running = true;
+        assert_eq!(
+            ready.run_blocker().as_deref(),
+            Some("A run is already in progress")
+        );
+        app.running = false;
+    }
+
+    #[test]
+    fn a_window_asks_for_confirmation_itself() {
+        let mut app = ready_app();
+        app.strategy.kind = StrategyKind::Replace;
+
+        assert_eq!(app.begin_run(false), RunRequest::NeedsConfirmation);
+        assert!(!app.running);
+        assert!(app.take_run_spec().is_none());
+
+        assert_eq!(app.begin_run(true), RunRequest::Started);
+        assert!(app.running);
+        assert!(app.take_run_spec().is_some());
+    }
+
+    #[test]
+    fn a_window_run_without_confirmation_starts_straight_away() {
+        let mut app = ready_app();
+        assert_eq!(app.begin_run(false), RunRequest::Started);
+        assert!(app.take_run_spec().is_some());
+        // And a second request while it is going is refused with the reason, and logged.
+        assert_eq!(
+            app.begin_run(false),
+            RunRequest::Refused("A run is already in progress".to_string())
+        );
+        assert!(last_log(&app).contains("already in progress"));
+    }
+
+    #[test]
+    fn a_window_run_is_refused_while_measuring() {
+        let mut app = app_with(vec![album(vec![row("1", None)])]);
+        assert_eq!(
+            app.begin_run(true),
+            RunRequest::Refused("Measuring is not finished yet".to_string())
+        );
+    }
+
+    #[test]
+    fn direct_setters_keep_values_in_range() {
+        let mut app = ready_app();
+        app.set_target(-99.0);
+        assert!((app.settings.target_lufs - -60.0).abs() < 1e-9);
+        app.set_target(-17.34);
+        assert!(
+            (app.settings.target_lufs - -17.3).abs() < 1e-9,
+            "rounded to a tenth"
+        );
+        app.set_ceiling(3.0);
+        assert!(app.settings.peak_ceiling_dbtp.abs() < 1e-9);
+        app.set_peak_protection(false);
+        assert!(!app.settings.peak_protection);
+        assert!(
+            (app.settings.target_lufs - -17.3).abs() < 1e-9,
+            "other values are kept"
+        );
+
+        app.set_codec(Codec::Wav);
+        app.set_bit_depth(BitDepth::TwentyFour);
+        assert_eq!(
+            (app.output.codec, app.output.bit_depth),
+            (Codec::Wav, BitDepth::TwentyFour)
+        );
+    }
+
+    #[test]
+    fn selecting_a_preset_by_index_applies_it() {
+        let mut app = ready_app();
+        app.select_preset(2);
+        assert_eq!(app.presets.selected_preset().unwrap().name, "CD Quality");
+        assert_eq!(app.output.codec, Codec::Flac);
+        assert_eq!(app.output.bit_depth, BitDepth::Sixteen);
+
+        app.select_preset(99);
+        assert_eq!(
+            app.presets.selected,
+            Some(2),
+            "an index past the end changes nothing"
+        );
+    }
+
+    #[test]
+    fn saving_and_deleting_presets_from_a_window() {
+        let mut app = ready_app();
+        assert!(
+            app.save_preset("Car")
+                .unwrap_err()
+                .contains("nothing to save")
+        );
+
+        app.set_target(-18.0);
+        assert!(app.save_preset("   ").unwrap_err().contains("needs a name"));
+        app.save_preset("Car").unwrap();
+        assert!(app.take_presets_changed());
+        assert_eq!(app.presets.selected_preset().unwrap().name, "Car");
+
+        app.delete_preset().unwrap();
+        assert!(app.take_presets_changed());
+        assert!(
+            app.delete_preset()
+                .unwrap_err()
+                .contains("No preset is selected")
+        );
+        assert_eq!(app.presets.items.len(), 5);
+    }
+
+    #[test]
+    fn strategy_choices_can_be_set_directly() {
+        let mut app = ready_app();
+        app.set_strategy_kind(StrategyKind::RenameOld);
+        app.set_strategy_text("_backup".to_string());
+        assert_eq!(app.strategy.old_suffix, "_backup");
+        app.set_strategy_kind(StrategyKind::SaveTo);
+        app.set_strategy_text("D:\\music\\out".to_string());
+        assert_eq!(app.strategy.folder, "D:\\music\\out");
+    }
+
+    #[test]
+    fn files_can_be_added_while_the_app_is_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("a.flac");
+        let second = dir.path().join("b.flac");
+        std::fs::write(&first, b"").unwrap();
+        std::fs::write(&second, b"").unwrap();
+
+        let mut app = ready_app();
+        assert_eq!(app.groups.len(), 1);
+
+        let jobs = app.add_paths(&[first]);
+        assert_eq!(app.groups.len(), 2);
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].group, 1, "the new job points at the new group");
+
+        let jobs = app.add_paths(&[second]);
+        assert_eq!(jobs[0].group, 2);
+        assert_eq!(app.groups.len(), 3);
+        assert_eq!(app.jobs.len(), 3);
+        assert!(app.log.iter().any(|line| line == "Added b.flac"));
+    }
+
+    #[test]
+    fn the_list_can_be_cleared_unless_a_run_is_writing() {
+        let mut app = ready_app();
+        app.running = true;
+        assert!(app.clear().unwrap_err().contains("Wait for the run"));
+        assert_eq!(app.groups.len(), 1);
+
+        app.running = false;
+        app.scroll = 4;
+        app.clear().unwrap();
+        assert_eq!(app.groups.len(), 0);
+        assert_eq!(app.jobs.len(), 0);
+        assert_eq!(app.scroll, 0);
     }
 }

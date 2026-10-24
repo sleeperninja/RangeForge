@@ -21,3 +21,4 @@ pub mod paths;
 pub mod plan;
 pub mod presets;
 pub mod runner;
+pub mod snapshot;

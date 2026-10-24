@@ -29,6 +29,9 @@ pub struct Loaded {
     pub groups: Vec<Group>,
     pub jobs: Vec<Job>,
     pub log: Vec<String>,
+    /// The index the first of these groups will have in the screen's list, so jobs can point
+    /// at the right group when files are added to a list that already has some.
+    pub first_group: usize,
 }
 
 fn extension_of(path: &Path) -> String {
@@ -103,7 +106,15 @@ fn expand(inputs: &[PathBuf], log: &mut Vec<String>) -> Vec<PathBuf> {
 /// Loads everything named in `inputs`. Problems become log lines or failed rows, never
 /// errors, so one bad path does not stop the rest.
 pub fn load(inputs: &[PathBuf]) -> Loaded {
-    let mut loaded = Loaded::default();
+    load_from(inputs, 0)
+}
+
+/// Like [`load`], for adding to a list that already holds `first_group` groups.
+pub fn load_from(inputs: &[PathBuf], first_group: usize) -> Loaded {
+    let mut loaded = Loaded {
+        first_group,
+        ..Loaded::default()
+    };
     let paths = expand(inputs, &mut loaded.log);
     for path in paths {
         if is_cue(&path) {
@@ -173,7 +184,7 @@ fn add_cue(cue_path: &Path, loaded: &mut Loaded) {
             run: RunState::Idle,
         };
 
-        let index = loaded.groups.len();
+        let index = loaded.first_group + loaded.groups.len();
         if let Some(audio) = resolved {
             loaded.log.push(format!("Added {}", file_name(&audio)));
             loaded
@@ -202,7 +213,7 @@ fn add_single(path: &Path, loaded: &mut Loaded) {
         .file_stem()
         .map_or_else(|| name.clone(), |s| s.to_string_lossy().into_owned());
     loaded.jobs.push(Job {
-        group: loaded.groups.len(),
+        group: loaded.first_group + loaded.groups.len(),
         audio: path.to_path_buf(),
         cue_file: None,
         sheet: None,
@@ -352,5 +363,23 @@ mod tests {
         let loaded = load(&[cue, song]);
         let indexes: Vec<usize> = loaded.jobs.iter().map(|job| job.group).collect();
         assert_eq!(indexes, [0, 1]);
+    }
+
+    #[test]
+    fn files_added_later_point_at_the_right_groups() {
+        let dir = tempdir().unwrap();
+        let cue = touch(dir.path(), "album.cue", CUE);
+        touch(dir.path(), "album.wav", "");
+        let song = touch(dir.path(), "song.flac", "");
+
+        // The list already holds three groups, so these become groups 3 and 4.
+        let loaded = load_from(&[cue, song], 3);
+        let indexes: Vec<usize> = loaded.jobs.iter().map(|job| job.group).collect();
+        assert_eq!(indexes, [3, 4]);
+        assert_eq!(
+            loaded.groups.len(),
+            2,
+            "the groups themselves are not offset"
+        );
     }
 }
