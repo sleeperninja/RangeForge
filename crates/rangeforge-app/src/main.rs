@@ -145,6 +145,16 @@ async fn set_codec(id: String, state: Session<'_>) -> Result<Reply, String> {
 }
 
 #[tauri::command]
+async fn set_container(id: String, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_container(&state, &id))
+}
+
+#[tauri::command]
+async fn set_sample_rate(id: String, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_sample_rate(&state, &id))
+}
+
+#[tauri::command]
 async fn set_bit_depth(id: String, state: Session<'_>) -> Result<Reply, String> {
     Ok(ops::set_bit_depth(&state, &id))
 }
@@ -294,6 +304,8 @@ fn main() {
             set_ceiling,
             set_peak_protection,
             set_codec,
+            set_container,
+            set_sample_rate,
             set_bit_depth,
             select_preset,
             save_preset,

@@ -15,7 +15,7 @@ use rangeforge_audio::measure::measure_whole_file;
 use rangeforge_core::cue;
 use rangeforge_export::ExportError;
 use rangeforge_export::ffmpeg::Ffmpeg;
-use rangeforge_export::format::{BitDepth, Codec, OutputFormat};
+use rangeforge_export::format::{BitDepth, Codec, Container, OutputFormat, SampleRate};
 use rangeforge_export::naming::track_file_name;
 use rangeforge_export::pipeline::{Options, Progress, TrackPlan, Written, export_file, preview};
 use rangeforge_export::strategy::{Conflict, Destination, Strategy};
@@ -557,6 +557,132 @@ fn preview_matches_what_a_run_does_and_writes_nothing() {
     let written = export_file(&ffmpeg, &input, None, &tracks, &opts, &mut |_| {}).unwrap();
     assert_eq!(planned[0].final_path, written[0].path);
     assert_eq!(written[0].path, dir.path().join("song_01.m4a"));
+}
+
+/// The sample rate FFmpeg says a file has, by reading its description of the audio stream.
+fn probed_rate(ffmpeg: &Ffmpeg, path: &Path) -> u32 {
+    let output = Command::new(ffmpeg.path())
+        .args(["-hide_banner", "-i"])
+        .arg(path)
+        .output()
+        .unwrap();
+    // FFmpeg prints a description such as "Audio: flac, 96000 Hz, stereo, s32" on standard
+    // error, and complains about having no output file, which is expected here.
+    let text = String::from_utf8_lossy(&output.stderr).into_owned();
+    let line = text
+        .lines()
+        .find(|line| line.contains("Audio:"))
+        .unwrap_or_else(|| panic!("no audio stream described in:\n{text}"));
+    line.split(',')
+        .find_map(|part| part.trim().strip_suffix(" Hz")?.parse().ok())
+        .unwrap_or_else(|| panic!("no rate in: {line}"))
+}
+
+#[test]
+fn every_codec_can_be_written_at_a_new_rate_in_either_container() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let (dir, input) = with_source("in.wav", 2, 200);
+    let source_loudness = loudness(&input);
+
+    for codec in Codec::ALL {
+        for container in Container::ALL {
+            let format = OutputFormat::new(codec, BitDepth::TwentyFour)
+                .with_container(container)
+                .with_sample_rate(SampleRate::Hz96000);
+            let name = format!(
+                "{}-{}.{}",
+                codec.name(),
+                container.name(),
+                format.extension()
+            );
+            let opts = Options {
+                format,
+                strategy: serialize(),
+                directory: dir.path().to_path_buf(),
+                copy_source_tags: false,
+            };
+            let written = export_whole(&ffmpeg, &input, plan(0.0, &name), &opts).unwrap();
+
+            let path = &written[0].path;
+            assert_eq!(probed_rate(&ffmpeg, path), 96_000, "{name}");
+            let extension = path.extension().unwrap().to_string_lossy().into_owned();
+            assert_eq!(extension, format.extension(), "{name}");
+            // Resampling must not change how loud it is.
+            if container == Container::Native && codec != Codec::Aac {
+                let after = loudness(path);
+                assert!(
+                    (after - source_loudness).abs() < 0.1,
+                    "{name}: {source_loudness} -> {after}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn the_original_rate_is_left_alone_and_asking_for_the_same_rate_changes_nothing() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let (dir, input) = with_source("in.wav", 1, 200);
+    for rate in [SampleRate::Original, SampleRate::Hz44100] {
+        let format = OutputFormat::new(Codec::Flac, BitDepth::Source).with_sample_rate(rate);
+        let opts = Options {
+            format,
+            strategy: serialize(),
+            directory: dir.path().to_path_buf(),
+            copy_source_tags: false,
+        };
+        let name = format!("kept-{}.flac", rate.name());
+        let written = export_whole(&ffmpeg, &input, plan(0.0, &name), &opts).unwrap();
+        assert_eq!(probed_rate(&ffmpeg, &written[0].path), 44_100);
+        // At 0 dB and the same rate, the samples are still bit for bit the source's.
+        let (_, ours) = decode_all(&written[0].path);
+        let (_, theirs) = decode_all(&input);
+        assert!(ours == theirs, "{name}: samples differ");
+    }
+}
+
+#[test]
+fn matroska_files_carry_their_tags() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let (dir, input) = with_source("in.wav", 1, 200);
+    let format = OutputFormat::new(Codec::Flac, BitDepth::Source).with_container(Container::Mka);
+    let opts = Options {
+        format,
+        strategy: serialize(),
+        directory: dir.path().to_path_buf(),
+        copy_source_tags: false,
+    };
+    let tags = Tags {
+        title: Some("The Rain Song".to_string()),
+        artist: Some("Led Zeppelin".to_string()),
+        album: Some("Houses of the Holy".to_string()),
+        album_artist: Some("Led Zeppelin".to_string()),
+        track: Some(2),
+        track_total: Some(8),
+        genre: Some("Classic Rock, Hard Rock, Radio".to_string()),
+        date: Some("1973".to_string()),
+    };
+    let plan = TrackPlan {
+        tags,
+        ..plan(0.0, "tagged.mka")
+    };
+    let written = export_whole(&ffmpeg, &input, plan, &opts).unwrap();
+
+    let metadata = Command::new(ffmpeg.path())
+        .args(["-v", "error", "-i"])
+        .arg(&written[0].path)
+        .args(["-f", "ffmetadata", "-"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&metadata.stdout).to_lowercase();
+    for expected in [
+        "title=the rain song",
+        "artist=led zeppelin",
+        "album=houses of the holy",
+        "genre=classic rock, hard rock, radio",
+    ] {
+        assert!(text.contains(expected), "missing {expected:?} in:\n{text}");
+    }
 }
 
 #[test]

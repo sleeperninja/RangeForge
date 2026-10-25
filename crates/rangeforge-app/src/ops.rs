@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use rangeforge_audio::cache::Cache;
-use rangeforge_export::format::{BitDepth, Codec};
+use rangeforge_export::format::{BitDepth, Codec, Container, SampleRate};
 use rangeforge_lookup::billboard::{self, Fetcher, Refresh};
 use rangeforge_lookup::lastfm::{LastFmError, RawTag};
 use rangeforge_lookup::tagcache::{Subject, TagCache};
@@ -222,6 +222,23 @@ pub fn set_bit_depth(shared: &Shared, id: &str) -> Reply {
     })
 }
 
+pub fn set_container(shared: &Shared, id: &str) -> Reply {
+    with_app(shared, |app| {
+        let container =
+            Container::from_name(id).ok_or_else(|| format!("Unknown container {id:?}"))?;
+        app.set_container(container);
+        Ok(())
+    })
+}
+
+pub fn set_sample_rate(shared: &Shared, id: &str) -> Reply {
+    with_app(shared, |app| {
+        let rate =
+            SampleRate::from_name(id).ok_or_else(|| format!("Unknown sample rate {id:?}"))?;
+        app.set_sample_rate(rate)
+    })
+}
+
 pub fn select_preset(shared: &Shared, index: usize) -> Reply {
     with_app(shared, |app| {
         app.select_preset(index);
@@ -282,7 +299,7 @@ pub fn set_naming(shared: &Shared, album: &str, single: &str) -> Reply {
 /// What the patterns would produce, without keeping them, for the Settings window to show
 /// while the user types.
 pub fn preview_naming(shared: &Shared, album: &str, single: &str) -> naming::NamingPreview {
-    let extension = shared.lock().output.codec.extension();
+    let extension = shared.lock().output.format().extension();
     naming::preview(album, single, extension)
 }
 
@@ -880,6 +897,71 @@ mod tests {
     }
 
     #[test]
+    fn a_sample_rate_the_codec_cannot_write_is_refused_or_put_back() {
+        let dir = tempdir().unwrap();
+        let shared = shared_with_presets(dir.path());
+
+        // AAC stops at 96 kHz: asking for more is refused with a reason.
+        set_codec(&shared, "aac");
+        let reply = set_sample_rate(&shared, "192000");
+        assert!(
+            reply
+                .error
+                .unwrap()
+                .contains("cannot be written at 192 kHz")
+        );
+        assert_eq!(reply.state.output.sample_rate, "original");
+
+        // A rate chosen for ALAC goes back to original when the codec cannot keep it.
+        set_codec(&shared, "alac");
+        assert_eq!(
+            set_sample_rate(&shared, "192000").state.output.sample_rate,
+            "192000"
+        );
+        let reply = set_codec(&shared, "aac");
+        assert_eq!(reply.state.output.sample_rate, "original");
+        assert!(
+            reply
+                .state
+                .log
+                .iter()
+                .any(|line| line.contains("back to original"))
+        );
+
+        // Nonsense is refused and changes nothing.
+        assert!(
+            set_container(&shared, "ogg")
+                .error
+                .unwrap()
+                .contains("Unknown container")
+        );
+        assert!(
+            set_sample_rate(&shared, "22050")
+                .error
+                .unwrap()
+                .contains("Unknown sample rate")
+        );
+    }
+
+    #[test]
+    fn the_container_and_rate_are_remembered_in_a_saved_preset() {
+        let dir = tempdir().unwrap();
+        let shared = shared_with_presets(dir.path());
+        set_container(&shared, "mka");
+        set_sample_rate(&shared, "88200");
+        let reply = save_preset(&shared, "Archive");
+        assert_eq!(reply.error, None);
+
+        // A fresh start finds it on disk, and choosing it brings both back.
+        let again = shared_with_presets(dir.path());
+        let names = state(&again).state.presets.names;
+        let index = names.iter().position(|n| n == "Archive").unwrap();
+        let chosen = select_preset(&again, index);
+        assert_eq!(chosen.state.output.container, "mka");
+        assert_eq!(chosen.state.output.sample_rate, "88200");
+    }
+
+    #[test]
     fn the_lookup_switches_start_off_and_are_kept() {
         let dir = tempdir().unwrap();
         let shared = shared_with_presets(dir.path());
@@ -1104,8 +1186,13 @@ mod tests {
         );
         assert!((set_ceiling(&shared, -1.0).state.volume.ceiling_dbtp - -1.0).abs() < 1e-9);
         assert_eq!(set_codec(&shared, "flac").state.output.codec, "flac");
-        assert_eq!(set_codec(&shared, "flac").state.output.container, "flac");
+        assert_eq!(set_codec(&shared, "flac").state.output.extension, "flac");
         assert_eq!(set_bit_depth(&shared, "24").state.output.bit_depth, "24");
+        assert_eq!(set_container(&shared, "mka").state.output.extension, "mka");
+        assert_eq!(
+            set_sample_rate(&shared, "96000").state.output.sample_rate,
+            "96000"
+        );
         assert_eq!(
             set_conflict(&shared, "rename_existing")
                 .state

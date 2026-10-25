@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use rangeforge_export::format::{BitDepth, Codec, OutputFormat};
+use rangeforge_export::format::{BitDepth, Codec, Container, OutputFormat, SampleRate};
 use rangeforge_export::strategy::{Conflict, Destination, Strategy};
 
 use crate::model::Settings;
@@ -25,35 +25,70 @@ fn cycle<T: Copy + PartialEq>(items: &[T], current: T, steps: i32) -> T {
         .unwrap_or(current)
 }
 
-/// The Output Format panel. Sample rate and channels are shown as "original" for now and are
-/// not settable yet.
+/// The Output Format panel. Channels are not settable: they are always the source's own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OutputSettings {
     pub codec: Codec,
     pub bit_depth: BitDepth,
+    pub container: Container,
+    pub sample_rate: SampleRate,
 }
 
 impl Default for OutputSettings {
-    /// ALAC at the source's bit depth, as in the mockup.
+    /// ALAC in its usual file, at the source's bit depth and sample rate, as in the mockup.
     fn default() -> Self {
         Self {
             codec: Codec::Alac,
             bit_depth: BitDepth::Source,
+            container: Container::Native,
+            sample_rate: SampleRate::Original,
         }
     }
+}
+
+/// The sample rates offered for `codec`: the source's own, and every rate it can be written at.
+pub fn sample_rates_for(codec: Codec) -> Vec<SampleRate> {
+    SampleRate::ALL
+        .into_iter()
+        .filter(|rate| rate.hz().is_none_or(|hz| codec.supports_rate(hz)))
+        .collect()
 }
 
 impl OutputSettings {
     pub fn format(self) -> OutputFormat {
         OutputFormat::new(self.codec, self.bit_depth)
+            .with_container(self.container)
+            .with_sample_rate(self.sample_rate)
+    }
+
+    /// Puts back to "original" any setting the codec cannot do, such as 192 kHz AAC. Returns
+    /// true if something had to change.
+    pub fn fit_to_codec(&mut self) -> bool {
+        let fits = self
+            .sample_rate
+            .hz()
+            .is_none_or(|hz| self.codec.supports_rate(hz));
+        if !fits {
+            self.sample_rate = SampleRate::Original;
+        }
+        !fits
     }
 
     pub fn cycle_codec(&mut self, steps: i32) {
         self.codec = cycle(&Codec::ALL, self.codec, steps);
+        self.fit_to_codec();
     }
 
     pub fn cycle_bit_depth(&mut self, steps: i32) {
         self.bit_depth = cycle(&BitDepth::ALL, self.bit_depth, steps);
+    }
+
+    pub fn cycle_container(&mut self, steps: i32) {
+        self.container = cycle(&Container::ALL, self.container, steps);
+    }
+
+    pub fn cycle_sample_rate(&mut self, steps: i32) {
+        self.sample_rate = cycle(&sample_rates_for(self.codec), self.sample_rate, steps);
     }
 }
 
@@ -356,6 +391,8 @@ impl PresetList {
             name: name.trim().to_string(),
             codec: output.codec,
             bit_depth: output.bit_depth,
+            container: output.container,
+            sample_rate: output.sample_rate,
             target_lufs: volume.target_lufs,
             peak_protection: volume.peak_protection,
             peak_ceiling_dbtp: volume.peak_ceiling_dbtp,
@@ -389,11 +426,15 @@ pub fn apply_preset(preset: &Preset, volume: &mut Settings, output: &mut OutputS
     );
     output.codec = preset.codec;
     output.bit_depth = preset.bit_depth;
+    output.container = preset.container;
+    output.sample_rate = preset.sample_rate;
 }
 
 fn matches(preset: &Preset, volume: &Settings, output: OutputSettings) -> bool {
     preset.codec == output.codec
         && preset.bit_depth == output.bit_depth
+        && preset.container == output.container
+        && preset.sample_rate == output.sample_rate
         && preset.peak_protection == volume.peak_protection
         && (preset.target_lufs - volume.target_lufs).abs() < 1e-9
         && (preset.peak_ceiling_dbtp - volume.peak_ceiling_dbtp).abs() < 1e-9
@@ -426,11 +467,82 @@ mod tests {
     }
 
     #[test]
-    fn the_container_follows_the_codec() {
+    fn the_native_container_follows_the_codec_and_mka_is_always_available() {
         let mut output = OutputSettings::default();
-        assert_eq!(output.codec.extension(), "m4a");
+        assert_eq!(output.format().extension(), "m4a");
         output.codec = Codec::Flac;
-        assert_eq!(output.codec.extension(), "flac");
+        assert_eq!(output.format().extension(), "flac");
+        output.cycle_container(1);
+        assert_eq!(output.container, Container::Mka);
+        assert_eq!(output.format().extension(), "mka");
+        output.cycle_container(1);
+        assert_eq!(output.container, Container::Native, "it wraps");
+    }
+
+    #[test]
+    fn sample_rates_cycle_through_what_the_codec_can_write() {
+        let mut output = OutputSettings::default();
+        assert_eq!(output.sample_rate, SampleRate::Original);
+        output.cycle_sample_rate(1);
+        assert_eq!(output.sample_rate, SampleRate::Hz44100);
+        output.cycle_sample_rate(-2);
+        assert_eq!(
+            output.sample_rate,
+            SampleRate::Hz192000,
+            "backward from the first wraps to the last"
+        );
+
+        // AAC stops at 96 kHz, so the list is shorter and 192 kHz cannot stay chosen.
+        assert_eq!(sample_rates_for(Codec::Alac).len(), 7);
+        assert_eq!(
+            sample_rates_for(Codec::Aac),
+            [
+                SampleRate::Original,
+                SampleRate::Hz44100,
+                SampleRate::Hz48000,
+                SampleRate::Hz88200,
+                SampleRate::Hz96000
+            ]
+        );
+        output.codec = Codec::Aac;
+        assert!(output.fit_to_codec());
+        assert_eq!(output.sample_rate, SampleRate::Original);
+        assert!(!output.fit_to_codec(), "nothing more to fix");
+
+        // Cycling the codec fixes it as it goes.
+        output.sample_rate = SampleRate::Hz176400;
+        output.codec = Codec::Wav;
+        output.cycle_codec(1);
+        assert_eq!(output.codec, Codec::Aac);
+        assert_eq!(output.sample_rate, SampleRate::Original);
+    }
+
+    #[test]
+    fn the_container_and_rate_travel_with_a_preset() {
+        let mut presets = list();
+        let volume = Settings::default();
+        let mut output = OutputSettings {
+            container: Container::Mka,
+            sample_rate: SampleRate::Hz88200,
+            ..OutputSettings::default()
+        };
+        presets.save_as("Archive", &volume, output);
+        let saved = presets.selected_preset().unwrap().clone();
+        assert_eq!(
+            (saved.container, saved.sample_rate),
+            (Container::Mka, SampleRate::Hz88200)
+        );
+
+        // Applying it brings both back, and changing either marks the preset as modified.
+        let mut live_volume = Settings::default();
+        let mut live = OutputSettings::default();
+        apply_preset(&saved, &mut live_volume, &mut live);
+        assert_eq!(live, output);
+        output.sample_rate = SampleRate::Hz96000;
+        assert!(presets.is_modified(&volume, output));
+        output.sample_rate = SampleRate::Hz88200;
+        output.container = Container::Native;
+        assert!(presets.is_modified(&volume, output));
     }
 
     #[test]
@@ -662,6 +774,8 @@ mod tests {
         let output = OutputSettings {
             codec: Codec::Wav,
             bit_depth: BitDepth::TwentyFour,
+            container: Container::Mka,
+            sample_rate: SampleRate::Hz96000,
         };
 
         assert_eq!(

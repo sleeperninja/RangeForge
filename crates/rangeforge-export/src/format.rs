@@ -53,6 +53,125 @@ impl Codec {
     pub fn is_lossless(self) -> bool {
         !matches!(self, Self::Aac)
     }
+
+    /// Whether this codec can be written at `hz`. FLAC, ALAC and PCM take every rate offered
+    /// here; FFmpeg's AAC encoder stops at 96 kHz.
+    pub fn supports_rate(self, hz: u32) -> bool {
+        !matches!(self, Self::Aac) || hz <= 96_000
+    }
+}
+
+/// The kind of file the audio is wrapped in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Container {
+    /// The codec's usual file: `.m4a` for ALAC and AAC, `.flac`, `.wav`.
+    #[default]
+    Native,
+    /// Matroska audio, `.mka`. Every codec offered here can be stored in it.
+    Mka,
+}
+
+impl Container {
+    /// Every choice, in the order a picker shows them.
+    pub const ALL: [Self; 2] = [Self::Native, Self::Mka];
+
+    /// The name used in saved settings and on the command line: `native` or `mka`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Native => "native",
+            Self::Mka => "mka",
+        }
+    }
+
+    /// What to show for this choice when the codec is `codec`: the usual file's ending
+    /// (`m4a`, `flac`, `wav`), or `mka`.
+    pub fn label(self, codec: Codec) -> &'static str {
+        match self {
+            Self::Native => codec.extension(),
+            Self::Mka => "mka",
+        }
+    }
+
+    /// The choice with this saved name, ignoring case.
+    pub fn from_name(text: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|container| container.name().eq_ignore_ascii_case(text.trim()))
+    }
+}
+
+/// The sample rate of the files written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SampleRate {
+    /// Whatever each source has.
+    #[default]
+    Original,
+    Hz44100,
+    Hz48000,
+    Hz88200,
+    Hz96000,
+    Hz176400,
+    Hz192000,
+}
+
+impl SampleRate {
+    /// Every choice, in the order a picker shows them.
+    pub const ALL: [Self; 7] = [
+        Self::Original,
+        Self::Hz44100,
+        Self::Hz48000,
+        Self::Hz88200,
+        Self::Hz96000,
+        Self::Hz176400,
+        Self::Hz192000,
+    ];
+
+    /// The rate in hertz, or `None` for the source's own.
+    pub fn hz(self) -> Option<u32> {
+        match self {
+            Self::Original => None,
+            Self::Hz44100 => Some(44_100),
+            Self::Hz48000 => Some(48_000),
+            Self::Hz88200 => Some(88_200),
+            Self::Hz96000 => Some(96_000),
+            Self::Hz176400 => Some(176_400),
+            Self::Hz192000 => Some(192_000),
+        }
+    }
+
+    /// The name used in saved settings and on the command line: `original`, or the rate in
+    /// hertz such as `96000`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Original => "original",
+            Self::Hz44100 => "44100",
+            Self::Hz48000 => "48000",
+            Self::Hz88200 => "88200",
+            Self::Hz96000 => "96000",
+            Self::Hz176400 => "176400",
+            Self::Hz192000 => "192000",
+        }
+    }
+
+    /// The name shown on screen.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Original => "original",
+            Self::Hz44100 => "44.1 kHz",
+            Self::Hz48000 => "48 kHz",
+            Self::Hz88200 => "88.2 kHz",
+            Self::Hz96000 => "96 kHz",
+            Self::Hz176400 => "176.4 kHz",
+            Self::Hz192000 => "192 kHz",
+        }
+    }
+
+    /// The choice with this saved name, ignoring case.
+    pub fn from_name(text: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|rate| rate.name().eq_ignore_ascii_case(text.trim()))
+    }
 }
 
 /// How precisely each sample of the output is stored.
@@ -99,11 +218,61 @@ impl BitDepth {
 pub struct OutputFormat {
     pub codec: Codec,
     pub bit_depth: BitDepth,
+    pub container: Container,
+    pub sample_rate: SampleRate,
 }
 
 impl OutputFormat {
+    /// A format in the codec's usual file, at the source's own sample rate.
     pub fn new(codec: Codec, bit_depth: BitDepth) -> Self {
-        Self { codec, bit_depth }
+        Self {
+            codec,
+            bit_depth,
+            container: Container::Native,
+            sample_rate: SampleRate::Original,
+        }
+    }
+
+    #[must_use]
+    pub fn with_container(self, container: Container) -> Self {
+        Self { container, ..self }
+    }
+
+    #[must_use]
+    pub fn with_sample_rate(self, sample_rate: SampleRate) -> Self {
+        Self {
+            sample_rate,
+            ..self
+        }
+    }
+
+    /// The ending of the files written: `m4a`, `flac`, `wav`, or `mka`.
+    pub fn extension(self) -> &'static str {
+        self.container.label(self.codec)
+    }
+
+    /// The FFmpeg container name.
+    pub(crate) fn muxer(self) -> &'static str {
+        match self.container {
+            Container::Native => self.codec.muxer(),
+            Container::Mka => "matroska",
+        }
+    }
+
+    /// True if tags should be named the way FLAC and Matroska name them (`ALBUMARTIST`,
+    /// `TRACKNUMBER`) and not the MP4 way (`album_artist`, `track` as `n/total`).
+    pub(crate) fn uses_vorbis_style_tags(self) -> bool {
+        self.codec == Codec::Flac || self.container == Container::Mka
+    }
+
+    /// The `aresample` filter options that change the sample rate to `target`, or `None` when
+    /// the source already has it (or no rate was asked for). The resampler is set to a long
+    /// filter, since quality matters more than speed here.
+    pub(crate) fn resample_options(self, source_rate: u32) -> Option<String> {
+        let target = self.sample_rate.hz().filter(|hz| *hz != source_rate)?;
+        Some(format!(
+            "osr={target}:filter_size=64:phase_shift=14:cutoff=0.97"
+        ))
     }
 
     /// The bit depth actually written (16 or 24), given what the source reports. A source with
@@ -184,6 +353,77 @@ mod tests {
         assert_eq!(Codec::Flac.extension(), "flac");
         assert_eq!(Codec::Wav.extension(), "wav");
         assert_eq!(Codec::Alac.muxer(), "ipod");
+    }
+
+    #[test]
+    fn mka_is_an_option_for_every_codec_and_names_the_file_accordingly() {
+        for codec in Codec::ALL {
+            let native = OutputFormat::new(codec, BitDepth::Source);
+            assert_eq!(native.extension(), codec.extension());
+            let mka = native.with_container(Container::Mka);
+            assert_eq!(mka.extension(), "mka");
+            assert_eq!(mka.muxer(), "matroska");
+            assert!(mka.uses_vorbis_style_tags());
+        }
+        assert_eq!(alac().muxer(), "ipod");
+        assert!(!alac().uses_vorbis_style_tags());
+        assert!(
+            OutputFormat::new(Codec::Flac, BitDepth::Source).uses_vorbis_style_tags(),
+            "FLAC names its tags that way natively"
+        );
+    }
+
+    #[test]
+    fn container_labels_follow_the_codec() {
+        assert_eq!(Container::Native.label(Codec::Alac), "m4a");
+        assert_eq!(Container::Native.label(Codec::Flac), "flac");
+        assert_eq!(Container::Mka.label(Codec::Wav), "mka");
+        for container in Container::ALL {
+            assert_eq!(Container::from_name(container.name()), Some(container));
+        }
+        assert_eq!(Container::from_name(" MKA "), Some(Container::Mka));
+        assert_eq!(Container::from_name("ogg"), None);
+    }
+
+    #[test]
+    fn sample_rates_have_names_labels_and_hertz() {
+        assert_eq!(SampleRate::default(), SampleRate::Original);
+        assert_eq!(SampleRate::Original.hz(), None);
+        assert_eq!(SampleRate::Hz88200.hz(), Some(88_200));
+        assert_eq!(SampleRate::Hz176400.label(), "176.4 kHz");
+        for rate in SampleRate::ALL {
+            assert_eq!(SampleRate::from_name(rate.name()), Some(rate));
+            if let Some(hz) = rate.hz() {
+                assert_eq!(rate.name(), hz.to_string());
+            }
+        }
+        assert_eq!(SampleRate::from_name("22050"), None);
+    }
+
+    #[test]
+    fn aac_stops_at_96_khz() {
+        for rate in SampleRate::ALL.into_iter().filter_map(SampleRate::hz) {
+            assert!(Codec::Flac.supports_rate(rate), "{rate}");
+            assert!(Codec::Alac.supports_rate(rate), "{rate}");
+            assert_eq!(Codec::Aac.supports_rate(rate), rate <= 96_000, "{rate}");
+        }
+    }
+
+    #[test]
+    fn resampling_is_only_asked_for_when_the_rate_changes() {
+        let at_96 = alac().with_sample_rate(SampleRate::Hz96000);
+        assert!(
+            at_96
+                .resample_options(44_100)
+                .unwrap()
+                .starts_with("osr=96000:")
+        );
+        assert_eq!(at_96.resample_options(96_000), None, "already there");
+        assert_eq!(
+            alac().resample_options(44_100),
+            None,
+            "original means leave it"
+        );
     }
 
     #[test]

@@ -20,12 +20,8 @@ jobs:
           # First class
           - { name: Windows x64, os: windows-latest, experimental: false }
           - { name: macOS Apple Silicon, os: macos-latest, experimental: false }
-          # Secondary: built and tested, not hand-tested
-          - { name: macOS Intel, os: macos-15-intel, experimental: false }
-          # Cannot be hand-tested, so a failure here does not fail the run
-          - { name: Linux GNU, os: ubuntu-latest, experimental: true }
-          # Needs an ARM runner; may be unavailable on private repositories
-          - { name: Windows ARM, os: windows-11-arm, experimental: true }
+          # macOS Intel, Linux and Windows ARM cannot be hand-tested, so they are not built on
+          # every push (it also spends free minutes). The Release workflow still builds them.
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

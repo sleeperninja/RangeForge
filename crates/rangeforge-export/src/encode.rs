@@ -67,21 +67,28 @@ pub fn build_args(spec: &EncodeSpec<'_>) -> Vec<OsString> {
     for argument in spec.format.encoder_args(bits) {
         push(&argument);
     }
+    // One resampler does both jobs, so the audio is only converted once: a new sample rate,
+    // and, when going down to 16 bits, dither on the way.
+    let mut resampler: Vec<String> = Vec::new();
+    resampler.extend(spec.format.resample_options(spec.info.sample_rate));
     if spec
         .format
         .needs_dither(spec.info.bits_per_sample, spec.gain_db)
     {
-        push("-af");
-        push(&format!(
-            "aresample=osf={}:dither_method=triangular",
+        resampler.push(format!(
+            "osf={}:dither_method=triangular",
             spec.format.sample_format(bits)
         ));
     }
-    for argument in spec.tags.ffmpeg_args(spec.format.codec) {
+    if !resampler.is_empty() {
+        push("-af");
+        push(&format!("aresample={}", resampler.join(":")));
+    }
+    for argument in spec.tags.ffmpeg_args(spec.format) {
         push(&argument);
     }
     push("-f");
-    push(spec.format.codec.muxer());
+    push(spec.format.muxer());
     args.push(spec.output.as_os_str().to_owned());
     args
 }
@@ -217,7 +224,7 @@ fn describe(messages: &str, fallback: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::format::{BitDepth, Codec};
+    use crate::format::{BitDepth, Codec, Container, SampleRate};
 
     fn spec<'a>(
         format: OutputFormat,
@@ -333,6 +340,72 @@ mod tests {
         )));
         assert!(!args.contains(&"-af".to_string()), "{args:?}");
         assert!(args.contains(&"s32".to_string()), "{args:?}");
+    }
+
+    #[test]
+    fn a_new_sample_rate_adds_one_resampler_and_shares_it_with_the_dither() {
+        let tags = Tags::default();
+        let output = Path::new("out.part");
+        let filter = |format: OutputFormat, gain: f64, bits: Option<u32>| {
+            let args = strings(&build_args(&spec(format, gain, bits, &tags, output, None)));
+            args.iter()
+                .position(|a| a == "-af")
+                .map(|at| args[at + 1].clone())
+        };
+        let alac_96 =
+            OutputFormat::new(Codec::Alac, BitDepth::Source).with_sample_rate(SampleRate::Hz96000);
+
+        // 24-bit source at 0 dB: only the new rate.
+        assert_eq!(
+            filter(alac_96, 0.0, Some(24)).as_deref(),
+            Some("aresample=osr=96000:filter_size=64:phase_shift=14:cutoff=0.97")
+        );
+        // 16-bit source with a gain: the new rate and the dither in the same filter.
+        assert_eq!(
+            filter(alac_96, -3.2, Some(16)).as_deref(),
+            Some(
+                "aresample=osr=96000:filter_size=64:phase_shift=14:cutoff=0.97:osf=s16p:dither_method=triangular"
+            )
+        );
+        // The source's own rate asked for: nothing to do.
+        let alac_44 =
+            OutputFormat::new(Codec::Alac, BitDepth::Source).with_sample_rate(SampleRate::Hz44100);
+        assert_eq!(filter(alac_44, 0.0, Some(24)), None);
+    }
+
+    #[test]
+    fn matroska_output_names_the_container_and_uses_vorbis_style_tags() {
+        let tags = Tags {
+            title: Some("A".to_string()),
+            album_artist: Some("B".to_string()),
+            track: Some(3),
+            track_total: Some(9),
+            ..Tags::default()
+        };
+        let output = Path::new("out.part");
+        let format =
+            OutputFormat::new(Codec::Alac, BitDepth::Source).with_container(Container::Mka);
+        let args = strings(&build_args(&spec(
+            format,
+            0.0,
+            Some(16),
+            &tags,
+            output,
+            None,
+        )));
+        let tail: Vec<&str> = args
+            .iter()
+            .rev()
+            .take(3)
+            .rev()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(tail, ["-f", "matroska", "out.part"]);
+        assert!(args.contains(&"albumartist=B".to_string()), "{args:?}");
+        assert!(args.contains(&"tracknumber=3".to_string()), "{args:?}");
+        assert!(args.contains(&"tracktotal=9".to_string()), "{args:?}");
+        // The codec is still ALAC, just in a different wrapper.
+        assert!(args.contains(&"alac".to_string()));
     }
 
     #[test]

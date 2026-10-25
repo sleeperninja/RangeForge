@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use rangeforge_core::identify::Identity;
 use rangeforge_core::planner::{self, GainPlan, Measurement, PlanError, Target};
-use rangeforge_export::format::{BitDepth, Codec, OutputFormat};
+use rangeforge_export::format::{BitDepth, Codec, Container, OutputFormat, SampleRate};
 use rangeforge_export::pipeline::TrackPlan;
 use rangeforge_export::strategy::Strategy;
 use rangeforge_lookup::billboard::Hot100;
@@ -817,12 +817,39 @@ impl App {
         self.settings.peak_protection = on;
     }
 
+    /// Sets the codec. A sample rate the new codec cannot write (192 kHz AAC) goes back to the
+    /// source's own, with a line in the log saying so.
     pub fn set_codec(&mut self, codec: Codec) {
         self.output.codec = codec;
+        if self.output.fit_to_codec() {
+            self.log(format!(
+                "{} cannot be written at that sample rate, so it is back to original",
+                codec.name()
+            ));
+        }
     }
 
     pub fn set_bit_depth(&mut self, depth: BitDepth) {
         self.output.bit_depth = depth;
+    }
+
+    pub fn set_container(&mut self, container: Container) {
+        self.output.container = container;
+    }
+
+    /// Sets the sample rate, or says why the codec cannot write it.
+    pub fn set_sample_rate(&mut self, rate: SampleRate) -> Result<(), String> {
+        if let Some(hz) = rate.hz()
+            && !self.output.codec.supports_rate(hz)
+        {
+            return Err(format!(
+                "{} cannot be written at {}",
+                self.output.codec.name(),
+                rate.label()
+            ));
+        }
+        self.output.sample_rate = rate;
+        Ok(())
     }
 
     /// Selects the preset at `index` and applies its settings. An index past the end is

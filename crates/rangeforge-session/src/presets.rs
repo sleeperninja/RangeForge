@@ -11,10 +11,11 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use rangeforge_export::format::{BitDepth, Codec};
+use rangeforge_export::format::{BitDepth, Codec, Container, SampleRate};
 use serde::{Deserialize, Serialize};
 
-/// Bump this if the file's layout changes in a way older versions cannot read.
+/// Bump this if the file's layout changes in a way older versions cannot read. (A new field
+/// with a default does not need it.)
 const VERSION: u32 = 1;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -22,6 +23,8 @@ pub struct Preset {
     pub name: String,
     pub codec: Codec,
     pub bit_depth: BitDepth,
+    pub container: Container,
+    pub sample_rate: SampleRate,
     pub target_lufs: f64,
     pub peak_protection: bool,
     pub peak_ceiling_dbtp: f64,
@@ -33,6 +36,8 @@ impl Preset {
             name: name.to_string(),
             codec,
             bit_depth,
+            container: Container::Native,
+            sample_rate: SampleRate::Original,
             target_lufs: -22.0,
             peak_protection: true,
             peak_ceiling_dbtp: -0.6,
@@ -40,8 +45,8 @@ impl Preset {
     }
 }
 
-/// The presets listed in the mockup. Sample rate and channel count are not settable yet, so
-/// "CD Quality" so far only means 16-bit FLAC.
+/// The presets listed in the mockup. They keep the source's sample rate, so "CD Quality" means
+/// 16-bit FLAC; a preset saved after changing the sample rate remembers it.
 pub fn built_in() -> Vec<Preset> {
     vec![
         Preset::built_in("iTunes Lossy", Codec::Aac, BitDepth::Source),
@@ -71,9 +76,23 @@ struct StoredPreset {
     name: String,
     codec: String,
     bit_depth: String,
+    /// Added later: a preset saved before then is in the codec's usual file.
+    #[serde(default = "default_container")]
+    container: String,
+    /// Added later: a preset saved before then keeps the source's sample rate.
+    #[serde(default = "default_sample_rate")]
+    sample_rate: String,
     target_lufs: f64,
     peak_protection: bool,
     peak_ceiling_dbtp: f64,
+}
+
+fn default_container() -> String {
+    Container::Native.name().to_string()
+}
+
+fn default_sample_rate() -> String {
+    SampleRate::Original.name().to_string()
 }
 
 impl From<&Preset> for StoredPreset {
@@ -82,6 +101,8 @@ impl From<&Preset> for StoredPreset {
             name: preset.name.clone(),
             codec: preset.codec.name().to_string(),
             bit_depth: preset.bit_depth.name().to_string(),
+            container: preset.container.name().to_string(),
+            sample_rate: preset.sample_rate.name().to_string(),
             target_lufs: preset.target_lufs,
             peak_protection: preset.peak_protection,
             peak_ceiling_dbtp: preset.peak_ceiling_dbtp,
@@ -99,6 +120,8 @@ impl StoredPreset {
             name: self.name,
             codec: Codec::from_name(&self.codec)?,
             bit_depth: BitDepth::from_name(&self.bit_depth)?,
+            container: Container::from_name(&self.container)?,
+            sample_rate: SampleRate::from_name(&self.sample_rate)?,
             target_lufs: self.target_lufs,
             peak_protection: self.peak_protection,
             peak_ceiling_dbtp: self.peak_ceiling_dbtp,
@@ -187,10 +210,47 @@ mod tests {
             name: "Car stereo".to_string(),
             codec: Codec::Aac,
             bit_depth: BitDepth::Sixteen,
+            container: Container::Mka,
+            sample_rate: SampleRate::Hz48000,
             target_lufs: -14.5,
             peak_protection: false,
             peak_ceiling_dbtp: -1.0,
         }
+    }
+
+    #[test]
+    fn a_preset_saved_before_these_options_existed_still_loads_with_the_old_meaning() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("presets.json");
+        fs::write(
+            &path,
+            br#"{"version": 1, "presets": [
+                {"name": "Old", "codec": "flac", "bit_depth": "24", "target_lufs": -20.0, "peak_protection": true, "peak_ceiling_dbtp": -0.6}
+            ]}"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.presets.len(), 1);
+        assert_eq!(loaded.presets[0].container, Container::Native);
+        assert_eq!(loaded.presets[0].sample_rate, SampleRate::Original);
+        assert_eq!(loaded.notes, Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_preset_with_an_unknown_container_or_rate_is_skipped_with_a_note() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("presets.json");
+        fs::write(
+            &path,
+            br#"{"version": 1, "presets": [
+                {"name": "A", "codec": "flac", "bit_depth": "24", "container": "ogg", "target_lufs": -20.0, "peak_protection": true, "peak_ceiling_dbtp": -0.6},
+                {"name": "B", "codec": "flac", "bit_depth": "24", "sample_rate": "22050", "target_lufs": -20.0, "peak_protection": true, "peak_ceiling_dbtp": -0.6}
+            ]}"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.presets.len(), 0);
+        assert!(loaded.notes[0].contains("Skipped 2"), "{:?}", loaded.notes);
     }
 
     #[test]

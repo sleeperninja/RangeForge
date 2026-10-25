@@ -60,6 +60,9 @@ pub fn run(options: &RunOptions) -> Result<()> {
         bail!("nothing to do: no audio files or CUE sheets were found");
     }
 
+    if let Some(problem) = options.output.format_problem() {
+        bail!("{problem}");
+    }
     let strategy = options.output.strategy().map_err(anyhow::Error::msg)?;
     if strategy.needs_confirmation() && !options.dry_run && !options.yes {
         bail!(

@@ -2,7 +2,7 @@
 
 use rangeforge_core::cue::{CueSheet, CueTrack};
 
-use crate::format::Codec;
+use crate::format::OutputFormat;
 
 /// The tags for one output track. Anything left empty is simply not written.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -35,7 +35,7 @@ impl Tags {
     /// FFmpeg `-metadata key=value` arguments. Container formats name some tags differently:
     /// MP4 and WAV keep the track as `n/total`, while FLAC wants separate number and total
     /// fields and spells the album artist without an underscore.
-    pub(crate) fn ffmpeg_args(&self, codec: Codec) -> Vec<String> {
+    pub(crate) fn ffmpeg_args(&self, format: OutputFormat) -> Vec<String> {
         let mut pairs: Vec<(&str, String)> = Vec::new();
         let mut add = |key: &'static str, value: Option<String>| {
             if let Some(value) = value.filter(|value| !value.is_empty()) {
@@ -46,7 +46,7 @@ impl Tags {
         add("title", self.title.clone());
         add("artist", self.artist.clone());
         add("album", self.album.clone());
-        if codec == Codec::Flac {
+        if format.uses_vorbis_style_tags() {
             add("albumartist", self.album_artist.clone());
             add("tracknumber", self.track.map(|n| n.to_string()));
             add("tracktotal", self.track_total.map(|n| n.to_string()));
@@ -73,6 +73,7 @@ impl Tags {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::format::{BitDepth, Codec};
     use rangeforge_core::cue;
 
     const SHEET: &str = "REM GENRE Rock\nREM DATE 1973\nPERFORMER \"Led Zeppelin\"\nTITLE \"Houses of the Holy\"\nFILE \"a.flac\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"The Song Remains the Same\"\n    PERFORMER \"Led Zeppelin\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"The Rain Song\"\n    INDEX 01 05:30:30\n";
@@ -103,7 +104,7 @@ mod tests {
 
     #[test]
     fn mp4_style_arguments() {
-        let args = tags_for(1).ffmpeg_args(Codec::Alac);
+        let args = tags_for(1).ffmpeg_args(OutputFormat::new(Codec::Alac, BitDepth::Source));
         let expected = [
             "-metadata",
             "title=The Rain Song",
@@ -125,7 +126,7 @@ mod tests {
 
     #[test]
     fn flac_style_arguments_split_the_track_number() {
-        let args = tags_for(0).ffmpeg_args(Codec::Flac);
+        let args = tags_for(0).ffmpeg_args(OutputFormat::new(Codec::Flac, BitDepth::Source));
         assert!(args.contains(&"tracknumber=1".to_string()), "{args:?}");
         assert!(args.contains(&"tracktotal=2".to_string()), "{args:?}");
         assert!(
@@ -138,7 +139,7 @@ mod tests {
     #[test]
     fn empty_tags_are_left_out() {
         assert_eq!(
-            Tags::default().ffmpeg_args(Codec::Alac),
+            Tags::default().ffmpeg_args(OutputFormat::new(Codec::Alac, BitDepth::Source)),
             Vec::<String>::new()
         );
         let tags = Tags {
@@ -147,7 +148,7 @@ mod tests {
             ..Tags::default()
         };
         assert_eq!(
-            tags.ffmpeg_args(Codec::Wav),
+            tags.ffmpeg_args(OutputFormat::new(Codec::Wav, BitDepth::Source)),
             ["-metadata", "artist=Someone"]
         );
     }
@@ -158,6 +159,9 @@ mod tests {
             track: Some(7),
             ..Tags::default()
         };
-        assert_eq!(tags.ffmpeg_args(Codec::Alac), ["-metadata", "track=7"]);
+        assert_eq!(
+            tags.ffmpeg_args(OutputFormat::new(Codec::Alac, BitDepth::Source)),
+            ["-metadata", "track=7"]
+        );
     }
 }

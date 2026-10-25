@@ -58,7 +58,8 @@
   }
 
   function fillSelect(select, choices, selectedId) {
-    const key = choices.map((c) => c.id).join('|');
+    // The labels count too: the container's name follows the codec while its id stays the same.
+    const key = choices.map((c) => `${c.id}:${c.label}`).join('|');
     if (select.dataset.key !== key) {
       select.innerHTML = Render.optionsHtml(choices, selectedId);
       select.dataset.key = key;
@@ -85,7 +86,8 @@
 
     fillSelect($('codec'), s.options.codecs, s.output.codec);
     fillSelect($('bitDepth'), s.options.bit_depths, s.output.bit_depth);
-    $('container').value = s.output.container;
+    fillSelect($('container'), s.options.containers, s.output.container);
+    fillSelect($('sampleRate'), s.options.sample_rates, s.output.sample_rate);
 
     setValue($('target'), s.volume.target_lufs.toFixed(1));
     $('peakProtection').checked = s.volume.peak_protection;
@@ -291,6 +293,8 @@
     $('peakProtection').addEventListener('change', (e) => call('set_peak_protection', { on: e.target.checked }));
     $('codec').addEventListener('change', (e) => call('set_codec', { id: e.target.value }));
     $('bitDepth').addEventListener('change', (e) => call('set_bit_depth', { id: e.target.value }));
+    $('container').addEventListener('change', (e) => call('set_container', { id: e.target.value }));
+    $('sampleRate').addEventListener('change', (e) => call('set_sample_rate', { id: e.target.value }));
 
     $('presetList').addEventListener('click', (e) => {
       const item = e.target.closest('li[data-index]');

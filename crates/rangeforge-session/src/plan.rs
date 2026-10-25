@@ -66,7 +66,7 @@ pub fn track_plans(
     names: &NameTemplates,
     identities: &[Option<Identity>],
 ) -> (Vec<TrackPlan>, PathBuf) {
-    let extension = format.codec.extension();
+    let extension = format.extension();
     let source_dir = job
         .audio
         .parent()

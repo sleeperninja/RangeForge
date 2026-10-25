@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
-use rangeforge_export::format::{BitDepth, Codec};
+use rangeforge_export::format::{BitDepth, Codec, Container, SampleRate};
 use rangeforge_export::strategy::Strategy;
 
 use rangeforge_session::controls::{ConflictKind, OutputSettings, StrategySettings, WhereKind};
@@ -49,6 +49,55 @@ impl From<BitDepthArg> for BitDepth {
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
+enum ContainerArg {
+    /// The codec's usual file: .m4a, .flac or .wav
+    Native,
+    /// Matroska audio, .mka
+    Mka,
+}
+
+impl From<ContainerArg> for Container {
+    fn from(arg: ContainerArg) -> Self {
+        match arg {
+            ContainerArg::Native => Self::Native,
+            ContainerArg::Mka => Self::Mka,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum SampleRateArg {
+    /// Keep each source's own rate
+    Original,
+    #[value(name = "44100")]
+    Hz44100,
+    #[value(name = "48000")]
+    Hz48000,
+    #[value(name = "88200")]
+    Hz88200,
+    #[value(name = "96000")]
+    Hz96000,
+    #[value(name = "176400")]
+    Hz176400,
+    #[value(name = "192000")]
+    Hz192000,
+}
+
+impl From<SampleRateArg> for SampleRate {
+    fn from(arg: SampleRateArg) -> Self {
+        match arg {
+            SampleRateArg::Original => Self::Original,
+            SampleRateArg::Hz44100 => Self::Hz44100,
+            SampleRateArg::Hz48000 => Self::Hz48000,
+            SampleRateArg::Hz88200 => Self::Hz88200,
+            SampleRateArg::Hz96000 => Self::Hz96000,
+            SampleRateArg::Hz176400 => Self::Hz176400,
+            SampleRateArg::Hz192000 => Self::Hz192000,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
 enum ConflictArg {
     /// The new file gets a serial suffix such as _00; the file already there is untouched
     Number,
@@ -68,6 +117,12 @@ pub struct OutputArgs {
     /// How precisely to store each sample
     #[arg(long, value_enum, default_value = "source")]
     bit_depth: BitDepthArg,
+    /// The kind of file to wrap the audio in
+    #[arg(long, value_enum, default_value = "native")]
+    container: ContainerArg,
+    /// The sample rate to write, in hertz, or original
+    #[arg(long, value_enum, default_value = "original")]
+    sample_rate: SampleRateArg,
     /// Write all files into this one folder instead of next to the originals
     #[arg(long, conflicts_with = "subfolder")]
     out: Option<PathBuf>,
@@ -86,7 +141,7 @@ pub struct OutputArgs {
     /// File name pattern for songs cut from a CUE album, such as "{track:02} - {title}"
     #[arg(long, default_value = naming::DEFAULT_ALBUM)]
     name: String,
-    /// File name pattern for single files; only {name} is available
+    /// File name pattern for single files, such as "{name}"
     #[arg(long, default_value = naming::DEFAULT_SINGLE)]
     single_name: String,
 }
@@ -96,7 +151,22 @@ impl OutputArgs {
         OutputSettings {
             codec: self.codec.into(),
             bit_depth: self.bit_depth.into(),
+            container: self.container.into(),
+            sample_rate: self.sample_rate.into(),
         }
+    }
+
+    /// A plain-words reason the chosen codec cannot write the chosen sample rate, if so.
+    pub fn format_problem(&self) -> Option<String> {
+        let settings = self.output_settings();
+        let hz = settings.sample_rate.hz()?;
+        (!settings.codec.supports_rate(hz)).then(|| {
+            format!(
+                "{} cannot be written at {}",
+                settings.codec.name(),
+                settings.sample_rate.label()
+            )
+        })
     }
 
     pub fn strategy_settings(&self) -> StrategySettings {
@@ -242,6 +312,30 @@ mod tests {
     fn a_serial_suffix_without_digits_is_reported() {
         let error = parse(&["--suffix", "_new"]).strategy().unwrap_err();
         assert!(error.contains("digits"), "{error}");
+    }
+
+    #[test]
+    fn container_and_sample_rate_are_chosen_by_name() {
+        let args = parse(&["--container", "mka", "--sample-rate", "96000"]);
+        let settings = args.output_settings();
+        assert_eq!(settings.container, Container::Mka);
+        assert_eq!(settings.sample_rate, SampleRate::Hz96000);
+        assert_eq!(args.format_problem(), None);
+        assert!(Wrapper::try_parse_from(["test", "--sample-rate", "22050"]).is_err());
+        assert!(Wrapper::try_parse_from(["test", "--container", "ogg"]).is_err());
+    }
+
+    #[test]
+    fn a_rate_the_codec_cannot_write_is_reported() {
+        let args = parse(&["--codec", "aac", "--sample-rate", "192000"]);
+        assert_eq!(
+            args.format_problem().as_deref(),
+            Some("aac cannot be written at 192 kHz")
+        );
+        assert_eq!(
+            parse(&["--codec", "aac", "--sample-rate", "96000"]).format_problem(),
+            None
+        );
     }
 
     #[test]

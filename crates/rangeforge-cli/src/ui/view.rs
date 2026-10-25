@@ -218,10 +218,13 @@ fn output_line(app: &App) -> Line<'static> {
         label("Output       "),
         Span::from("Codec "),
         control(output.codec.name(), app.focus == Focus::Codec),
-        Span::from(format!("   Container {}", output.codec.extension())),
+        Span::from(format!("   Container {}", output.format().extension())),
         Span::from("   Bit Depth "),
         control(output.bit_depth.label(), app.focus == Focus::BitDepth),
-        label("   Sample Rate original   Channels original"),
+        label(&format!(
+            "   Sample Rate {}   Channels original",
+            output.sample_rate.label().to_lowercase()
+        )),
     ])
 }
 

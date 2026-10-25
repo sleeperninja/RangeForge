@@ -11,9 +11,9 @@
 use serde::Serialize;
 
 use rangeforge_core::identify::IdentitySource;
-use rangeforge_export::format::{BitDepth, Codec};
+use rangeforge_export::format::{BitDepth, Codec, Container};
 
-use crate::controls::{ConflictKind, WhereKind};
+use crate::controls::{ConflictKind, OutputSettings, WhereKind, sample_rates_for};
 use crate::model::{App, Group, Kind, RunState, Status, TrackRow};
 use crate::naming::{self, NamingPreview};
 use crate::secrets::KeySource;
@@ -103,8 +103,13 @@ pub struct VolumeView {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct OutputView {
     pub codec: String,
-    pub container: &'static str,
+    /// `native` or `mka`.
+    pub container: String,
+    /// `original`, or the rate in hertz.
+    pub sample_rate: String,
     pub bit_depth: String,
+    /// The ending of the files that will be written: `m4a`, `flac`, `wav` or `mka`.
+    pub extension: &'static str,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -171,6 +176,10 @@ pub struct MetadataView {
 pub struct Options {
     pub codecs: Vec<Choice>,
     pub bit_depths: Vec<Choice>,
+    /// The usual file for the chosen codec, and `mka`.
+    pub containers: Vec<Choice>,
+    /// Only the sample rates the chosen codec can write.
+    pub sample_rates: Vec<Choice>,
     pub places: Vec<Choice>,
     pub conflicts: Vec<Choice>,
 }
@@ -325,13 +334,29 @@ fn group_view(app: &App, group: &Group) -> GroupView {
     }
 }
 
-fn options() -> Options {
+fn options(output: OutputSettings) -> Options {
     Options {
         codecs: Codec::ALL
             .into_iter()
             .map(|codec| Choice {
                 id: codec.name().to_string(),
                 label: codec.name().to_string(),
+            })
+            .collect(),
+        // The usual file's ending for the chosen codec, and mka.
+        containers: Container::ALL
+            .into_iter()
+            .map(|container| Choice {
+                id: container.name().to_string(),
+                label: container.label(output.codec).to_string(),
+            })
+            .collect(),
+        // Only the rates the chosen codec can write.
+        sample_rates: sample_rates_for(output.codec)
+            .into_iter()
+            .map(|rate| Choice {
+                id: rate.name().to_string(),
+                label: rate.label().to_string(),
             })
             .collect(),
         bit_depths: BitDepth::ALL
@@ -375,8 +400,10 @@ impl App {
             },
             output: OutputView {
                 codec: self.output.codec.name().to_string(),
-                container: self.output.codec.extension(),
+                container: self.output.container.name().to_string(),
+                sample_rate: self.output.sample_rate.name().to_string(),
                 bit_depth: self.output.bit_depth.name().to_string(),
+                extension: self.output.format().extension(),
             },
             strategy: StrategyView {
                 place: place_id(self.strategy.where_kind).to_string(),
@@ -402,7 +429,7 @@ impl App {
                 example: naming::preview(
                     &self.naming.album,
                     &self.naming.single,
-                    self.output.codec.extension(),
+                    self.output.format().extension(),
                 ),
                 variables: naming::variables()
                     .into_iter()
@@ -419,7 +446,7 @@ impl App {
                 },
                 radio_songs: self.radio_songs(),
             },
-            options: options(),
+            options: options(self.output),
             running: self.running,
             pending_files: self.pending(),
             total_files: self.groups.len(),
@@ -438,6 +465,7 @@ mod tests {
     use crate::model::{Origin, Settings};
     use crate::presets::built_in;
     use rangeforge_core::planner::Measurement;
+    use rangeforge_export::format::SampleRate;
 
     fn measured(lufs: f64, peak: f64, range: f64) -> Measurement {
         Measurement {
@@ -530,7 +558,9 @@ mod tests {
         assert!((snapshot.volume.target_lufs - -22.0).abs() < 1e-9);
         assert!(snapshot.volume.peak_protection);
         assert_eq!(snapshot.output.codec, "alac");
-        assert_eq!(snapshot.output.container, "m4a");
+        assert_eq!(snapshot.output.container, "native");
+        assert_eq!(snapshot.output.extension, "m4a");
+        assert_eq!(snapshot.output.sample_rate, "original");
         assert_eq!(snapshot.output.bit_depth, "source");
         assert_eq!(snapshot.strategy.place, "next");
         assert_eq!(snapshot.strategy.conflict, "number");
@@ -555,6 +585,41 @@ mod tests {
         );
         assert_eq!(options.conflicts[1].label, "Rename the existing file");
         assert_eq!(options.bit_depths[1].label, "16-bit");
+    }
+
+    #[test]
+    fn the_containers_and_rates_offered_follow_the_chosen_codec() {
+        let mut app = sample_app();
+        let options = app.snapshot().options;
+        let ids = |choices: &[Choice]| choices.iter().map(|c| c.id.clone()).collect::<Vec<_>>();
+        let labels =
+            |choices: &[Choice]| choices.iter().map(|c| c.label.clone()).collect::<Vec<_>>();
+        assert_eq!(ids(&options.containers), ["native", "mka"]);
+        assert_eq!(labels(&options.containers), ["m4a", "mka"]);
+        assert_eq!(options.sample_rates.len(), 7);
+        assert_eq!(options.sample_rates[0].label, "original");
+        assert_eq!(options.sample_rates[3].label, "88.2 kHz");
+
+        app.set_codec(Codec::Flac);
+        assert_eq!(labels(&app.snapshot().options.containers), ["flac", "mka"]);
+
+        app.set_codec(Codec::Aac);
+        let rates = ids(&app.snapshot().options.sample_rates);
+        assert_eq!(rates, ["original", "44100", "48000", "88200", "96000"]);
+    }
+
+    #[test]
+    fn the_chosen_container_and_rate_show_and_name_the_files() {
+        let mut app = sample_app();
+        app.set_container(Container::Mka);
+        app.set_sample_rate(SampleRate::Hz96000).unwrap();
+        let output = app.snapshot().output;
+        assert_eq!(output.container, "mka");
+        assert_eq!(output.sample_rate, "96000");
+        assert_eq!(output.extension, "mka");
+        // The naming example uses the same ending.
+        let example = app.snapshot().naming.example.album_example.unwrap();
+        assert_eq!(example.rsplit('.').next(), Some("mka"), "{example}");
     }
 
     #[test]
