@@ -60,7 +60,8 @@ pub struct IdentityView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct TagChip {
     pub text: String,
-    /// What colour to give it: `radio` (blue) for the Hot 100.
+    /// What colour to give it: `genre` (plain) for the whole album, `song` (pink) for what
+    /// stands out about one song, `radio` (blue) for the Hot 100.
     pub kind: &'static str,
     /// What to say when the pointer rests on it.
     pub title: String,
@@ -230,6 +231,37 @@ pub fn conflict_from_id(id: &str) -> Option<ConflictKind> {
         .find(|kind| conflict_id(*kind) == id)
 }
 
+/// The labels for the Tags column, in the order they are written: the album's genres (plain),
+/// what stands out about the song (pink), then Radio (blue).
+fn chips(app: &App, track: &TrackRow) -> Vec<TagChip> {
+    let genres = app.song_genres(track);
+    let mut chips: Vec<TagChip> = genres
+        .album
+        .into_iter()
+        .map(|text| TagChip {
+            text,
+            kind: "genre",
+            title: "A genre of the whole album".to_string(),
+        })
+        .chain(genres.song.into_iter().map(|text| TagChip {
+            text,
+            kind: "song",
+            title: "A genre that stands out for this song".to_string(),
+        }))
+        .collect();
+    if let Some(hit) = track.radio {
+        chips.push(TagChip {
+            text: "Radio".to_string(),
+            kind: "radio",
+            title: format!(
+                "Reached #{} on the Billboard Hot 100 ({})",
+                hit.peak, hit.year
+            ),
+        });
+    }
+    chips
+}
+
 fn track_view(app: &App, track: &TrackRow) -> TrackView {
     let (adjust_db, limited, unadjustable) = match app.plan(track) {
         Some(Ok(plan)) => (finite(plan.gain_db), plan.limited_by_peak, false),
@@ -246,18 +278,7 @@ fn track_view(app: &App, track: &TrackRow) -> TrackView {
         unadjustable,
         saved: track.saved,
         included: track.included,
-        tags: track
-            .radio
-            .map(|hit| TagChip {
-                text: "Radio".to_string(),
-                kind: "radio",
-                title: format!(
-                    "Reached #{} on the Billboard Hot 100 ({})",
-                    hit.peak, hit.year
-                ),
-            })
-            .into_iter()
-            .collect(),
+        tags: chips(app, track),
         identity: track.identity.as_ref().map(|identity| IdentityView {
             artist: identity.artist.clone(),
             title: identity.title.clone(),

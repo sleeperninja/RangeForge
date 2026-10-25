@@ -111,12 +111,20 @@ test('hovering a song says who it is and how that was worked out', () => {
 
 test('a Radio tag shows as a blue chip with its explanation, and tag text is escaped', () => {
   const html = Render.trackRowHtml(houses.tracks[1], 'alac', 0, 1);
-  assert.match(html, /<td class="tags"><span class="chip radio" title="Reached #14 on the Billboard Hot 100 \(1973\)">Radio<\/span><\/td>/);
+  assert.match(html, /<span class="chip radio" title="Reached #14 on the Billboard Hot 100 \(1973\)">Radio<\/span><\/td>/);
   // A song with no tags, or from older data with no tags field, has an empty cell.
-  assert.match(Render.trackRowHtml(houses.tracks[0], 'alac', 0, 0), /<td class="tags"><\/td>/);
+  assert.match(Render.trackRowHtml(coda.tracks[0], 'alac', 1, 0), /<td class="tags"><\/td>/);
   const odd = Render.chipsHtml([{ text: '<b>', kind: 'radio', title: '"x"' }]);
   assert.match(odd, /&lt;b&gt;/);
   assert.match(odd, /title="&quot;x&quot;"/);
+});
+
+test('album genres, song genres and Radio are told apart by colour class and keep their order', () => {
+  const html = Render.trackRowHtml(houses.tracks[1], 'alac', 0, 1);
+  const kinds = [...html.matchAll(/class="chip (\w+)"/g)].map((m) => m[1]);
+  assert.deepStrictEqual(kinds, ['genre', 'genre', 'song', 'radio']);
+  const texts = [...html.matchAll(/class="chip \w+" title="[^"]*">([^<]+)</g)].map((m) => m[1]);
+  assert.deepStrictEqual(texts, ['Classic Rock', 'Hard Rock', 'Ballad', 'Radio']);
 });
 
 test('the Settings window says what is known about the Last.fm key, without showing it', () => {

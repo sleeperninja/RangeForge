@@ -235,8 +235,12 @@ input.text.wide { width: 100%; margin-bottom: 4px; }
 dialog { background: var(--panel); color: var(--ink); border: 1px solid var(--panel-edge); border-radius: 6px; padding: 16px 20px; max-width: 420px; }
 dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 .chip { display: inline-block; margin-right: 6px; padding: 0 7px; border-radius: 9px; font-size: 11px; line-height: 17px; border: 1px solid transparent; }
+/* Plain: a genre of the whole album. Pink: what stands out about one song. Blue: Radio. */
+.chip.genre { color: var(--ink); border-color: var(--panel-edge); }
+.chip.song { color: #c2185b; border-color: #c2185b; }
 .chip.radio { color: #1769d6; border-color: #1769d6; }
 @media (prefers-color-scheme: dark) {
+  .chip.song { color: #ff80ab; border-color: #ff80ab; }
   .chip.radio { color: #6fb1ff; border-color: #6fb1ff; }
 }
 h4.section { margin-top: 16px; }

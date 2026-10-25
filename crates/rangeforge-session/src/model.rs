@@ -4,6 +4,7 @@
 //! When the user asks to run, the model builds a [`RunSpec`] and leaves it for the caller to
 //! start; progress comes back as [`RunEvent`]s.
 
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,12 +15,15 @@ use rangeforge_export::format::{BitDepth, Codec, OutputFormat};
 use rangeforge_export::pipeline::TrackPlan;
 use rangeforge_export::strategy::Strategy;
 use rangeforge_lookup::billboard::Hot100;
+use rangeforge_lookup::lastfm::RawTag;
+use rangeforge_lookup::tagcache::Subject;
 
 use crate::appsettings::{MetadataSettings, SavedSettings};
 use crate::controls::{
     ConflictKind, Focus, Mode, OutputSettings, PresetList, Saved, StrategySettings, WhereKind,
     apply_preset,
 };
+use crate::genres::{self, Answers, SongGenres};
 use crate::load::{Job, load_from};
 use crate::naming::NameSettings;
 use crate::plan::{plan_tracks, track_plans};
@@ -313,6 +317,10 @@ pub struct App {
     radio: Option<Arc<Hot100>>,
     /// Whether a Last.fm key is available, and from where. The key itself is never held here.
     pub lastfm_key: KeySource,
+    /// What Last.fm has said about albums and songs so far.
+    answers: Answers,
+    /// Questions already handed out to be asked, so none is asked twice at once.
+    asked: HashSet<String>,
 }
 
 impl App {
@@ -338,6 +346,8 @@ impl App {
             metadata: MetadataSettings::default(),
             radio: None,
             lastfm_key: KeySource::None,
+            answers: Answers::default(),
+            asked: HashSet::new(),
         }
     }
 
@@ -381,6 +391,76 @@ impl App {
     /// Whether Last.fm should be asked for genres: switched on, with a key to use.
     pub fn wants_lastfm(&self) -> bool {
         self.metadata.enabled && self.metadata.lastfm_enabled && self.lastfm_key != KeySource::None
+    }
+
+    /// The genres for a song, as shown and as written. Empty while lookups are off, so nothing
+    /// shows and nothing in a file is changed.
+    pub fn song_genres(&self, track: &TrackRow) -> SongGenres {
+        match (&track.identity, self.metadata.enabled) {
+            (Some(identity), true) => genres::song_genres(identity, &self.answers),
+            _ => SongGenres::default(),
+        }
+    }
+
+    /// The text to write in a song's genre tag, or `None` to leave the tag as it is.
+    pub fn genre_tag(&self, track: &TrackRow) -> Option<String> {
+        if !self.metadata.enabled {
+            return None;
+        }
+        genres::genre_tag(&self.song_genres(track), track.radio.is_some())
+    }
+
+    /// The questions for Last.fm that nobody has been sent to ask yet, once. Empty unless
+    /// Last.fm is switched on and has a key. Each comes back through [`App::apply_answer`].
+    pub fn take_questions(&mut self) -> Vec<Subject> {
+        if !self.wants_lastfm() {
+            return Vec::new();
+        }
+        let subjects: Vec<Subject> = self.askable().flat_map(genres::questions).collect();
+        let mut wanted = Vec::new();
+        for subject in subjects {
+            if self.answers.get(&subject).is_none() && self.asked.insert(subject.key()) {
+                wanted.push(subject);
+            }
+        }
+        wanted
+    }
+
+    /// True if there is something to ask Last.fm that has not been handed out.
+    pub fn has_questions(&self) -> bool {
+        self.wants_lastfm()
+            && self.askable().flat_map(genres::questions).any(|subject| {
+                self.answers.get(&subject).is_none() && !self.asked.contains(&subject.key())
+            })
+    }
+
+    /// The identities worth asking Last.fm about. A single file waits until its tags have been
+    /// read, which happens when it has been measured: asking about a guess from its file name
+    /// would often be a wasted question.
+    fn askable(&self) -> impl Iterator<Item = &Identity> {
+        self.groups
+            .iter()
+            .filter(|group| {
+                group.kind == Kind::CueAlbum || !matches!(group.status, Status::Pending)
+            })
+            .flat_map(|group| &group.tracks)
+            .filter_map(|track| track.identity.as_ref())
+    }
+
+    /// Records what Last.fm said about an album or song.
+    pub fn apply_answer(&mut self, subject: &Subject, tags: Vec<RawTag>) {
+        self.answers.insert(subject, tags);
+    }
+
+    /// Lets every question not yet answered be asked again, such as after the lookups stopped
+    /// early because the network went away.
+    pub fn forget_asked(&mut self) {
+        self.asked.clear();
+    }
+
+    /// How many albums and songs Last.fm has answered for.
+    pub fn answered(&self) -> usize {
+        self.answers.len()
     }
 
     /// Gives the app the Hot 100 index (or takes it away) and marks the songs that charted.
@@ -648,6 +728,10 @@ impl App {
             let (mut plans, directory) = track_plans(job, &planned, format, &names, &identities);
             for (plan, track) in plans.iter_mut().zip(&group.tracks) {
                 plan.skip = !track.included;
+                // Genres found by lookups are written, comma separated, with Radio last.
+                if let Some(genre) = self.genre_tag(track) {
+                    plan.tags.genre = Some(genre);
+                }
             }
             items.push(RunItem {
                 group: job.group,
@@ -2014,6 +2098,132 @@ mod tests {
         assert_eq!(
             spec.items[0].plans[0].file_name,
             "The Killers - Shot at the Night.m4a"
+        );
+    }
+
+    fn raw(name: &str, count: u32) -> RawTag {
+        RawTag {
+            name: name.to_string(),
+            count,
+        }
+    }
+
+    /// The test album with Last.fm switched on and a key available.
+    fn lastfm_app() -> App {
+        let mut app = ready_app();
+        app.set_metadata_enabled(true);
+        app.set_lastfm_enabled(true);
+        app.lastfm_key = KeySource::Saved;
+        app
+    }
+
+    #[test]
+    fn last_fm_is_asked_about_each_album_and_song_once_and_only_when_wanted() {
+        let mut app = ready_app();
+        assert!(app.take_questions().is_empty(), "everything starts off");
+        assert!(!app.has_questions());
+
+        let mut app = lastfm_app();
+        assert!(app.has_questions());
+        let questions = app.take_questions();
+        // One album and two songs.
+        assert_eq!(questions.len(), 3);
+        assert!(app.take_questions().is_empty(), "handed out once");
+        assert!(!app.has_questions());
+
+        // Failed or abandoned questions can be handed out again.
+        app.forget_asked();
+        assert!(app.has_questions());
+        assert_eq!(app.take_questions().len(), 3);
+
+        // Answered ones are never asked again.
+        app.forget_asked();
+        for subject in &questions {
+            app.apply_answer(subject, vec![raw("rock", 100)]);
+        }
+        assert!(!app.has_questions());
+        assert_eq!(app.answered(), 3);
+
+        // Switching Last.fm off, or losing the key, stops the questions.
+        let mut off = ready_app();
+        off.set_metadata_enabled(true);
+        off.lastfm_key = KeySource::Saved;
+        assert!(off.take_questions().is_empty(), "Last.fm itself is off");
+    }
+
+    #[test]
+    fn answers_become_chips_and_a_comma_separated_genre_tag_with_radio_last() {
+        let mut app = lastfm_app();
+        app.set_radio(Some(Arc::new(Hot100::from_songs(vec![charted(
+            "Led Zeppelin",
+            "The Rain Song",
+            14,
+            1973,
+        )]))));
+        for subject in app.take_questions() {
+            let tags = match &subject {
+                Subject::Album { .. } => vec![raw("classic rock", 100), raw("hard rock", 80)],
+                Subject::Track { title, .. } if title == "The Rain Song" => {
+                    vec![raw("ballad", 90), raw("classic rock", 80)]
+                }
+                Subject::Track { .. } => Vec::new(),
+            };
+            app.apply_answer(&subject, tags);
+        }
+
+        let rain = &app.groups[0].tracks[0];
+        let genres = app.song_genres(rain);
+        assert_eq!(genres.album, ["Classic Rock", "Hard Rock"]);
+        assert_eq!(genres.song, ["Ballad"]);
+        assert_eq!(
+            app.genre_tag(rain).as_deref(),
+            Some("Classic Rock, Hard Rock, Ballad, Radio")
+        );
+        // No Quarter did not chart and has no song-level extras.
+        let quarter = &app.groups[0].tracks[1];
+        assert_eq!(
+            app.genre_tag(quarter).as_deref(),
+            Some("Classic Rock, Hard Rock")
+        );
+
+        // The genre tag is what a run writes.
+        app.handle_key(Key::Enter);
+        let spec = app.take_run_spec().unwrap();
+        assert_eq!(
+            spec.items[0].plans[0].tags.genre.as_deref(),
+            Some("Classic Rock, Hard Rock, Ballad, Radio")
+        );
+        assert_eq!(
+            spec.items[0].plans[1].tags.genre.as_deref(),
+            Some("Classic Rock, Hard Rock")
+        );
+    }
+
+    #[test]
+    fn with_lookups_off_nothing_shows_and_no_genre_is_changed() {
+        let mut app = ready_app();
+        app.groups[0].tracks[0].identity.as_mut().unwrap().genre = Some("Rock".to_string());
+        // Even an existing genre is neither shown nor rewritten while lookups are off.
+        assert!(app.song_genres(&app.groups[0].tracks[0]).is_empty());
+        assert_eq!(app.genre_tag(&app.groups[0].tracks[0]), None);
+
+        app.handle_key(Key::Enter);
+        let spec = app.take_run_spec().unwrap();
+        assert_eq!(spec.items[0].plans[0].tags.genre, None);
+    }
+
+    #[test]
+    fn a_song_whose_file_already_has_a_genre_keeps_it_and_gains_the_others() {
+        let mut app = lastfm_app();
+        app.groups[0].tracks[0].identity.as_mut().unwrap().genre = Some("Rock".to_string());
+        for subject in app.take_questions() {
+            if matches!(subject, Subject::Album { .. }) {
+                app.apply_answer(&subject, vec![raw("classic rock", 100)]);
+            }
+        }
+        assert_eq!(
+            app.genre_tag(&app.groups[0].tracks[0]).as_deref(),
+            Some("Rock, Classic Rock")
         );
     }
 

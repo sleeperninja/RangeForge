@@ -14,7 +14,7 @@ Still to do: benchmarks, `--json` and the HTML report, Sample Rate and Channels 
 | **1. Core slice** | Decode once, parse CUE, measure, plan gain, cache | Numbers match FFmpeg `ebur128` on real albums; CUE albums split into correct tracks |
 | **2. CLI view** | `analyze` table, interactive `ui`, `--json`, HTML report | The Led Zeppelin + Killers example from the mockup renders and the target can be changed live |
 | **3. Run** | Gain, split, encode (ALAC, FLAC, WAV, AAC), tags, file strategies | PowerShell script no longer needed |
-| **4. Metadata** | File name patterns (done), Billboard "Radio" tag (done), who-a-song-is from tags and file names (done; editing by hand next), Last.fm genres (key storage done, lookups next), tag editing | Genre and Radio tags fill in for an album |
+| **4. Metadata** | File name patterns (done), Billboard "Radio" tag (done), who-a-song-is from tags and file names (done; editing by hand next), Last.fm genres (done: lookup, filtering, cache, written comma separated with Radio last; not yet tried against the live service), tag editing | Genre and Radio tags fill in for an album |
 | **5. Presets and Settings** | Save/delete presets, encrypted keys, CPU limit, DSD fallback | Matches the Settings mockup |
 | **6. Multichannel** | 4-8 channel loudness, FLAC for Plex, DSD/MLP input | The 206 GB collection processes |
 | **7. Desktop app** | Tauri 2 UI matching the mockups | Mockup layout works end to end |
@@ -31,3 +31,6 @@ Still to do: benchmarks, `--json` and the HTML report, Sample Rate and Channels 
 ## Parked ideas
 
 See [04-decisions.md](04-decisions.md) for anything marked Parked.
+
+- **A genre tag editor for the Apple Music library** (idea, D-26): change genres in the Music app on the Mac mini that serves the library, through its scripting, since Music keeps its own database and does not notice tags changed in the files.
+- **Tag chips with × and right-click Add tag / Rescan tags on a selection** (planned, D-25), after identities can be edited by hand.

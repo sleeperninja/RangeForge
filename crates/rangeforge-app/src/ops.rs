@@ -12,6 +12,8 @@ use std::time::Duration;
 use rangeforge_audio::cache::Cache;
 use rangeforge_export::format::{BitDepth, Codec};
 use rangeforge_lookup::billboard::{self, Fetcher, Refresh};
+use rangeforge_lookup::lastfm::{LastFmError, RawTag};
+use rangeforge_lookup::tagcache::{Subject, TagCache};
 use rangeforge_session::controls::PresetList;
 use rangeforge_session::load::Job;
 use rangeforge_session::model::{App, MeasureOutcome, RunEvent, RunRequest, RunSpec, Settings};
@@ -31,6 +33,8 @@ pub struct Locations {
     pub settings: Option<PathBuf>,
     /// The small local copy of the Hot 100 history.
     pub hot100: Option<PathBuf>,
+    /// What Last.fm has said about albums and songs.
+    pub lastfm_cache: Option<PathBuf>,
     pub cache: Option<PathBuf>,
 }
 
@@ -40,6 +44,7 @@ pub struct Shared {
     presets_path: Option<PathBuf>,
     settings_path: Option<PathBuf>,
     hot100_path: Option<PathBuf>,
+    lastfm_cache_path: Option<PathBuf>,
     cache: Option<Cache>,
     /// Where API keys are kept.
     store: Box<dyn SecretStore>,
@@ -47,6 +52,8 @@ pub struct Shared {
     env_lastfm: Option<String>,
     /// A Hot 100 update is already running.
     radio_busy: AtomicBool,
+    /// Last.fm is already being asked.
+    genres_busy: AtomicBool,
 }
 
 impl Shared {
@@ -61,6 +68,7 @@ impl Shared {
             presets: presets_path,
             settings: settings_path,
             hot100: hot100_path,
+            lastfm_cache: lastfm_cache_path,
             cache,
         } = locations;
         let mut app = App::new(Vec::new(), Vec::new(), Vec::new(), Settings::default());
@@ -94,10 +102,12 @@ impl Shared {
             presets_path,
             settings_path,
             hot100_path,
+            lastfm_cache_path,
             cache: cache.map(Cache::new),
             store,
             env_lastfm,
             radio_busy: AtomicBool::new(false),
+            genres_busy: AtomicBool::new(false),
         }
     }
 
@@ -365,6 +375,141 @@ pub fn update_radio(shared: &Shared, fetcher: &dyn Fetcher, now: u64, show: &mut
     shared.radio_busy.store(false, Ordering::SeqCst);
 }
 
+/// True when there is something to ask Last.fm, so the caller can start [`update_genres`].
+pub fn genres_wanted(shared: &Shared) -> bool {
+    shared.lock().has_questions()
+}
+
+/// Describes the screen as it is, after a background step.
+fn describe(shared: &Shared) -> Reply {
+    let mut app = shared.lock();
+    reply(shared, &mut app, None)
+}
+
+/// How many answers arrive between redraws of the list, so a big collection does not redraw it
+/// for every single song.
+const SHOW_EVERY: usize = 4;
+
+/// Asks Last.fm what listeners call the albums and songs on the screen, remembering each answer
+/// on disk so none is asked twice. Slow, so run it on a background thread. `ask` makes one
+/// request; `pause` is waited between requests to stay within Last.fm's limits; `show` is called
+/// with the new screen as answers come in.
+///
+/// If Last.fm cannot be reached or does not accept the key, it stops and says so, and the
+/// questions are left to be asked next time. It does nothing if another call is already asking.
+pub fn update_genres(
+    shared: &Shared,
+    ask: &dyn Fn(&Subject) -> Result<Vec<RawTag>, LastFmError>,
+    now: u64,
+    pause: Duration,
+    show: &mut dyn FnMut(Reply),
+) {
+    loop {
+        if shared.genres_busy.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let stopped = ask_all(shared, ask, now, pause, show);
+        shared.genres_busy.store(false, Ordering::SeqCst);
+        // Questions can arrive while the last answers are being processed (a file measured, a
+        // key saved), so look once more before giving up the job. After a failure, wait for
+        // the next trigger instead of failing again at once.
+        if stopped || !shared.lock().has_questions() {
+            return;
+        }
+    }
+}
+
+/// Does the asking. Returns true if it stopped early because something went wrong.
+fn ask_all(
+    shared: &Shared,
+    ask: &dyn Fn(&Subject) -> Result<Vec<RawTag>, LastFmError>,
+    now: u64,
+    pause: Duration,
+    show: &mut dyn FnMut(Reply),
+) -> bool {
+    let mut cache = shared
+        .lastfm_cache_path
+        .as_deref()
+        .map(TagCache::load)
+        .unwrap_or_default();
+    let (mut since_shown, mut asked_online, mut stopped) = (0, false, false);
+
+    'rounds: loop {
+        let questions = shared.lock().take_questions();
+        if questions.is_empty() {
+            break;
+        }
+        for subject in questions {
+            let remembered = cache.get(&subject, now).map(<[RawTag]>::to_vec);
+            let tags = if let Some(tags) = remembered {
+                tags
+            } else {
+                if asked_online {
+                    std::thread::sleep(pause);
+                }
+                asked_online = true;
+                let mut answer = ask(&subject);
+                if answer == Err(LastFmError::RateLimited) {
+                    // Wait a good while and try this one again, once.
+                    std::thread::sleep(pause * 8);
+                    answer = ask(&subject);
+                }
+                match answer {
+                    Ok(tags) => {
+                        cache.put(&subject, now, tags.clone());
+                        tags
+                    }
+                    Err(error @ (LastFmError::InvalidKey | LastFmError::RateLimited)) => {
+                        let advice = match error {
+                            LastFmError::InvalidKey => {
+                                "Last.fm does not accept the API key. Check it in Settings"
+                            }
+                            _ => "Last.fm says to slow down. Genres will carry on next time",
+                        };
+                        stop(shared, advice, show);
+                        stopped = true;
+                        break 'rounds;
+                    }
+                    Err(LastFmError::Network(why)) => {
+                        stop(shared, &format!("Could not reach Last.fm: {why}"), show);
+                        stopped = true;
+                        break 'rounds;
+                    }
+                    // An answer that makes no sense: leave this one without genres.
+                    Err(LastFmError::Unexpected(_)) => Vec::new(),
+                }
+            };
+            shared.lock().apply_answer(&subject, tags);
+            since_shown += 1;
+            if since_shown >= SHOW_EVERY {
+                since_shown = 0;
+                show(describe(shared));
+            }
+        }
+    }
+
+    if let Some(path) = &shared.lastfm_cache_path
+        && !cache.is_empty()
+        && let Err(problem) = cache.save(path)
+    {
+        shared
+            .lock()
+            .log(format!("Could not save the Last.fm answers: {problem:#}"));
+    }
+    show(describe(shared));
+    stopped
+}
+
+/// Stops asking: says why in the log, and lets the unanswered questions be asked again later.
+fn stop(shared: &Shared, why: &str, show: &mut dyn FnMut(Reply)) {
+    {
+        let mut app = shared.lock();
+        app.log(why.to_string());
+        app.forget_asked();
+    }
+    show(describe(shared));
+}
+
 pub fn clear_list(shared: &Shared) -> Reply {
     with_app(shared, App::clear)
 }
@@ -466,6 +611,7 @@ mod tests {
             presets: Some(dir.join("presets.json")),
             settings: Some(dir.join("settings.json")),
             hot100: Some(dir.join("hot100.json")),
+            lastfm_cache: Some(dir.join("lastfm.json")),
             cache: None,
         }
     }
@@ -535,6 +681,202 @@ mod tests {
                 etag: Some("\"v1\"".to_string()),
             })
         }
+    }
+
+    const ALBUM_SHEET: &str = "PERFORMER \"Led Zeppelin\"\nTITLE \"Houses of the Holy\"\nFILE \"album.flac\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"The Rain Song\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"No Quarter\"\n    INDEX 01 05:00:00\n";
+
+    /// A Last.fm that is on and has a key, with one two-song album on the screen.
+    fn shared_with_album(dir: &Path, store: &SharedStore) -> Shared {
+        fs::write(dir.join("album.cue"), ALBUM_SHEET).unwrap();
+        fs::write(dir.join("album.flac"), b"").unwrap();
+        let shared = Shared::new(locations(dir), Box::new(store.clone()), None);
+        add_paths(&shared, &[dir.join("album.cue").display().to_string()]);
+        set_metadata(&shared, true);
+        set_lastfm_enabled(&shared, true);
+        set_lastfm_key(&shared, "a-key");
+        shared
+    }
+
+    fn tags(names: &[(&str, u32)]) -> Vec<RawTag> {
+        names
+            .iter()
+            .map(|(name, count)| RawTag {
+                name: (*name).to_string(),
+                count: *count,
+            })
+            .collect()
+    }
+
+    /// Answers like Last.fm would for the test album, and counts how often it was asked.
+    fn lastfm(
+        asked: &std::cell::Cell<usize>,
+    ) -> impl Fn(&Subject) -> Result<Vec<RawTag>, LastFmError> + '_ {
+        move |subject| {
+            asked.set(asked.get() + 1);
+            Ok(match subject {
+                Subject::Album { .. } => {
+                    tags(&[("classic rock", 100), ("hard rock", 80), ("seen live", 70)])
+                }
+                Subject::Track { title, .. } if title == "The Rain Song" => {
+                    tags(&[("ballad", 100), ("classic rock", 60)])
+                }
+                Subject::Track { .. } => Vec::new(),
+            })
+        }
+    }
+
+    fn chip_texts(reply: &Reply, track: usize) -> Vec<String> {
+        reply.state.groups[0].tracks[track]
+            .tags
+            .iter()
+            .map(|chip| chip.text.clone())
+            .collect()
+    }
+
+    const NO_PAUSE: Duration = Duration::ZERO;
+
+    #[test]
+    fn genres_are_asked_once_shown_remembered_and_never_asked_again() {
+        let dir = tempdir().unwrap();
+        let store = SharedStore::default();
+        let shared = shared_with_album(dir.path(), &store);
+        assert!(genres_wanted(&shared));
+
+        let asked = std::cell::Cell::new(0);
+        let mut screens = Vec::new();
+        update_genres(&shared, &lastfm(&asked), 1_000, NO_PAUSE, &mut |r| {
+            screens.push(r);
+        });
+
+        // One album and two songs.
+        assert_eq!(asked.get(), 3);
+        let last = screens.last().unwrap();
+        assert_eq!(chip_texts(last, 0), ["Classic Rock", "Hard Rock", "Ballad"]);
+        assert_eq!(chip_texts(last, 1), ["Classic Rock", "Hard Rock"]);
+        assert!(!genres_wanted(&shared), "everything is answered");
+
+        // The next start finds the answers on disk and asks nobody.
+        let again = shared_with_album(dir.path(), &store);
+        let asked_again = std::cell::Cell::new(0);
+        let mut screens = Vec::new();
+        update_genres(&again, &lastfm(&asked_again), 1_500, NO_PAUSE, &mut |r| {
+            screens.push(r);
+        });
+        assert_eq!(asked_again.get(), 0);
+        assert_eq!(
+            chip_texts(screens.last().unwrap(), 0),
+            ["Classic Rock", "Hard Rock", "Ballad"]
+        );
+    }
+
+    #[test]
+    fn nothing_is_asked_while_last_fm_is_off_or_has_no_key() {
+        let dir = tempdir().unwrap();
+        let store = SharedStore::default();
+        let shared = shared_with_album(dir.path(), &store);
+        set_lastfm_enabled(&shared, false);
+        let asked = std::cell::Cell::new(0);
+        update_genres(&shared, &lastfm(&asked), 1_000, NO_PAUSE, &mut |_| {});
+        assert_eq!(asked.get(), 0);
+
+        set_lastfm_enabled(&shared, true);
+        set_lastfm_key(&shared, "");
+        assert!(!genres_wanted(&shared), "no key");
+        update_genres(&shared, &lastfm(&asked), 1_000, NO_PAUSE, &mut |_| {});
+        assert_eq!(asked.get(), 0);
+    }
+
+    #[test]
+    fn a_rejected_key_stops_the_asking_says_so_and_leaves_the_questions_for_later() {
+        let dir = tempdir().unwrap();
+        let shared = shared_with_album(dir.path(), &SharedStore::default());
+        let mut screens = Vec::new();
+        let calls = std::cell::Cell::new(0);
+        let rejected = |_: &Subject| {
+            calls.set(calls.get() + 1);
+            Err(LastFmError::InvalidKey)
+        };
+        update_genres(&shared, &rejected, 1_000, NO_PAUSE, &mut |r| {
+            screens.push(r);
+        });
+
+        assert_eq!(
+            calls.get(),
+            1,
+            "it does not keep trying a key that is refused"
+        );
+        let log = &screens.last().unwrap().state.log;
+        assert!(
+            log.iter()
+                .any(|l| l.contains("does not accept the API key"))
+        );
+        assert!(
+            !log.iter().any(|l| l.contains("a-key")),
+            "the key is never logged"
+        );
+        assert!(
+            genres_wanted(&shared),
+            "the questions are still there for next time"
+        );
+    }
+
+    #[test]
+    fn a_network_failure_stops_the_asking_and_the_program_carries_on() {
+        let dir = tempdir().unwrap();
+        let shared = shared_with_album(dir.path(), &SharedStore::default());
+        let mut screens = Vec::new();
+        let offline = |_: &Subject| Err(LastFmError::Network("connection refused".to_string()));
+        update_genres(&shared, &offline, 1_000, NO_PAUSE, &mut |r| {
+            screens.push(r);
+        });
+
+        let log = &screens.last().unwrap().state.log;
+        assert!(
+            log.iter()
+                .any(|l| l.contains("Could not reach Last.fm: connection refused"))
+        );
+        assert!(genres_wanted(&shared));
+        // And the next attempt works once the network is back.
+        let asked = std::cell::Cell::new(0);
+        update_genres(&shared, &lastfm(&asked), 1_000, NO_PAUSE, &mut |_| {});
+        assert_eq!(asked.get(), 3);
+        assert!(!genres_wanted(&shared));
+    }
+
+    #[test]
+    fn being_told_to_slow_down_waits_and_tries_that_question_again() {
+        let dir = tempdir().unwrap();
+        let shared = shared_with_album(dir.path(), &SharedStore::default());
+        let calls = std::cell::Cell::new(0);
+        let slow_once = |_: &Subject| {
+            calls.set(calls.get() + 1);
+            if calls.get() == 1 {
+                Err(LastFmError::RateLimited)
+            } else {
+                Ok(tags(&[("rock", 100)]))
+            }
+        };
+        update_genres(&shared, &slow_once, 1_000, NO_PAUSE, &mut |_| {});
+        assert_eq!(calls.get(), 4, "three questions and one repeat");
+        assert!(!genres_wanted(&shared));
+    }
+
+    #[test]
+    fn an_answer_that_makes_no_sense_leaves_that_song_without_genres_and_the_rest_carry_on() {
+        let dir = tempdir().unwrap();
+        let shared = shared_with_album(dir.path(), &SharedStore::default());
+        let odd = |subject: &Subject| match subject {
+            Subject::Track { title, .. } if title == "No Quarter" => {
+                Err(LastFmError::Unexpected("gibberish".to_string()))
+            }
+            _ => Ok(tags(&[("rock", 100)])),
+        };
+        let mut screens = Vec::new();
+        update_genres(&shared, &odd, 1_000, NO_PAUSE, &mut |r| {
+            screens.push(r);
+        });
+        assert_eq!(chip_texts(screens.last().unwrap(), 0), ["Rock"]);
+        assert!(!genres_wanted(&shared), "it does not loop on the bad one");
     }
 
     #[test]

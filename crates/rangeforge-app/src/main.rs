@@ -16,10 +16,13 @@ mod ops;
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::thread;
+use std::time::Duration;
 
 use ops::{Locations, Reply, RunReply, Shared};
 use rangeforge_export::ffmpeg::Ffmpeg;
 use rangeforge_lookup::billboard::{HttpFetcher, unix_now};
+use rangeforge_lookup::lastfm::{HttpGet, LastFm};
+use rangeforge_lookup::tagcache::Subject;
 use rangeforge_session::load::Job;
 use rangeforge_session::model::RunEvent;
 use rangeforge_session::naming::NamingPreview;
@@ -34,7 +37,8 @@ fn emit(app: &AppHandle, reply: &Reply) {
     let _ = app.emit("state", reply);
 }
 
-/// Measures `jobs` in the background and tells the page as each file finishes.
+/// Measures `jobs` in the background and tells the page as each file finishes. A measured
+/// single file brings its tags, which may be new questions for Last.fm.
 fn watch_measuring(app: &AppHandle, shared: &Arc<Shared>, jobs: Vec<Job>) {
     if jobs.is_empty() {
         return;
@@ -44,7 +48,35 @@ fn watch_measuring(app: &AppHandle, shared: &Arc<Shared>, jobs: Vec<Job>) {
     thread::spawn(move || {
         for outcome in outcomes {
             emit(&app, &ops::apply_outcome(&shared, outcome));
+            watch_genres(&app, &shared);
         }
+    });
+}
+
+/// Asks Last.fm for genres in the background, if it is switched on and there is something to
+/// ask, and tells the page as answers come in. Cheap to call whenever something changes.
+fn watch_genres(app: &AppHandle, shared: &Arc<Shared>) {
+    if !ops::genres_wanted(shared) {
+        return;
+    }
+    let (app, shared) = (app.clone(), Arc::clone(shared));
+    thread::spawn(move || {
+        let Some(key) = shared.lastfm_key() else {
+            return;
+        };
+        let client = LastFm::new(HttpGet, key.value);
+        let ask = |subject: &Subject| match subject {
+            Subject::Album { artist, album } => client.album_tags(artist, album),
+            Subject::Track { artist, title } => client.track_tags(artist, title),
+        };
+        // Last.fm asks for no more than about five requests a second.
+        ops::update_genres(
+            &shared,
+            &ask,
+            unix_now(),
+            Duration::from_millis(250),
+            &mut |reply| emit(&app, &reply),
+        );
     });
 }
 
@@ -82,6 +114,8 @@ async fn add_paths(
 ) -> Result<Reply, String> {
     let (reply, jobs) = ops::add_paths(&state, &paths);
     watch_measuring(&app, state.inner(), jobs);
+    // Songs from a CUE sheet are known at once and can be asked about straight away.
+    watch_genres(&app, state.inner());
     Ok(reply)
 }
 
@@ -174,18 +208,25 @@ async fn set_metadata(on: bool, state: Session<'_>, app: AppHandle) -> Result<Re
     let reply = ops::set_metadata(&state, on);
     if on {
         watch_radio(&app, state.inner());
+        watch_genres(&app, state.inner());
     }
     Ok(reply)
 }
 
 #[tauri::command]
-async fn set_lastfm_enabled(on: bool, state: Session<'_>) -> Result<Reply, String> {
-    Ok(ops::set_lastfm_enabled(&state, on))
+async fn set_lastfm_enabled(on: bool, state: Session<'_>, app: AppHandle) -> Result<Reply, String> {
+    let reply = ops::set_lastfm_enabled(&state, on);
+    if on {
+        watch_genres(&app, state.inner());
+    }
+    Ok(reply)
 }
 
 #[tauri::command]
-async fn set_lastfm_key(key: String, state: Session<'_>) -> Result<Reply, String> {
-    Ok(ops::set_lastfm_key(&state, &key))
+async fn set_lastfm_key(key: String, state: Session<'_>, app: AppHandle) -> Result<Reply, String> {
+    let reply = ops::set_lastfm_key(&state, &key);
+    watch_genres(&app, state.inner());
+    Ok(reply)
 }
 
 #[tauri::command]
@@ -235,6 +276,7 @@ fn main() {
             presets: paths::presets_path(None),
             settings: paths::settings_path(None),
             hot100: paths::hot100_path(),
+            lastfm_cache: paths::lastfm_cache_path(),
             cache: paths::default_cache_dir(),
         },
         Box::new(credentials::OsStore),
@@ -285,6 +327,7 @@ fn main() {
             }
             // If lookups were left on last time, get the Hot 100 list ready.
             watch_radio(app.handle(), &shared);
+            watch_genres(app.handle(), &shared);
             Ok(())
         })
         .run(tauri::generate_context!());

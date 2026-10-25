@@ -100,9 +100,11 @@ Downloads to try come from the Release workflow (see Releases below), not from t
 
 ## Metadata lookups
 
-Turn on **Metadata API** in the window and the Hot 100 list is fetched and kept in the cache folder (`hot100.json`, next to the `analysis` folder). Songs from a CUE sheet that charted get a blue **Radio** chip.
+Turn on **Metadata API** in the window and the Hot 100 list is fetched and kept in the cache folder (`hot100.json`, next to the `analysis` folder). Songs that charted get a blue **Radio** chip.
 
-For Last.fm, put `LASTFM_API=<your key>` in a `.env` file in the repository folder. It is read in debug builds only (`cargo run -p rangeforge-app`) and is already ignored by git. A release build, or the installer, uses the key saved in Settings, or `LASTFM_API` if it is set in the environment.
+For Last.fm, put `LASTFM_API=<your key>` in a `.env` file in the repository folder. It is read in debug builds only (`cargo run -p rangeforge-app`) and is already ignored by git. A release build, or the installer, uses the key saved in Settings, or `LASTFM_API` if it is set in the environment. Then tick **Use Last.fm** in Settings (and Metadata API on the main screen). Its answers are remembered in `lastfm.json` in the cache folder; delete that file to ask everything again.
+
+The Last.fm code has only been tested with canned answers, never with the live service, so the first real run is worth watching: open the log panel and look for lines such as "Could not reach Last.fm" or "does not accept the API key". Reading the log is also the way to see what was asked.
 
 The Hot 100 matching has one test against the real chart, which is not in git. Download `all.json` (see the FAQ for its address) and run:
 

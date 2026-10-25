@@ -32,6 +32,11 @@ pub fn hot100_path() -> Option<PathBuf> {
     project_dirs().map(|dirs| dirs.cache_dir().join("hot100.json"))
 }
 
+/// Where what Last.fm has said about albums and songs is remembered, next to the Hot 100 copy.
+pub fn lastfm_cache_path() -> Option<PathBuf> {
+    project_dirs().map(|dirs| dirs.cache_dir().join("lastfm.json"))
+}
+
 /// Where the other settings (such as the file name patterns) are kept.
 pub fn settings_path(config_dir: Option<PathBuf>) -> Option<PathBuf> {
     config_dir
