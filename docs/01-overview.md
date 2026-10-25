@@ -53,7 +53,7 @@ Anything FFmpeg or our decoders can read, including DSD and MLP. DSD converts us
 
 - No plugin system.
 - No workflow scripting (it would recreate the PowerShell problem).
-- No cloud processing. Network lookups are limited to Last.fm, Discogs and the Billboard chart file.
+- No cloud processing. Network lookups are limited to Last.fm and the Billboard chart file.
 - No beginner/intermediate UI modes. There is one expert layout.
 - No accounts or multi-user features.
 
