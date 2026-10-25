@@ -17,6 +17,7 @@ use crate::controls::{
     apply_preset,
 };
 use crate::load::{Job, load_from};
+use crate::naming::NameSettings;
 use crate::plan::{plan_tracks, track_plans};
 
 /// A key press, in terms the screens share. The terminal view translates real key codes into
@@ -264,6 +265,8 @@ pub struct App {
     pub settings: Settings,
     pub output: OutputSettings,
     pub strategy: StrategySettings,
+    /// The file name patterns, kept between sessions.
+    pub naming: NameSettings,
     pub presets: PresetList,
     pub focus: Focus,
     pub mode: Mode,
@@ -278,6 +281,8 @@ pub struct App {
     pending_run: Option<RunSpec>,
     /// The presets changed and should be saved to disk.
     presets_changed: bool,
+    /// The saved settings changed and should be written to disk.
+    settings_changed: bool,
 }
 
 impl App {
@@ -288,6 +293,7 @@ impl App {
             settings,
             output: OutputSettings::default(),
             strategy: StrategySettings::default(),
+            naming: NameSettings::default(),
             presets: PresetList::new(Vec::new()),
             focus: Focus::Target,
             mode: Mode::Normal,
@@ -298,6 +304,7 @@ impl App {
             running: false,
             pending_run: None,
             presets_changed: false,
+            settings_changed: false,
         }
     }
 
@@ -481,9 +488,30 @@ impl App {
         std::mem::take(&mut self.presets_changed)
     }
 
+    /// True once after the saved settings change, so the caller can save them.
+    pub fn take_settings_changed(&mut self) -> bool {
+        std::mem::take(&mut self.settings_changed)
+    }
+
+    /// Sets the file name patterns, or says what is wrong with them and changes nothing.
+    pub fn set_naming(&mut self, album: &str, single: &str) -> Result<(), String> {
+        let naming = NameSettings {
+            album: album.trim().to_string(),
+            single: single.trim().to_string(),
+        };
+        naming.templates()?;
+        if naming != self.naming {
+            self.naming = naming;
+            self.settings_changed = true;
+            self.log("Changed the file name patterns");
+        }
+        Ok(())
+    }
+
     /// Builds the run from what is on screen now, or says why it cannot be done.
     fn build_run(&self) -> Result<RunSpec, String> {
         let strategy = self.strategy.to_strategy()?;
+        let names = self.naming.templates()?;
         let format = self.output.format();
         let mut items = Vec::new();
         for job in &self.jobs {
@@ -502,7 +530,7 @@ impl App {
                 continue;
             }
             let planned = plan_tracks(job, &measurements, self.settings.target());
-            let (mut plans, directory) = track_plans(job, &planned, format);
+            let (mut plans, directory) = track_plans(job, &planned, format, &names);
             for (plan, track) in plans.iter_mut().zip(&group.tracks) {
                 plan.skip = !track.included;
             }
@@ -1657,6 +1685,41 @@ mod tests {
         assert_eq!(app.strategy.subfolder, "Balanced");
         app.set_delete_original(true);
         assert!(app.strategy.delete_original);
+    }
+
+    #[test]
+    fn the_name_patterns_are_checked_before_they_are_kept() {
+        let mut app = ready_app();
+        assert!(!app.take_settings_changed());
+
+        let error = app.set_naming("{nope}", "{name}").unwrap_err();
+        assert!(error.contains("CUE album names"), "{error}");
+        assert_eq!(app.naming, NameSettings::default(), "nothing changed");
+        assert!(!app.take_settings_changed());
+
+        app.set_naming(" {artist} - {title} ", "{name}").unwrap();
+        assert_eq!(app.naming.album, "{artist} - {title}");
+        assert!(app.take_settings_changed());
+        assert!(
+            !app.take_settings_changed(),
+            "the flag is cleared once taken"
+        );
+
+        // Setting the same thing again is not a change.
+        app.set_naming("{artist} - {title}", "{name}").unwrap();
+        assert!(!app.take_settings_changed());
+    }
+
+    #[test]
+    fn a_run_names_files_by_the_patterns() {
+        let mut app = ready_app();
+        app.set_naming("{artist} - {title}", "{name}").unwrap();
+        app.handle_key(Key::Enter);
+        let spec = app.take_run_spec().unwrap();
+        assert_eq!(
+            spec.items[0].plans[0].file_name,
+            "Led Zeppelin - The Rain Song.m4a"
+        );
     }
 
     #[test]

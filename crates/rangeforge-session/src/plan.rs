@@ -5,11 +5,12 @@ use std::path::{Path, PathBuf};
 
 use rangeforge_core::planner::{GainPlan, Measurement, PlanError, Target, plan_gain};
 use rangeforge_export::format::OutputFormat;
-use rangeforge_export::naming::{converted_file_name, track_file_name};
 use rangeforge_export::pipeline::TrackPlan;
 use rangeforge_export::tags::Tags;
+use rangeforge_export::template::NameValues;
 
 use crate::load::Job;
+use crate::naming::NameTemplates;
 
 /// One song with its measurement and the gain chosen for it.
 #[derive(Debug, Clone)]
@@ -56,11 +57,12 @@ pub fn plan_tracks(job: &Job, measurements: &[Measurement], target: Target) -> V
         .collect()
 }
 
-/// What to write for each song, and the folder the source lives in.
+/// What to write for each song, named by `names`, and the folder the source lives in.
 pub fn track_plans(
     job: &Job,
     planned: &[Planned],
     format: OutputFormat,
+    names: &NameTemplates,
 ) -> (Vec<TrackPlan>, PathBuf) {
     let extension = format.codec.extension();
     let source_dir = job
@@ -70,25 +72,36 @@ pub fn track_plans(
     // A song that cannot be measured (silence) is passed through untouched.
     let gain_of = |planned: &Planned| planned.gain.as_ref().map_or(0.0, |plan| plan.gain_db);
 
+    let source_name = file_stem(&job.audio);
     let plans = match (&job.cue_file, &job.sheet) {
         (Some(file), Some(sheet)) => file
             .tracks
             .iter()
             .zip(planned)
-            .map(|(track, planned)| TrackPlan {
-                gain_db: gain_of(planned),
-                file_name: track_file_name(track.number, track.title.as_deref(), extension),
-                tags: Tags::for_cue_track(sheet, track, file.tracks.len()),
-                skip: false,
+            .map(|(track, planned)| {
+                let tags = Tags::for_cue_track(sheet, track, file.tracks.len());
+                let values = NameValues::from_tags(&tags, &source_name);
+                TrackPlan {
+                    gain_db: gain_of(planned),
+                    file_name: names.album.file_name(&values, extension),
+                    tags,
+                    skip: false,
+                }
             })
             .collect(),
         _ => planned
             .iter()
-            .map(|planned| TrackPlan {
-                gain_db: gain_of(planned),
-                file_name: converted_file_name(&file_stem(&job.audio), extension),
-                tags: Tags::default(),
-                skip: false,
+            .map(|planned| {
+                let values = NameValues {
+                    name: Some(source_name.clone()),
+                    ..NameValues::default()
+                };
+                TrackPlan {
+                    gain_db: gain_of(planned),
+                    file_name: names.single.file_name(&values, extension),
+                    tags: Tags::default(),
+                    skip: false,
+                }
             })
             .collect(),
     };
@@ -162,7 +175,7 @@ mod tests {
             &[measurement(-20.0, -2.0), measurement(-20.0, -2.0)],
             TARGET,
         );
-        let (plans, dir) = track_plans(&job, &planned, alac());
+        let (plans, dir) = track_plans(&job, &planned, alac(), &NameTemplates::default());
 
         assert_eq!(dir, PathBuf::from("music/album"));
         assert_eq!(plans[0].file_name, "01 - First.m4a");
@@ -175,11 +188,36 @@ mod tests {
     fn single_files_keep_their_name_and_their_own_tags() {
         let job = single_job();
         let planned = plan_tracks(&job, &[measurement(-20.0, -2.0)], TARGET);
-        let (plans, dir) = track_plans(&job, &planned, alac());
+        let (plans, dir) = track_plans(&job, &planned, alac(), &NameTemplates::default());
 
         assert_eq!(dir, PathBuf::from("music"));
         assert_eq!(plans[0].file_name, "14 - Shot at the Night.m4a");
         assert_eq!(plans[0].tags, Tags::default());
+    }
+
+    #[test]
+    fn the_patterns_decide_the_names() {
+        use crate::naming::NameSettings;
+        let names = NameSettings {
+            album: "{artist} - {album} - {track:02} {title}".to_string(),
+            single: "{name} (balanced)".to_string(),
+        }
+        .templates()
+        .unwrap();
+
+        let job = cue_job();
+        let planned = plan_tracks(
+            &job,
+            &[measurement(-20.0, -2.0), measurement(-20.0, -2.0)],
+            TARGET,
+        );
+        let (plans, _) = track_plans(&job, &planned, alac(), &names);
+        assert_eq!(plans[0].file_name, "The Band - Album - 01 First.m4a");
+
+        let job = single_job();
+        let planned = plan_tracks(&job, &[measurement(-20.0, -2.0)], TARGET);
+        let (plans, _) = track_plans(&job, &planned, alac(), &names);
+        assert_eq!(plans[0].file_name, "14 - Shot at the Night (balanced).m4a");
     }
 
     #[test]
@@ -191,7 +229,7 @@ mod tests {
             TARGET,
         );
         assert!(planned[0].gain.is_err());
-        let (plans, _) = track_plans(&job, &planned, alac());
+        let (plans, _) = track_plans(&job, &planned, alac(), &NameTemplates::default());
         assert!(plans[0].gain_db.abs() < f64::EPSILON);
     }
 }

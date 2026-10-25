@@ -9,14 +9,17 @@
 //! - [`plan`]: each song's gain and output file name.
 //! - [`runner`]: writing the finished files on a background thread.
 //! - [`presets`]: saved sets of settings.
+//! - [`naming`] and [`appsettings`]: the file name patterns, and the file that keeps them.
 //!
 //! Nothing here draws, so all of it can be tested without a window or a terminal.
 
+pub mod appsettings;
 pub mod controls;
 pub mod engine;
 pub mod load;
 pub mod measuring;
 pub mod model;
+pub mod naming;
 pub mod paths;
 pub mod plan;
 pub mod presets;

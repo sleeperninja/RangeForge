@@ -119,6 +119,7 @@ fn main() -> Result<()> {
                 settings: Settings::new(target, !no_peak_protection, ceiling),
                 output: output.output_settings(),
                 strategy: output.strategy_settings(),
+                naming: output.naming_settings(),
                 cache: cache.open(),
                 show_log: show_logs,
                 presets_path: config.presets_path(),

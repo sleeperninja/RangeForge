@@ -141,6 +141,16 @@
       .join('');
   }
 
+  // The variables a file name pattern can use, for the Settings window.
+  function variablesHtml(variables) {
+    return variables
+      .map((v) => {
+        const note = v.for_singles ? ' <span class="single">(also single files)</span>' : '';
+        return `<li><code>${esc(v.key)}</code> ${esc(v.meaning)}${note}</li>`;
+      })
+      .join('');
+  }
+
   // What to tell the user before a run that overwrites files or deletes originals.
   function confirmText(strategy) {
     const parts = [];
@@ -212,6 +222,7 @@
     includedState,
     menuItems,
     menuHtml,
+    variablesHtml,
     confirmText,
     statusText,
     runLabel,

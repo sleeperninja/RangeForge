@@ -7,14 +7,9 @@ const RESERVED: [&str; 22] = [
 
 const MAX_CHARS: usize = 150;
 
-/// Makes `name` safe as a file name on Windows, macOS and Linux.
-///
-/// Characters that are not allowed become underscores, so `AC/DC` becomes `AC_DC`. Trailing
-/// dots and spaces (which Windows silently drops) are removed, reserved device names such as
-/// `CON` get an underscore in front, and very long names are shortened.
-pub fn sanitize(name: &str) -> String {
-    let replaced: String = name
-        .chars()
+/// Replaces the characters no filesystem accepts with underscores, and nothing else.
+pub(crate) fn replace_forbidden(text: &str) -> String {
+    text.chars()
         .map(|c| {
             if c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*') {
                 '_'
@@ -22,7 +17,16 @@ pub fn sanitize(name: &str) -> String {
                 c
             }
         })
-        .collect();
+        .collect()
+}
+
+/// Makes `name` safe as a file name on Windows, macOS and Linux.
+///
+/// Characters that are not allowed become underscores, so `AC/DC` becomes `AC_DC`. Trailing
+/// dots and spaces (which Windows silently drops) are removed, reserved device names such as
+/// `CON` get an underscore in front, and very long names are shortened.
+pub fn sanitize(name: &str) -> String {
+    let replaced = replace_forbidden(name);
     let shortened: String = replaced.chars().take(MAX_CHARS).collect();
     let trimmed = shortened.trim_matches(|c: char| c == ' ' || c == '.');
     if trimmed.is_empty() {

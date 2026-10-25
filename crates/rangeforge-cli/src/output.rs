@@ -7,6 +7,7 @@ use rangeforge_export::format::{BitDepth, Codec};
 use rangeforge_export::strategy::Strategy;
 
 use rangeforge_session::controls::{ConflictKind, OutputSettings, StrategySettings, WhereKind};
+use rangeforge_session::naming::{self, NameSettings};
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum CodecArg {
@@ -82,6 +83,12 @@ pub struct OutputArgs {
     /// Delete each original once every song from it has been written (needs --yes)
     #[arg(long)]
     delete_original: bool,
+    /// File name pattern for songs cut from a CUE album, such as "{track:02} - {title}"
+    #[arg(long, default_value = naming::DEFAULT_ALBUM)]
+    name: String,
+    /// File name pattern for single files; only {name} is available
+    #[arg(long, default_value = naming::DEFAULT_SINGLE)]
+    single_name: String,
 }
 
 impl OutputArgs {
@@ -118,6 +125,13 @@ impl OutputArgs {
         }
         settings.delete_original = self.delete_original;
         settings
+    }
+
+    pub fn naming_settings(&self) -> NameSettings {
+        NameSettings {
+            album: self.name.clone(),
+            single: self.single_name.clone(),
+        }
     }
 
     /// The strategy to run with, or a plain-words reason it cannot be used.
@@ -228,6 +242,27 @@ mod tests {
     fn a_serial_suffix_without_digits_is_reported() {
         let error = parse(&["--suffix", "_new"]).strategy().unwrap_err();
         assert!(error.contains("digits"), "{error}");
+    }
+
+    #[test]
+    fn name_patterns_default_to_the_usual_and_can_be_changed() {
+        assert_eq!(parse(&[]).naming_settings(), NameSettings::default());
+        let args = parse(&[
+            "--name",
+            "{artist} - {title}",
+            "--single-name",
+            "{name} (b)",
+        ]);
+        let names = args.naming_settings();
+        assert_eq!(names.album, "{artist} - {title}");
+        assert_eq!(names.single, "{name} (b)");
+        assert!(names.templates().is_ok());
+        assert!(
+            parse(&["--name", "{bogus}"])
+                .naming_settings()
+                .templates()
+                .is_err()
+        );
     }
 
     #[test]

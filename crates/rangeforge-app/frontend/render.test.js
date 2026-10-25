@@ -85,6 +85,13 @@ test('the confirmation says what will happen', () => {
   assert.match(both, /original is deleted/);
 });
 
+test('the variable list marks which ones single files may use', () => {
+  const html = Render.variablesHtml(demo.naming.variables);
+  assert.match(html, /<code>\{title\}<\/code> song title<\/li>/);
+  assert.match(html, /<code>\{name\}<\/code>[^<]*<span class="single">\(also single files\)<\/span>/);
+  assert.strictEqual((html.match(/<li>/g) || []).length, 8);
+});
+
 test('status line and run label', () => {
   assert.strictEqual(Render.runLabel(demo), 'Run (5)');
   assert.match(Render.statusText(demo), /measuring 1 of 3/);

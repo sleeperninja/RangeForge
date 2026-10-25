@@ -54,7 +54,7 @@
           <label class="toggle disabled" title="Coming later"><input type="checkbox" disabled> Auto Mode</label>
           <label class="toggle disabled" title="Coming later"><input type="checkbox" disabled> Metadata API</label>
           <label class="toggle"><input id="showLogs" type="checkbox"> Show Logs</label>
-          <button class="button small" id="settingsButton" type="button" disabled title="Coming later">&#9881; Settings</button>
+          <button class="button small" id="settingsButton" type="button" title="File names, and more later">&#9881; Settings</button>
         </div>
       </div>
 
@@ -123,6 +123,27 @@
         <button value="run" class="button primary">Run anyway</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="settingsDialog" class="wide-dialog">
+    <h3>Settings</h3>
+    <h4>File names</h4>
+    <p class="hint">Use variables in braces. A missing value, and the separator beside it, is left out.</p>
+    <label class="field">Songs cut from a CUE album
+      <input id="nameAlbum" class="text wide" type="text" spellcheck="false" autocomplete="off">
+    </label>
+    <p class="example">Example: <span id="exampleAlbum"></span></p>
+    <p id="problemAlbum" class="problem hidden"></p>
+    <label class="field">Single files
+      <input id="nameSingle" class="text wide" type="text" spellcheck="false" autocomplete="off">
+    </label>
+    <p class="example">Example: <span id="exampleSingle"></span></p>
+    <p id="problemSingle" class="problem hidden"></p>
+    <ul id="variableList" class="variables"></ul>
+    <div class="dialog-buttons">
+      <button id="settingsCancel" class="button" type="button">Cancel</button>
+      <button id="settingsSave" class="button primary" type="button">Save</button>
+    </div>
   </dialog>
 
   <dialog id="presetDialog">

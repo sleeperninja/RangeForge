@@ -17,6 +17,7 @@ use rangeforge_export::ffmpeg::Ffmpeg;
 use rangeforge_session::controls::{Mode, OutputSettings, PresetList, StrategySettings};
 use rangeforge_session::load::{self, Job};
 use rangeforge_session::model::{App, Key, MeasureOutcome, RunEvent, RunSpec, Settings};
+use rangeforge_session::naming::NameSettings;
 use rangeforge_session::{engine, presets, runner};
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
@@ -28,6 +29,7 @@ pub struct Options {
     pub settings: Settings,
     pub output: OutputSettings,
     pub strategy: StrategySettings,
+    pub naming: NameSettings,
     pub cache: Option<Cache>,
     pub show_log: bool,
     /// Where presets are kept, or `None` to use the built-in ones and never save.
@@ -69,6 +71,7 @@ fn prepare(options: &Options) -> (App, Vec<Job>) {
     app.show_log = options.show_log;
     app.output = options.output;
     app.strategy = options.strategy.clone();
+    app.naming = options.naming.clone();
 
     let stored = options.presets_path.as_deref().map_or_else(
         || presets::Loaded {

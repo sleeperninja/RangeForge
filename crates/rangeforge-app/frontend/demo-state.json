@@ -50,6 +50,21 @@
     "delete_original": false, "problem": null, "needs_confirmation": false
   },
   "presets": {"names": ["iTunes Lossy", "iTunes Lossless", "CD Quality", "Flac HD Multi", "ALAC Multi"], "selected": 1, "modified": false, "can_save": false, "can_delete": true},
+  "naming": {
+    "album": "{track:02} - {title}",
+    "single": "{name}",
+    "example": {"album_example": "07 - No Quarter.m4a", "album_problem": null, "single_example": "14 - Shot at the Night.m4a", "single_problem": null},
+    "variables": [
+      {"key": "{track}", "meaning": "track number; {track:02} pads it to two digits", "for_singles": false},
+      {"key": "{title}", "meaning": "song title", "for_singles": false},
+      {"key": "{artist}", "meaning": "song artist", "for_singles": false},
+      {"key": "{album}", "meaning": "album title", "for_singles": false},
+      {"key": "{albumartist}", "meaning": "album artist", "for_singles": false},
+      {"key": "{year}", "meaning": "year, from the CUE sheet's date", "for_singles": false},
+      {"key": "{genre}", "meaning": "genre", "for_singles": false},
+      {"key": "{name}", "meaning": "the original file's name, without its extension", "for_singles": true}
+    ]
+  },
   "options": {
     "codecs": [{"id": "alac", "label": "alac"}, {"id": "flac", "label": "flac"}, {"id": "wav", "label": "wav"}, {"id": "aac", "label": "aac"}],
     "bit_depths": [{"id": "source", "label": "Source"}, {"id": "16", "label": "16-bit"}, {"id": "24", "label": "24-bit"}],

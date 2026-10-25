@@ -13,6 +13,7 @@ use rangeforge_export::strategy::{Resolved, Strategy};
 use rangeforge_session::load::{Job, load};
 use rangeforge_session::measuring::{measure_split, measure_whole};
 use rangeforge_session::model::{Group, Settings, Status};
+use rangeforge_session::naming::NameTemplates;
 use rangeforge_session::plan::{Planned, plan_tracks, track_plans};
 
 use crate::output::OutputArgs;
@@ -70,8 +71,17 @@ pub fn run(options: &RunOptions) -> Result<()> {
         Some(Ffmpeg::locate()?)
     };
 
-    let settings = Settings::new(options.target, !options.no_peak_protection, options.ceiling);
-    let format = options.output.output_settings().format();
+    let names = options
+        .output
+        .naming_settings()
+        .templates()
+        .map_err(anyhow::Error::msg)?;
+    let plan = RunPlan {
+        settings: Settings::new(options.target, !options.no_peak_protection, options.ceiling),
+        format: options.output.output_settings().format(),
+        strategy: &strategy,
+        names: &names,
+    };
     let cache = options.cache.open();
 
     let started = Instant::now();
@@ -79,15 +89,7 @@ pub fn run(options: &RunOptions) -> Result<()> {
     let mut written_files = 0_usize;
     for job in &loaded.jobs {
         let group = &loaded.groups[job.group];
-        match run_job(
-            job,
-            group,
-            settings,
-            format,
-            &strategy,
-            cache.as_ref(),
-            ffmpeg.as_ref(),
-        ) {
+        match run_job(job, group, &plan, cache.as_ref(), ffmpeg.as_ref()) {
             Ok(count) => written_files += count,
             Err(error) => {
                 eprintln!("error: {}: {error:#}", group.name);
@@ -110,15 +112,23 @@ pub fn run(options: &RunOptions) -> Result<()> {
     Ok(())
 }
 
+/// Everything that decides what is written, the same for every file in the run.
+struct RunPlan<'a> {
+    settings: Settings,
+    format: OutputFormat,
+    strategy: &'a Strategy,
+    names: &'a NameTemplates,
+}
+
 fn run_job(
     job: &Job,
     group: &Group,
-    settings: Settings,
-    format: OutputFormat,
-    strategy: &Strategy,
+    plan: &RunPlan<'_>,
     cache: Option<&Cache>,
     ffmpeg: Option<&Ffmpeg>,
 ) -> Result<usize> {
+    let (settings, format) = (plan.settings, plan.format);
+    let (strategy, names) = (plan.strategy, plan.names);
     if let Status::Failed(message) = &group.status {
         bail!("{message}");
     }
@@ -127,7 +137,7 @@ fn run_job(
         None => measure_whole(&job.audio, cache)?,
     };
     let planned = plan_tracks(job, &measured.tracks, settings.target());
-    let (plans, source_dir) = track_plans(job, &planned, format);
+    let (plans, source_dir) = track_plans(job, &planned, format, names);
     let write_options = Options {
         format,
         strategy: strategy.clone(),

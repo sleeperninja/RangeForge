@@ -13,5 +13,6 @@ pub mod naming;
 pub mod pipeline;
 pub mod strategy;
 pub mod tags;
+pub mod template;
 
 pub use error::ExportError;

@@ -21,6 +21,7 @@ use rangeforge_audio::cache::Cache;
 use rangeforge_export::ffmpeg::Ffmpeg;
 use rangeforge_session::load::Job;
 use rangeforge_session::model::RunEvent;
+use rangeforge_session::naming::NamingPreview;
 use rangeforge_session::{engine, paths, runner};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -143,6 +144,20 @@ async fn set_delete_original(on: bool, state: Session<'_>) -> Result<Reply, Stri
 }
 
 #[tauri::command]
+async fn set_naming(album: String, single: String, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_naming(&state, &album, &single))
+}
+
+#[tauri::command]
+async fn preview_naming(
+    album: String,
+    single: String,
+    state: Session<'_>,
+) -> Result<NamingPreview, String> {
+    Ok(ops::preview_naming(&state, &album, &single))
+}
+
+#[tauri::command]
 async fn clear_completed(state: Session<'_>) -> Result<Reply, String> {
     Ok(ops::clear_completed(&state))
 }
@@ -180,6 +195,7 @@ async fn run(confirmed: bool, state: Session<'_>, app: AppHandle) -> Result<RunR
 fn main() {
     let shared = Arc::new(Shared::new(
         paths::presets_path(None),
+        paths::settings_path(None),
         paths::default_cache_dir().map(Cache::new),
     ));
 
@@ -203,6 +219,8 @@ fn main() {
             set_conflict,
             set_conflict_text,
             set_delete_original,
+            set_naming,
+            preview_naming,
             clear_completed,
             remove_group,
             set_included,

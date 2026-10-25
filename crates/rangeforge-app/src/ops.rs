@@ -14,19 +14,32 @@ use rangeforge_session::load::Job;
 use rangeforge_session::model::{App, MeasureOutcome, RunEvent, RunRequest, RunSpec, Settings};
 use rangeforge_session::presets;
 use rangeforge_session::snapshot::{Snapshot, conflict_from_id, place_from_id};
+use rangeforge_session::{appsettings, naming};
 use serde::Serialize;
 
 /// The screen state, shared between the window's commands and the background threads.
 pub struct Shared {
     app: Mutex<App>,
     presets_path: Option<PathBuf>,
+    settings_path: Option<PathBuf>,
     cache: Option<Cache>,
 }
 
 impl Shared {
-    /// Starts with an empty list and the saved presets (or the built-in ones).
-    pub fn new(presets_path: Option<PathBuf>, cache: Option<Cache>) -> Self {
+    /// Starts with an empty list and the saved presets and settings (or the defaults).
+    pub fn new(
+        presets_path: Option<PathBuf>,
+        settings_path: Option<PathBuf>,
+        cache: Option<Cache>,
+    ) -> Self {
         let mut app = App::new(Vec::new(), Vec::new(), Vec::new(), Settings::default());
+        if let Some(path) = &settings_path {
+            let stored = appsettings::load(path);
+            app.naming = stored.naming;
+            for note in stored.notes {
+                app.log(note);
+            }
+        }
         let stored = presets_path.as_deref().map_or_else(
             || presets::Loaded {
                 presets: presets::built_in(),
@@ -42,6 +55,7 @@ impl Shared {
         Self {
             app: Mutex::new(app),
             presets_path,
+            settings_path,
             cache,
         }
     }
@@ -81,6 +95,12 @@ fn reply(shared: &Shared, app: &mut App, error: Option<String>) -> Reply {
         && let Err(problem) = presets::save(path, &app.presets.items)
     {
         app.log(format!("Could not save presets: {problem:#}"));
+    }
+    if app.take_settings_changed()
+        && let Some(path) = &shared.settings_path
+        && let Err(problem) = appsettings::save(path, &app.naming)
+    {
+        app.log(format!("Could not save settings: {problem:#}"));
     }
     Reply {
         state: app.snapshot(),
@@ -195,6 +215,18 @@ pub fn set_delete_original(shared: &Shared, on: bool) -> Reply {
     })
 }
 
+/// Sets the file name patterns, which are kept between sessions.
+pub fn set_naming(shared: &Shared, album: &str, single: &str) -> Reply {
+    with_app(shared, |app| app.set_naming(album, single))
+}
+
+/// What the patterns would produce, without keeping them, for the Settings window to show
+/// while the user types.
+pub fn preview_naming(shared: &Shared, album: &str, single: &str) -> naming::NamingPreview {
+    let extension = shared.lock().output.codec.extension();
+    naming::preview(album, single, extension)
+}
+
 pub fn clear_list(shared: &Shared) -> Reply {
     with_app(shared, App::clear)
 }
@@ -290,7 +322,11 @@ mod tests {
     use tempfile::tempdir;
 
     fn shared_with_presets(dir: &Path) -> Shared {
-        Shared::new(Some(dir.join("presets.json")), None)
+        Shared::new(
+            Some(dir.join("presets.json")),
+            Some(dir.join("settings.json")),
+            None,
+        )
     }
 
     fn ffmpeg() -> Option<Ffmpeg> {
@@ -495,6 +531,36 @@ mod tests {
         }
         assert!(dir.path().join("song.m4a").exists());
         assert!(song.exists(), "the source is untouched");
+    }
+
+    #[test]
+    fn name_patterns_are_checked_previewed_and_kept_between_sessions() {
+        let dir = tempdir().unwrap();
+        let shared = shared_with_presets(dir.path());
+
+        let preview = preview_naming(&shared, "{artist} - {title}", "{name}");
+        assert_eq!(
+            preview.album_example.as_deref(),
+            Some("Led Zeppelin - No Quarter.m4a")
+        );
+        assert_eq!(
+            state(&shared).state.naming.album,
+            "{track:02} - {title}",
+            "a preview keeps nothing"
+        );
+
+        let reply = set_naming(&shared, "{nope}", "{name}");
+        assert!(reply.error.unwrap().contains("not a known variable"));
+        assert_eq!(reply.state.naming.album, "{track:02} - {title}");
+
+        let reply = set_naming(&shared, "{artist} - {title}", "{name} (b)");
+        assert_eq!(reply.error, None);
+        assert_eq!(reply.state.naming.single, "{name} (b)");
+
+        // A fresh start finds them on disk.
+        let reloaded = state(&shared_with_presets(dir.path()));
+        assert_eq!(reloaded.state.naming.album, "{artist} - {title}");
+        assert_eq!(reloaded.state.naming.single, "{name} (b)");
     }
 
     #[test]

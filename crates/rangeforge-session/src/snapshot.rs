@@ -14,6 +14,7 @@ use rangeforge_export::format::{BitDepth, Codec};
 
 use crate::controls::{ConflictKind, WhereKind};
 use crate::model::{App, Group, Kind, RunState, Status, TrackRow};
+use crate::naming::{self, NamingPreview};
 
 fn finite(value: f64) -> Option<f64> {
     value.is_finite().then_some(value)
@@ -106,6 +107,26 @@ pub struct PresetsView {
     pub can_delete: bool,
 }
 
+/// A variable a file name pattern can use.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct VariableView {
+    /// As typed in a pattern, braces included: `{title}`.
+    pub key: String,
+    pub meaning: String,
+    /// Whether single files may use it.
+    pub for_singles: bool,
+}
+
+/// The file name patterns, for the Settings window.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct NamingView {
+    pub album: String,
+    pub single: String,
+    /// What the two saved patterns produce for a made-up song.
+    pub example: NamingPreview,
+    pub variables: Vec<VariableView>,
+}
+
 /// The lists of choices a window offers.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Options {
@@ -123,6 +144,7 @@ pub struct Snapshot {
     pub output: OutputView,
     pub strategy: StrategyView,
     pub presets: PresetsView,
+    pub naming: NamingView,
     pub options: Options,
     pub running: bool,
     /// Files still being measured, and how many there are in all.
@@ -291,6 +313,23 @@ impl App {
                 modified: self.preset_modified(),
                 can_save: self.can_save_preset(),
                 can_delete: self.presets.selected.is_some(),
+            },
+            naming: NamingView {
+                album: self.naming.album.clone(),
+                single: self.naming.single.clone(),
+                example: naming::preview(
+                    &self.naming.album,
+                    &self.naming.single,
+                    self.output.codec.extension(),
+                ),
+                variables: naming::variables()
+                    .into_iter()
+                    .map(|(key, meaning, for_singles)| VariableView {
+                        key,
+                        meaning,
+                        for_singles,
+                    })
+                    .collect(),
             },
             options: options(),
             running: self.running,
@@ -471,6 +510,34 @@ mod tests {
         app.set_where(WhereKind::NextToOriginal);
         app.set_conflict(ConflictKind::Overwrite);
         assert!(app.snapshot().strategy.needs_confirmation);
+    }
+
+    #[test]
+    fn the_name_patterns_come_with_examples_and_the_variable_list() {
+        let mut app = sample_app();
+        let naming = app.snapshot().naming;
+        assert_eq!(naming.album, "{track:02} - {title}");
+        assert_eq!(naming.single, "{name}");
+        assert_eq!(
+            naming.example.album_example.as_deref(),
+            Some("07 - No Quarter.m4a")
+        );
+        assert_eq!(naming.variables.len(), 8);
+        assert!(
+            naming
+                .variables
+                .iter()
+                .any(|v| v.key == "{albumartist}" && !v.for_singles)
+        );
+
+        // The example follows the chosen format's extension.
+        app.set_codec(Codec::Flac);
+        app.set_naming("{artist} - {title}", "{name}").unwrap();
+        let naming = app.snapshot().naming;
+        assert_eq!(
+            naming.example.album_example.as_deref(),
+            Some("Led Zeppelin - No Quarter.flac")
+        );
     }
 
     #[test]

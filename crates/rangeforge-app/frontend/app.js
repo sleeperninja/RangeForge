@@ -194,6 +194,62 @@
     }
   }
 
+  function showPreview(preview) {
+    const show = (which, example, problem) => {
+      $('example' + which).textContent = example || '';
+      const box = $('problem' + which);
+      box.textContent = problem || '';
+      box.classList.toggle('hidden', !problem);
+    };
+    show('Album', preview.album_example, preview.album_problem);
+    show('Single', preview.single_example, preview.single_problem);
+    $('settingsSave').disabled = Boolean(preview.album_problem || preview.single_problem);
+  }
+
+  let previewTimer = null;
+
+  // Asks the program what the patterns would give, so the example follows the typing.
+  function updatePreview() {
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(async () => {
+      if (!inTauri) {
+        return;
+      }
+      try {
+        showPreview(
+          await tauri.core.invoke('preview_naming', {
+            album: $('nameAlbum').value,
+            single: $('nameSingle').value,
+          }),
+        );
+      } catch (error) {
+        toast(String(error));
+      }
+    }, 120);
+  }
+
+  function openSettings() {
+    if (!state) {
+      return;
+    }
+    $('nameAlbum').value = state.naming.album;
+    $('nameSingle').value = state.naming.single;
+    $('variableList').innerHTML = Render.variablesHtml(state.naming.variables);
+    showPreview(state.naming.example);
+    $('settingsDialog').showModal();
+  }
+
+  async function saveSettings() {
+    const reply = await call('set_naming', {
+      album: $('nameAlbum').value,
+      single: $('nameSingle').value,
+    });
+    // A refusal stays on screen as the toast; the dialog stays open to be fixed.
+    if (!reply || !reply.error) {
+      $('settingsDialog').close();
+    }
+  }
+
   function askForPresetName() {
     const dialog = $('presetDialog');
     const selected = state.presets.selected;
@@ -268,6 +324,12 @@
         await call('set_place_text', { text: folder });
       }
     });
+
+    $('settingsButton').addEventListener('click', openSettings);
+    $('settingsCancel').addEventListener('click', () => $('settingsDialog').close());
+    $('settingsSave').addEventListener('click', saveSettings);
+    $('nameAlbum').addEventListener('input', updatePreview);
+    $('nameSingle').addEventListener('input', updatePreview);
 
     $('clearCompleted').addEventListener('click', () => call('clear_completed'));
     $('clearAll').addEventListener('click', () => call('clear_list'));

@@ -26,6 +26,13 @@ pub fn presets_path(config_dir: Option<PathBuf>) -> Option<PathBuf> {
         .map(|dir| dir.join("presets.json"))
 }
 
+/// Where the other settings (such as the file name patterns) are kept.
+pub fn settings_path(config_dir: Option<PathBuf>) -> Option<PathBuf> {
+    config_dir
+        .or_else(default_config_dir)
+        .map(|dir| dir.join("settings.json"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -34,5 +41,11 @@ mod tests {
     fn an_explicit_folder_wins_for_presets() {
         let path = presets_path(Some(PathBuf::from("somewhere"))).unwrap();
         assert_eq!(path, PathBuf::from("somewhere").join("presets.json"));
+    }
+
+    #[test]
+    fn settings_sit_beside_the_presets() {
+        let path = settings_path(Some(PathBuf::from("somewhere"))).unwrap();
+        assert_eq!(path, PathBuf::from("somewhere").join("settings.json"));
     }
 }

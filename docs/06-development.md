@@ -46,7 +46,7 @@ cargo run --release -p rangeforge-cli -- run "testdata\<album folder>" --out "C:
 cargo run --release -p rangeforge-cli -- run "testdata\<album folder>" --out "C:\temp\album-out"
 ```
 
-Useful options: `--target` and `--ceiling` set the volume, `--codec alac|flac|wav|aac`, `--bit-depth source|16|24`, `--out <folder>` (everything into one folder) or `--subfolder <name>` (a folder of that name inside each original's folder), `--on-conflict number|rename-existing|overwrite` with `--suffix`, `--delete-original`, and `--yes` to confirm overwriting or deleting. With none of these, files are written next to the sources under their new names, a number such as `_00` is added only if that name is taken, and nothing existing is touched.
+Useful options: `--target` and `--ceiling` set the volume, `--codec alac|flac|wav|aac`, `--bit-depth source|16|24`, `--out <folder>` (everything into one folder) or `--subfolder <name>` (a folder of that name inside each original's folder), `--on-conflict number|rename-existing|overwrite` with `--suffix`, `--delete-original`, and `--yes` to confirm overwriting or deleting. File names follow `--name "{track:02} - {title}"` for CUE albums and `--single-name "{name}"` for single files (the command line does not read the window's saved settings). With none of these, files are written next to the sources under their new names, a number such as `_00` is added only if that name is taken, and nothing existing is touched.
 
 **FFmpeg for the tests.** The export tests run the real FFmpeg on generated audio. They skip themselves on your machine if FFmpeg is missing, and fail on the build server (where `CI` is set) so they cannot be skipped there by accident. CI installs FFmpeg for each platform.
 
