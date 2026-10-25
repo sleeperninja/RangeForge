@@ -43,7 +43,7 @@ It replaces about seven tools (MediaHuman, an FFmpeg GUI, Adobe Audition, a Powe
 
 ## Code standards (Rust)
 
-- Layout: `crates/rangeforge-core` is a pure library (no UI, minimal I/O). `rangeforge-audio` decodes and measures, `rangeforge-export` writes files, and `rangeforge-session` holds the rules the screens share. `rangeforge-cli` (terminal) and the desktop app are thin front ends on top of those.
+- Layout: `crates/rangeforge-core` is a pure library (no UI, minimal I/O). `rangeforge-audio` decodes and measures, `rangeforge-export` writes files, `rangeforge-lookup` matches songs against outside data (the Hot 100), and `rangeforge-session` holds the rules the screens share. `rangeforge-cli` (terminal, a developer tool) and `rangeforge-app` (the desktop window, the real product) are thin front ends on top of those.
 - `unsafe` is allowed only inside one small memory-map wrapper, with a comment explaining why it is sound.
 - Errors are typed (`thiserror`). No `unwrap()` or `expect()` outside tests.
 - Everything must pass `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace`.

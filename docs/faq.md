@@ -39,7 +39,7 @@ A blue tag marking songs that charted on the Billboard Hot 100.
 
 The app keeps a **local copy** of `all.json` and does not download it on every launch. It asks GitHub whether a newer version exists, and only downloads the file when it does. After that, every Radio lookup is a local check. A song gets the Radio tag when it appears anywhere in the chart history, matched on artist and title. If the download fails, the app uses the copy it already has.
 
-The Last.fm key is entered in Settings. Discogs is not used: finding the right release among many near-identical ones is a hard problem, and nothing planned needs it (decision S-10).
+The Last.fm key is entered in Settings and kept in the computer's own credential store (Credential Manager or Keychain), not in a file, and everything online starts switched off until you turn on Metadata API. Discogs is not used: finding the right release among many near-identical ones is a hard problem, and nothing planned needs it (decision S-10).
 
 ## Where did the old project go?
 

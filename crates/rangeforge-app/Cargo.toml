@@ -14,14 +14,28 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+anyhow.workspace = true
+# Reads a `.env` file in debug builds only, so a developer's API key need not be typed in.
+dotenvy = "0.15"
 rangeforge-audio = { path = "../rangeforge-audio" }
 rangeforge-export = { path = "../rangeforge-export" }
+rangeforge-lookup = { path = "../rangeforge-lookup" }
 rangeforge-session = { path = "../rangeforge-session" }
 serde = { version = "1", features = ["derive"] }
 # "custom-protocol" makes a plain `cargo build` embed the page in the program instead of
 # looking for a development server.
 tauri = { version = "2", features = ["custom-protocol"] }
 tauri-plugin-dialog = "2"
+
+# API keys live in the system's credential store, which is a different one on each system.
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["linux-native"] }
 
 [dev-dependencies]
 serde_json = "1"

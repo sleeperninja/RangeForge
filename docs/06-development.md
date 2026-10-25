@@ -98,6 +98,21 @@ The window is a Tauri program. The page lives in `crates/rangeforge-app/frontend
 
 Downloads to try come from the Release workflow (see Releases below), not from the everyday CI run.
 
+## Metadata lookups
+
+Turn on **Metadata API** in the window and the Hot 100 list is fetched and kept in the cache folder (`hot100.json`, next to the `analysis` folder). Songs from a CUE sheet that charted get a blue **Radio** chip.
+
+For Last.fm, put `LASTFM_API=<your key>` in a `.env` file in the repository folder. It is read in debug builds only (`cargo run -p rangeforge-app`) and is already ignored by git. A release build, or the installer, uses the key saved in Settings, or `LASTFM_API` if it is set in the environment.
+
+The Hot 100 matching has one test against the real chart, which is not in git. Download `all.json` (see the FAQ for its address) and run:
+
+```powershell
+$env:RANGEFORGE_HOT100_JSON = "C:\temp\all.json"
+cargo test -p rangeforge-lookup --release -- --ignored
+```
+
+All other tests use small made-up charts and never touch the network.
+
 ## The analysis cache
 
 `rangeforge measure` remembers its results so a file is only ever decoded once. Entries live in the per-user cache folder, `%LOCALAPPDATA%\RangeForge\cache\analysis` on Windows, one small JSON file per audio file.

@@ -11,7 +11,7 @@
       "run_failure": null,
       "tracks": [
         {"label": "1 - The Song Remains the Same", "loudness_lufs": -14.2, "true_peak_dbtp": -1.65, "range_lu": 11.0, "adjust_db": -7.8, "limited": false, "unadjustable": false, "saved": true, "included": true},
-        {"label": "2 - The Rain Song", "loudness_lufs": -20.66, "true_peak_dbtp": -1.91, "range_lu": 12.2, "adjust_db": 1.31, "limited": true, "unadjustable": false, "saved": true, "included": true}
+        {"label": "2 - The Rain Song", "loudness_lufs": -20.66, "true_peak_dbtp": -1.91, "range_lu": 12.2, "adjust_db": 1.31, "limited": true, "unadjustable": false, "saved": true, "included": true, "tags": [{"text": "Radio", "kind": "radio", "title": "Reached #14 on the Billboard Hot 100 (1973)"}]}
       ]
     },
     {
@@ -50,6 +50,7 @@
     "delete_original": false, "problem": null, "needs_confirmation": false
   },
   "presets": {"names": ["iTunes Lossy", "iTunes Lossless", "CD Quality", "Flac HD Multi", "ALAC Multi"], "selected": 1, "modified": false, "can_save": false, "can_delete": true},
+  "metadata": {"enabled": true, "lastfm_enabled": false, "lastfm_key": "saved", "radio_songs": 32763},
   "naming": {
     "album": "{track:02} - {title}",
     "single": "{name}",

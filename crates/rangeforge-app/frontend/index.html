@@ -52,7 +52,7 @@
         <p id="statusLine" class="status-line"></p>
         <div class="toggles">
           <label class="toggle disabled" title="Coming later"><input type="checkbox" disabled> Auto Mode</label>
-          <label class="toggle disabled" title="Coming later"><input type="checkbox" disabled> Metadata API</label>
+          <label class="toggle" title="Look songs up online: the Radio tag, and Last.fm genres if you add a key in Settings"><input id="metadataToggle" type="checkbox"> Metadata API</label>
           <label class="toggle"><input id="showLogs" type="checkbox"> Show Logs</label>
           <button class="button small" id="settingsButton" type="button" title="File names, and more later">&#9881; Settings</button>
         </div>
@@ -140,6 +140,16 @@
     <p class="example">Example: <span id="exampleSingle"></span></p>
     <p id="problemSingle" class="problem hidden"></p>
     <ul id="variableList" class="variables"></ul>
+
+    <h4 class="section">API keys</h4>
+    <p class="hint">Keys are kept in this computer's own credential store, not in a file. Each can be switched off without forgetting it. The Metadata API switch on the main screen must be on too.</p>
+    <div class="key-row">
+      <label class="check"><input id="lastfmEnabled" type="checkbox"> Use Last.fm</label>
+      <input id="lastfmKey" class="text key-input" type="password" autocomplete="off" spellcheck="false" placeholder="Last.fm API key" aria-label="Last.fm API key">
+      <button id="lastfmSave" class="button small" type="button">Save key</button>
+      <button id="lastfmForget" class="button small" type="button">Forget</button>
+    </div>
+    <p id="lastfmStatus" class="hint"></p>
     <div class="dialog-buttons">
       <button id="settingsCancel" class="button" type="button">Cancel</button>
       <button id="settingsSave" class="button primary" type="button">Save</button>

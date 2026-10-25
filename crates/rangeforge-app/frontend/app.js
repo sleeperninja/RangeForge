@@ -107,6 +107,10 @@
     setValue($('numberSuffix'), s.strategy.number_suffix);
     setValue($('oldSuffix'), s.strategy.old_suffix);
     $('deleteOriginal').checked = s.strategy.delete_original;
+    $('metadataToggle').checked = s.metadata.enabled;
+    $('lastfmEnabled').checked = s.metadata.lastfm_enabled;
+    $('lastfmStatus').textContent = Render.lastfmStatusText(s.metadata);
+    $('lastfmForget').disabled = s.metadata.lastfm_key !== 'saved';
     const problem = $('strategyProblem');
     problem.textContent = s.strategy.problem || '';
     problem.classList.toggle('hidden', !s.strategy.problem);
@@ -235,6 +239,7 @@
     $('nameAlbum').value = state.naming.album;
     $('nameSingle').value = state.naming.single;
     $('variableList').innerHTML = Render.variablesHtml(state.naming.variables);
+    $('lastfmKey').value = '';
     showPreview(state.naming.example);
     $('settingsDialog').showModal();
   }
@@ -325,6 +330,24 @@
       }
     });
 
+    $('metadataToggle').addEventListener('change', (e) => call('set_metadata', { on: e.target.checked }));
+    $('lastfmEnabled').addEventListener('change', (e) => call('set_lastfm_enabled', { on: e.target.checked }));
+    $('lastfmSave').addEventListener('click', async () => {
+      const key = $('lastfmKey').value.trim();
+      if (!key) {
+        toast('Type the key first, or press Forget to remove the saved one.');
+        return;
+      }
+      const reply = await call('set_lastfm_key', { key });
+      // Once it is handed over, the key does not stay in the page.
+      if (reply && !reply.error) {
+        $('lastfmKey').value = '';
+      }
+    });
+    $('lastfmForget').addEventListener('click', async () => {
+      $('lastfmKey').value = '';
+      await call('set_lastfm_key', { key: '' });
+    });
     $('settingsButton').addEventListener('click', openSettings);
     $('settingsCancel').addEventListener('click', () => $('settingsDialog').close());
     $('settingsSave').addEventListener('click', saveSettings);

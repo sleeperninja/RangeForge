@@ -15,6 +15,7 @@ use rangeforge_export::format::{BitDepth, Codec};
 use crate::controls::{ConflictKind, WhereKind};
 use crate::model::{App, Group, Kind, RunState, Status, TrackRow};
 use crate::naming::{self, NamingPreview};
+use crate::secrets::KeySource;
 
 fn finite(value: f64) -> Option<f64> {
     value.is_finite().then_some(value)
@@ -38,6 +39,18 @@ pub struct TrackView {
     pub saved: bool,
     /// It is part of the next run. The user can switch songs off.
     pub included: bool,
+    /// Labels from outside lookups, shown in the Tags column.
+    pub tags: Vec<TagChip>,
+}
+
+/// One label in the Tags column.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct TagChip {
+    pub text: String,
+    /// What colour to give it: `radio` (blue) for the Hot 100.
+    pub kind: &'static str,
+    /// What to say when the pointer rests on it.
+    pub title: String,
 }
 
 /// An album or a single file.
@@ -127,6 +140,20 @@ pub struct NamingView {
     pub variables: Vec<VariableView>,
 }
 
+/// The outside lookups, for the main screen's switch and the Settings window.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MetadataView {
+    /// The "Metadata API" switch.
+    pub enabled: bool,
+    /// "Use Last.fm" beside its key.
+    pub lastfm_enabled: bool,
+    /// Whether a Last.fm key is available: `saved`, `environment` or `none`. The key itself is
+    /// never sent to the window.
+    pub lastfm_key: &'static str,
+    /// How many songs the Hot 100 index holds, once it has loaded.
+    pub radio_songs: Option<usize>,
+}
+
 /// The lists of choices a window offers.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Options {
@@ -145,6 +172,7 @@ pub struct Snapshot {
     pub strategy: StrategyView,
     pub presets: PresetsView,
     pub naming: NamingView,
+    pub metadata: MetadataView,
     pub options: Options,
     pub running: bool,
     /// Files still being measured, and how many there are in all.
@@ -207,6 +235,18 @@ fn track_view(app: &App, track: &TrackRow) -> TrackView {
         unadjustable,
         saved: track.saved,
         included: track.included,
+        tags: track
+            .radio
+            .map(|hit| TagChip {
+                text: "Radio".to_string(),
+                kind: "radio",
+                title: format!(
+                    "Reached #{} on the Billboard Hot 100 ({})",
+                    hit.peak, hit.year
+                ),
+            })
+            .into_iter()
+            .collect(),
     }
 }
 
@@ -330,6 +370,16 @@ impl App {
                         for_singles,
                     })
                     .collect(),
+            },
+            metadata: MetadataView {
+                enabled: self.metadata.enabled,
+                lastfm_enabled: self.metadata.lastfm_enabled,
+                lastfm_key: match self.lastfm_key {
+                    KeySource::Saved => "saved",
+                    KeySource::Environment => "environment",
+                    KeySource::None => "none",
+                },
+                radio_songs: self.radio_songs(),
             },
             options: options(),
             running: self.running,
@@ -538,6 +588,31 @@ mod tests {
             naming.example.album_example.as_deref(),
             Some("Led Zeppelin - No Quarter.flac")
         );
+    }
+
+    #[test]
+    fn the_radio_tag_and_the_lookup_switches_reach_the_window() {
+        let mut app = sample_app();
+        let snapshot = app.snapshot();
+        assert!(!snapshot.metadata.enabled);
+        assert!(!snapshot.metadata.lastfm_enabled);
+        assert_eq!(snapshot.metadata.lastfm_key, "none");
+        assert_eq!(snapshot.metadata.radio_songs, None);
+        assert_eq!(snapshot.groups[0].tracks[1].tags, Vec::<TagChip>::new());
+
+        app.set_metadata_enabled(true);
+        app.lastfm_key = KeySource::Environment;
+        app.groups[0].tracks[1].radio = Some(crate::model::RadioHit {
+            peak: 14,
+            year: 1973,
+        });
+        let snapshot = app.snapshot();
+        assert!(snapshot.metadata.enabled);
+        assert_eq!(snapshot.metadata.lastfm_key, "environment");
+        let chip = &snapshot.groups[0].tracks[1].tags[0];
+        assert_eq!(chip.text, "Radio");
+        assert_eq!(chip.kind, "radio");
+        assert_eq!(chip.title, "Reached #14 on the Billboard Hot 100 (1973)");
     }
 
     #[test]

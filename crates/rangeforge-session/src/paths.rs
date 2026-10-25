@@ -26,6 +26,12 @@ pub fn presets_path(config_dir: Option<PathBuf>) -> Option<PathBuf> {
         .map(|dir| dir.join("presets.json"))
 }
 
+/// Where the small local copy of the Billboard Hot 100 history is kept, next to the
+/// measurements cache.
+pub fn hot100_path() -> Option<PathBuf> {
+    project_dirs().map(|dirs| dirs.cache_dir().join("hot100.json"))
+}
+
 /// Where the other settings (such as the file name patterns) are kept.
 pub fn settings_path(config_dir: Option<PathBuf>) -> Option<PathBuf> {
     config_dir

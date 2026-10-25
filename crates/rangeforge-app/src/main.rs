@@ -10,19 +10,20 @@
 //! `rangeforge-session`, shared with the terminal view; [`ops`] turns them into plain functions
 //! and this file wraps those as commands for the page.
 
+mod credentials;
 mod ops;
 
 use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 use std::thread;
 
-use ops::{Reply, RunReply, Shared};
-use rangeforge_audio::cache::Cache;
+use ops::{Locations, Reply, RunReply, Shared};
 use rangeforge_export::ffmpeg::Ffmpeg;
+use rangeforge_lookup::billboard::{HttpFetcher, unix_now};
 use rangeforge_session::load::Job;
 use rangeforge_session::model::RunEvent;
 use rangeforge_session::naming::NamingPreview;
-use rangeforge_session::{engine, paths, runner};
+use rangeforge_session::{engine, paths, runner, secrets};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 type Session<'a> = State<'a, Arc<Shared>>;
@@ -44,6 +45,17 @@ fn watch_measuring(app: &AppHandle, shared: &Arc<Shared>, jobs: Vec<Job>) {
         for outcome in outcomes {
             emit(&app, &ops::apply_outcome(&shared, outcome));
         }
+    });
+}
+
+/// Gets the Hot 100 list ready in the background (the saved copy first, then a check for a
+/// newer one) and tells the page after each step. Does nothing while lookups are off.
+fn watch_radio(app: &AppHandle, shared: &Arc<Shared>) {
+    let (app, shared) = (app.clone(), Arc::clone(shared));
+    thread::spawn(move || {
+        ops::update_radio(&shared, &HttpFetcher, unix_now(), &mut |reply| {
+            emit(&app, &reply);
+        });
     });
 }
 
@@ -158,6 +170,25 @@ async fn preview_naming(
 }
 
 #[tauri::command]
+async fn set_metadata(on: bool, state: Session<'_>, app: AppHandle) -> Result<Reply, String> {
+    let reply = ops::set_metadata(&state, on);
+    if on {
+        watch_radio(&app, state.inner());
+    }
+    Ok(reply)
+}
+
+#[tauri::command]
+async fn set_lastfm_enabled(on: bool, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_lastfm_enabled(&state, on))
+}
+
+#[tauri::command]
+async fn set_lastfm_key(key: String, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_lastfm_key(&state, &key))
+}
+
+#[tauri::command]
 async fn clear_completed(state: Session<'_>) -> Result<Reply, String> {
     Ok(ops::clear_completed(&state))
 }
@@ -193,10 +224,21 @@ async fn run(confirmed: bool, state: Session<'_>, app: AppHandle) -> Result<RunR
 }
 
 fn main() {
+    // A developer's `.env` file (with LASTFM_API in it) is read in debug builds only. A release
+    // build uses the key saved in Settings, or one set in the environment.
+    #[cfg(debug_assertions)]
+    {
+        let _ = dotenvy::dotenv();
+    }
     let shared = Arc::new(Shared::new(
-        paths::presets_path(None),
-        paths::settings_path(None),
-        paths::default_cache_dir().map(Cache::new),
+        Locations {
+            presets: paths::presets_path(None),
+            settings: paths::settings_path(None),
+            hot100: paths::hot100_path(),
+            cache: paths::default_cache_dir(),
+        },
+        Box::new(credentials::OsStore),
+        std::env::var(secrets::LASTFM_ENV).ok(),
     ));
 
     let result = tauri::Builder::default()
@@ -221,6 +263,9 @@ fn main() {
             set_delete_original,
             set_naming,
             preview_naming,
+            set_metadata,
+            set_lastfm_enabled,
+            set_lastfm_key,
             clear_completed,
             remove_group,
             set_included,
@@ -233,11 +278,13 @@ fn main() {
                 .skip(1)
                 .map(|arg| arg.to_string_lossy().into_owned())
                 .collect();
+            let shared = Arc::clone(app.state::<Arc<Shared>>().inner());
             if !args.is_empty() {
-                let shared = Arc::clone(app.state::<Arc<Shared>>().inner());
                 let (_, jobs) = ops::add_paths(&shared, &args);
                 watch_measuring(app.handle(), &shared, jobs);
             }
+            // If lookups were left on last time, get the Hot 100 list ready.
+            watch_radio(app.handle(), &shared);
             Ok(())
         })
         .run(tauri::generate_context!());

@@ -83,9 +83,10 @@ crates/
   rangeforge-core/   the pure logic: CUE, planning, (later) readiness, cache
   rangeforge-audio/  reads audio files once and measures loudness per track
   rangeforge-export/ writes the finished files: gain, encode through FFmpeg, place by File Strategy
+  rangeforge-lookup/ outside data: the Billboard Hot 100 index and how songs are matched to it
   rangeforge-session/ the rules the screens share: files, measuring, settings, presets, running
-  rangeforge-cli/    the command line and terminal front end
-  (later) rangeforge-app/   the desktop window, using the same logic
+  rangeforge-cli/    the command line and terminal front end (a developer tool, not shipped)
+  rangeforge-app/    the desktop window (Tauri), using the same logic
 ```
 
 - The core does no drawing and no printing. Front ends ask it questions and show the answers.

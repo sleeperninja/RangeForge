@@ -39,6 +39,25 @@
     return `<td class="${cls}"${title}>${signed(track.adjust_db, 2)}${star}</td>`;
   }
 
+  // The labels from outside lookups in the Tags column. Each kind has its own colour.
+  function chipsHtml(tags) {
+    return (tags || [])
+      .map((tag) => `<span class="chip ${esc(tag.kind)}" title="${esc(tag.title)}">${esc(tag.text)}</span>`)
+      .join('');
+  }
+
+  // What the Settings window says about the Last.fm key. The key itself is never shown.
+  function lastfmStatusText(metadata) {
+    switch (metadata.lastfm_key) {
+      case 'saved':
+        return 'A key is saved. Type a new one and press Save key to replace it.';
+      case 'environment':
+        return 'Using the key from the LASTFM_API setting of this computer. Save one here to use that instead.';
+      default:
+        return 'No key yet. You can get a free one at last.fm/api.';
+    }
+  }
+
   function trackRowHtml(track, outputCodec, groupIndex, trackIndex) {
     const mark = track.saved ? '✓' : '↳';
     const cls = ['track', track.saved ? 'saved' : '', track.included ? '' : 'excluded']
@@ -54,7 +73,7 @@
       `<td class="num">${fixed(track.true_peak_dbtp, 2)}</td>` +
       adjustCell(track) +
       `<td class="num">${fixed(track.range_lu, 1)}</td>` +
-      '<td class="tags"></td>' +
+      `<td class="tags">${chipsHtml(track.tags)}</td>` +
       '</tr>'
     );
   }
@@ -216,6 +235,8 @@
     esc,
     fixed,
     signed,
+    chipsHtml,
+    lastfmStatusText,
     trackRowHtml,
     groupRowsHtml,
     tableBodyHtml,

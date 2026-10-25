@@ -92,6 +92,25 @@ test('the variable list marks which ones single files may use', () => {
   assert.strictEqual((html.match(/<li>/g) || []).length, 8);
 });
 
+test('a Radio tag shows as a blue chip with its explanation, and tag text is escaped', () => {
+  const html = Render.trackRowHtml(houses.tracks[1], 'alac', 0, 1);
+  assert.match(html, /<td class="tags"><span class="chip radio" title="Reached #14 on the Billboard Hot 100 \(1973\)">Radio<\/span><\/td>/);
+  // A song with no tags, or from older data with no tags field, has an empty cell.
+  assert.match(Render.trackRowHtml(houses.tracks[0], 'alac', 0, 0), /<td class="tags"><\/td>/);
+  const odd = Render.chipsHtml([{ text: '<b>', kind: 'radio', title: '"x"' }]);
+  assert.match(odd, /&lt;b&gt;/);
+  assert.match(odd, /title="&quot;x&quot;"/);
+});
+
+test('the Settings window says what is known about the Last.fm key, without showing it', () => {
+  assert.match(Render.lastfmStatusText({ lastfm_key: 'saved' }), /A key is saved/);
+  assert.match(Render.lastfmStatusText({ lastfm_key: 'environment' }), /LASTFM_API/);
+  assert.match(Render.lastfmStatusText({ lastfm_key: 'none' }), /No key yet/);
+  for (const key of ['saved', 'environment', 'none']) {
+    assert.doesNotMatch(Render.lastfmStatusText({ lastfm_key: key }), /\w{24,}/);
+  }
+});
+
 test('status line and run label', () => {
   assert.strictEqual(Render.runLabel(demo), 'Run (5)');
   assert.match(Render.statusText(demo), /measuring 1 of 3/);

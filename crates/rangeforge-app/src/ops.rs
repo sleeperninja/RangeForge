@@ -5,40 +5,77 @@
 //! wrappers in `main.rs` turn these into commands and forward progress to the window.
 
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use rangeforge_audio::cache::Cache;
 use rangeforge_export::format::{BitDepth, Codec};
+use rangeforge_lookup::billboard::{self, Fetcher, Refresh};
 use rangeforge_session::controls::PresetList;
 use rangeforge_session::load::Job;
 use rangeforge_session::model::{App, MeasureOutcome, RunEvent, RunRequest, RunSpec, Settings};
 use rangeforge_session::presets;
+use rangeforge_session::secrets::{self, SecretStore};
 use rangeforge_session::snapshot::{Snapshot, conflict_from_id, place_from_id};
 use rangeforge_session::{appsettings, naming};
 use serde::Serialize;
+
+/// How long a check of the Hot 100 file stays good before the server is asked again.
+const RADIO_CHECK_EVERY: Duration = Duration::from_secs(12 * 60 * 60);
+
+/// Where the program keeps its files.
+#[derive(Debug, Default, Clone)]
+pub struct Locations {
+    pub presets: Option<PathBuf>,
+    pub settings: Option<PathBuf>,
+    /// The small local copy of the Hot 100 history.
+    pub hot100: Option<PathBuf>,
+    pub cache: Option<PathBuf>,
+}
 
 /// The screen state, shared between the window's commands and the background threads.
 pub struct Shared {
     app: Mutex<App>,
     presets_path: Option<PathBuf>,
     settings_path: Option<PathBuf>,
+    hot100_path: Option<PathBuf>,
     cache: Option<Cache>,
+    /// Where API keys are kept.
+    store: Box<dyn SecretStore>,
+    /// The environment's Last.fm key, read once at start-up.
+    env_lastfm: Option<String>,
+    /// A Hot 100 update is already running.
+    radio_busy: AtomicBool,
 }
 
 impl Shared {
     /// Starts with an empty list and the saved presets and settings (or the defaults).
+    /// `env_lastfm` is the Last.fm key from the environment, used when none is saved.
     pub fn new(
-        presets_path: Option<PathBuf>,
-        settings_path: Option<PathBuf>,
-        cache: Option<Cache>,
+        locations: Locations,
+        store: Box<dyn SecretStore>,
+        env_lastfm: Option<String>,
     ) -> Self {
+        let Locations {
+            presets: presets_path,
+            settings: settings_path,
+            hot100: hot100_path,
+            cache,
+        } = locations;
         let mut app = App::new(Vec::new(), Vec::new(), Vec::new(), Settings::default());
         if let Some(path) = &settings_path {
-            let stored = appsettings::load(path);
-            app.naming = stored.naming;
-            for note in stored.notes {
+            let loaded = appsettings::load(path);
+            app.apply_saved_settings(loaded.settings);
+            for note in loaded.notes {
                 app.log(note);
             }
+        }
+        match secrets::lastfm_key(store.as_ref(), env_lastfm.clone()) {
+            Ok(key) => {
+                app.lastfm_key = key.map_or(secrets::KeySource::None, |key| key.source);
+            }
+            Err(problem) => app.log(format!("Could not read the saved Last.fm key: {problem:#}")),
         }
         let stored = presets_path.as_deref().map_or_else(
             || presets::Loaded {
@@ -56,13 +93,25 @@ impl Shared {
             app: Mutex::new(app),
             presets_path,
             settings_path,
-            cache,
+            hot100_path,
+            cache: cache.map(Cache::new),
+            store,
+            env_lastfm,
+            radio_busy: AtomicBool::new(false),
         }
     }
 
     /// Where measurements are remembered.
     pub fn cache(&self) -> Option<&Cache> {
         self.cache.as_ref()
+    }
+
+    /// The Last.fm key to use, if there is one. Used by the code that asks Last.fm; it never
+    /// goes to the window.
+    pub fn lastfm_key(&self) -> Option<secrets::Key> {
+        secrets::lastfm_key(self.store.as_ref(), self.env_lastfm.clone())
+            .ok()
+            .flatten()
     }
 
     fn lock(&self) -> MutexGuard<'_, App> {
@@ -98,7 +147,7 @@ fn reply(shared: &Shared, app: &mut App, error: Option<String>) -> Reply {
     }
     if app.take_settings_changed()
         && let Some(path) = &shared.settings_path
-        && let Err(problem) = appsettings::save(path, &app.naming)
+        && let Err(problem) = appsettings::save(path, &app.saved_settings())
     {
         app.log(format!("Could not save settings: {problem:#}"));
     }
@@ -227,6 +276,95 @@ pub fn preview_naming(shared: &Shared, album: &str, single: &str) -> naming::Nam
     naming::preview(album, single, extension)
 }
 
+/// The "Metadata API" switch: whether any outside lookup happens at all.
+pub fn set_metadata(shared: &Shared, on: bool) -> Reply {
+    with_app(shared, |app| {
+        app.set_metadata_enabled(on);
+        Ok(())
+    })
+}
+
+/// "Use Last.fm", beside its key.
+pub fn set_lastfm_enabled(shared: &Shared, on: bool) -> Reply {
+    with_app(shared, |app| {
+        app.set_lastfm_enabled(on);
+        Ok(())
+    })
+}
+
+/// Keeps the Last.fm key in the system's credential store, or forgets it when `key` is empty.
+/// The key is never logged or sent back to the window.
+pub fn set_lastfm_key(shared: &Shared, key: &str) -> Reply {
+    let key = key.trim();
+    let stored = if key.is_empty() {
+        shared.store.delete(secrets::LASTFM)
+    } else {
+        shared.store.set(secrets::LASTFM, key)
+    };
+    let forgot = key.is_empty();
+    with_app(shared, |app| {
+        stored.map_err(|problem| {
+            format!("Could not keep the key in the system's credential store: {problem:#}")
+        })?;
+        app.lastfm_key = shared
+            .lastfm_key()
+            .map_or(secrets::KeySource::None, |k| k.source);
+        app.log(if forgot {
+            "Forgot the saved Last.fm key"
+        } else {
+            "Saved the Last.fm key"
+        });
+        Ok(())
+    })
+}
+
+/// Loads the saved Hot 100 list from disk, which is quick, and gives it to the screen.
+fn load_radio(shared: &Shared) -> Option<Reply> {
+    let saved = billboard::load(shared.hot100_path.as_deref()?)?;
+    let mut app = shared.lock();
+    app.log(format!("Hot 100 list ready ({} songs)", saved.hot100.len()));
+    app.set_radio(Some(Arc::new(saved.hot100)));
+    Some(reply(shared, &mut app, None))
+}
+
+fn log_and_describe(shared: &Shared, line: String) -> Reply {
+    let mut app = shared.lock();
+    app.log(line);
+    reply(shared, &mut app, None)
+}
+
+/// Gets the Hot 100 list ready: loads the copy on disk right away, then asks whether the chart
+/// has changed and downloads it only if so. Slow when a download is needed, so run it on a
+/// background thread; `show` is called with the new screen after each step. Does nothing if an
+/// update is already running, or if lookups are off.
+pub fn update_radio(shared: &Shared, fetcher: &dyn Fetcher, now: u64, show: &mut dyn FnMut(Reply)) {
+    if !shared.lock().metadata.enabled || shared.radio_busy.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if let Some(reply) = load_radio(shared) {
+        show(reply);
+    }
+    if let Some(path) = &shared.hot100_path {
+        match billboard::refresh(path, fetcher, now, RADIO_CHECK_EVERY) {
+            Ok(Refresh::Updated { songs }) => {
+                show(log_and_describe(
+                    shared,
+                    format!("Downloaded a newer Hot 100 list ({songs} songs)"),
+                ));
+                if let Some(reply) = load_radio(shared) {
+                    show(reply);
+                }
+            }
+            Ok(Refresh::Recent | Refresh::Unchanged) => {}
+            Err(problem) => show(log_and_describe(
+                shared,
+                format!("Could not update the Hot 100 list, using the copy on disk: {problem:#}"),
+            )),
+        }
+    }
+    shared.radio_busy.store(false, Ordering::SeqCst);
+}
+
 pub fn clear_list(shared: &Shared) -> Reply {
     with_app(shared, App::clear)
 }
@@ -318,15 +456,243 @@ mod tests {
     use std::time::Duration;
 
     use rangeforge_export::ffmpeg::Ffmpeg;
+    use rangeforge_lookup::billboard::Fetched;
+    use rangeforge_session::secrets::MemoryStore;
     use rangeforge_session::{engine, runner};
     use tempfile::tempdir;
 
+    fn locations(dir: &Path) -> Locations {
+        Locations {
+            presets: Some(dir.join("presets.json")),
+            settings: Some(dir.join("settings.json")),
+            hot100: Some(dir.join("hot100.json")),
+            cache: None,
+        }
+    }
+
     fn shared_with_presets(dir: &Path) -> Shared {
-        Shared::new(
-            Some(dir.join("presets.json")),
-            Some(dir.join("settings.json")),
-            None,
-        )
+        Shared::new(locations(dir), Box::<MemoryStore>::default(), None)
+    }
+
+    /// A credential store that several `Shared` can use in turn, like the real one.
+    #[derive(Clone, Default)]
+    struct SharedStore(Arc<MemoryStore>);
+
+    impl SecretStore for SharedStore {
+        fn get(&self, name: &str) -> anyhow::Result<Option<String>> {
+            self.0.get(name)
+        }
+        fn set(&self, name: &str, value: &str) -> anyhow::Result<()> {
+            self.0.set(name, value)
+        }
+        fn delete(&self, name: &str) -> anyhow::Result<()> {
+            self.0.delete(name)
+        }
+    }
+
+    /// A credential store that refuses everything, like one that is locked.
+    struct LockedStore;
+
+    impl SecretStore for LockedStore {
+        fn get(&self, _: &str) -> anyhow::Result<Option<String>> {
+            Err(anyhow::anyhow!("locked"))
+        }
+        fn set(&self, _: &str, _: &str) -> anyhow::Result<()> {
+            Err(anyhow::anyhow!("locked"))
+        }
+        fn delete(&self, _: &str) -> anyhow::Result<()> {
+            Err(anyhow::anyhow!("locked"))
+        }
+    }
+
+    const CHART: &str = r#"[{"date": "1973-10-20", "data": [
+        {"song": "The Rain Song", "artist": "Led Zeppelin", "this_week": 14, "last_week": null, "peak_position": 14, "weeks_on_chart": 1}
+    ]}]"#;
+
+    /// Hands out the chart each time it is asked, and counts the requests.
+    struct FakeChart {
+        asked: std::cell::Cell<usize>,
+        fail: bool,
+    }
+
+    impl FakeChart {
+        fn new(fail: bool) -> Self {
+            Self {
+                asked: std::cell::Cell::new(0),
+                fail,
+            }
+        }
+    }
+
+    impl Fetcher for FakeChart {
+        fn get(&self, _url: &str, _etag: Option<&str>) -> anyhow::Result<Fetched> {
+            self.asked.set(self.asked.get() + 1);
+            if self.fail {
+                anyhow::bail!("no network");
+            }
+            Ok(Fetched::Body {
+                body: Box::new(std::io::Cursor::new(CHART.as_bytes().to_vec())),
+                etag: Some("\"v1\"".to_string()),
+            })
+        }
+    }
+
+    #[test]
+    fn the_lookup_switches_start_off_and_are_kept() {
+        let dir = tempdir().unwrap();
+        let shared = shared_with_presets(dir.path());
+        let reply = state(&shared);
+        assert!(!reply.state.metadata.enabled);
+        assert!(!reply.state.metadata.lastfm_enabled);
+
+        assert!(set_metadata(&shared, true).state.metadata.enabled);
+        assert!(
+            set_lastfm_enabled(&shared, true)
+                .state
+                .metadata
+                .lastfm_enabled
+        );
+
+        let reloaded = state(&shared_with_presets(dir.path()));
+        assert!(reloaded.state.metadata.enabled);
+        assert!(reloaded.state.metadata.lastfm_enabled);
+    }
+
+    #[test]
+    fn the_last_fm_key_is_saved_in_the_store_and_never_comes_back() {
+        let dir = tempdir().unwrap();
+        let store = SharedStore::default();
+        let shared = Shared::new(locations(dir.path()), Box::new(store.clone()), None);
+        assert_eq!(state(&shared).state.metadata.lastfm_key, "none");
+
+        let reply = set_lastfm_key(&shared, "  abc123secret  ");
+        assert_eq!(reply.error, None);
+        assert_eq!(reply.state.metadata.lastfm_key, "saved");
+        assert_eq!(
+            store.get(secrets::LASTFM).unwrap().as_deref(),
+            Some("abc123secret"),
+            "kept without the spaces"
+        );
+        assert_eq!(shared.lastfm_key().unwrap().value, "abc123secret");
+
+        // Neither the screen nor the settings file nor the log can hold it.
+        let json = serde_json::to_string(&reply).unwrap();
+        assert!(!json.contains("abc123secret"), "{json}");
+        let settings = fs::read_to_string(dir.path().join("settings.json")).unwrap_or_default();
+        assert!(!settings.contains("abc123secret"));
+
+        // A fresh start sees a key is there, from the store.
+        let again = Shared::new(locations(dir.path()), Box::new(store.clone()), None);
+        assert_eq!(state(&again).state.metadata.lastfm_key, "saved");
+
+        // An empty key forgets it.
+        let reply = set_lastfm_key(&shared, "   ");
+        assert_eq!(reply.state.metadata.lastfm_key, "none");
+        assert_eq!(store.get(secrets::LASTFM).unwrap(), None);
+    }
+
+    #[test]
+    fn the_environment_supplies_a_key_when_none_is_saved() {
+        let dir = tempdir().unwrap();
+        let shared = Shared::new(
+            locations(dir.path()),
+            Box::<MemoryStore>::default(),
+            Some("from-environment".to_string()),
+        );
+        assert_eq!(state(&shared).state.metadata.lastfm_key, "environment");
+
+        // A saved key takes over, and forgetting it falls back to the environment again.
+        assert_eq!(
+            set_lastfm_key(&shared, "saved-one")
+                .state
+                .metadata
+                .lastfm_key,
+            "saved"
+        );
+        assert_eq!(
+            set_lastfm_key(&shared, "").state.metadata.lastfm_key,
+            "environment"
+        );
+    }
+
+    #[test]
+    fn a_locked_store_is_reported_not_hidden() {
+        let dir = tempdir().unwrap();
+        let shared = Shared::new(locations(dir.path()), Box::new(LockedStore), None);
+        let reply = set_lastfm_key(&shared, "abc123secret");
+        let error = reply.error.unwrap();
+        assert!(error.contains("credential store"), "{error}");
+        assert!(!error.contains("abc123secret"));
+        assert_eq!(reply.state.metadata.lastfm_key, "none");
+        // And the start-up check of a locked store did not stop the program.
+        assert!(
+            state(&shared)
+                .state
+                .log
+                .iter()
+                .any(|line| line.contains("saved Last.fm key"))
+        );
+    }
+
+    #[test]
+    fn the_hot_100_list_waits_for_the_switch_and_then_loads_and_updates() {
+        let dir = tempdir().unwrap();
+        let shared = shared_with_presets(dir.path());
+        let chart = FakeChart::new(false);
+        let mut screens = Vec::new();
+
+        // Lookups are off: nobody is asked.
+        update_radio(&shared, &chart, 1_000, &mut |reply| screens.push(reply));
+        assert_eq!(chart.asked.get(), 0);
+        assert!(screens.is_empty());
+
+        // On, with nothing saved yet: it downloads once, then loads it.
+        set_metadata(&shared, true);
+        update_radio(&shared, &chart, 1_000, &mut |reply| screens.push(reply));
+        assert_eq!(chart.asked.get(), 1);
+        let last = screens.last().unwrap();
+        assert_eq!(last.state.metadata.radio_songs, Some(1));
+        assert!(
+            last.state
+                .log
+                .iter()
+                .any(|l| l.contains("Downloaded a newer"))
+        );
+
+        // Soon after, the saved copy is loaded and nobody is asked again.
+        let again = shared_with_presets(dir.path());
+        set_metadata(&again, true);
+        let mut screens = Vec::new();
+        update_radio(&again, &chart, 1_060, &mut |reply| screens.push(reply));
+        assert_eq!(chart.asked.get(), 1, "checked recently");
+        assert_eq!(screens[0].state.metadata.radio_songs, Some(1));
+    }
+
+    #[test]
+    fn a_failed_hot_100_download_is_reported_and_the_program_carries_on() {
+        let dir = tempdir().unwrap();
+        let shared = shared_with_presets(dir.path());
+        set_metadata(&shared, true);
+        let mut screens = Vec::new();
+
+        update_radio(&shared, &FakeChart::new(true), 1_000, &mut |reply| {
+            screens.push(reply);
+        });
+
+        let last = screens.last().unwrap();
+        assert_eq!(last.state.metadata.radio_songs, None);
+        assert!(
+            last.state
+                .log
+                .iter()
+                .any(|l| l.contains("Could not update the Hot 100 list"))
+        );
+        // The update is not left marked as running, so a later try works.
+        let mut again = Vec::new();
+        update_radio(&shared, &FakeChart::new(false), 1_000, &mut |reply| {
+            again.push(reply);
+        });
+        assert_eq!(again.last().unwrap().state.metadata.radio_songs, Some(1));
     }
 
     fn ffmpeg() -> Option<Ffmpeg> {

@@ -5,13 +5,16 @@
 //! start; progress comes back as [`RunEvent`]s.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use rangeforge_core::planner::{self, GainPlan, Measurement, PlanError, Target};
 use rangeforge_export::format::{BitDepth, Codec, OutputFormat};
 use rangeforge_export::pipeline::TrackPlan;
 use rangeforge_export::strategy::Strategy;
+use rangeforge_lookup::billboard::Hot100;
 
+use crate::appsettings::{MetadataSettings, SavedSettings};
 use crate::controls::{
     ConflictKind, Focus, Mode, OutputSettings, PresetList, Saved, StrategySettings, WhereKind,
     apply_preset,
@@ -19,6 +22,7 @@ use crate::controls::{
 use crate::load::{Job, load_from};
 use crate::naming::NameSettings;
 use crate::plan::{plan_tracks, track_plans};
+use crate::secrets::KeySource;
 
 /// A key press, in terms the screens share. The terminal view translates real key codes into
 /// these. The desktop app does not use keys at all.
@@ -147,6 +151,17 @@ pub struct TrackRow {
     pub saved: bool,
     /// Part of the next run. Songs the user switches off are left out.
     pub included: bool,
+    /// The song reached the Billboard Hot 100 (the blue "Radio" tag), once looked up.
+    pub radio: Option<RadioHit>,
+}
+
+/// How a song did on the Billboard Hot 100.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RadioHit {
+    /// The best position it reached: 1 is the top.
+    pub peak: u16,
+    /// The year it first charted.
+    pub year: u16,
 }
 
 impl TrackRow {
@@ -157,6 +172,7 @@ impl TrackRow {
             measurement: None,
             saved: false,
             included: true,
+            radio: None,
         }
     }
 }
@@ -283,6 +299,12 @@ pub struct App {
     presets_changed: bool,
     /// The saved settings changed and should be written to disk.
     settings_changed: bool,
+    /// Which outside lookups are switched on.
+    pub metadata: MetadataSettings,
+    /// The Hot 100 index, once it has been loaded.
+    radio: Option<Arc<Hot100>>,
+    /// Whether a Last.fm key is available, and from where. The key itself is never held here.
+    pub lastfm_key: KeySource,
 }
 
 impl App {
@@ -305,6 +327,93 @@ impl App {
             pending_run: None,
             presets_changed: false,
             settings_changed: false,
+            metadata: MetadataSettings::default(),
+            radio: None,
+            lastfm_key: KeySource::None,
+        }
+    }
+
+    /// The settings that are kept between sessions.
+    pub fn saved_settings(&self) -> SavedSettings {
+        SavedSettings {
+            naming: self.naming.clone(),
+            metadata: self.metadata,
+        }
+    }
+
+    /// Applies settings read from disk at start-up.
+    pub fn apply_saved_settings(&mut self, saved: SavedSettings) {
+        self.naming = saved.naming;
+        self.metadata = saved.metadata;
+    }
+
+    /// Switches outside lookups on or off. Off hides the Radio tag too, and nothing is
+    /// fetched until it is on again.
+    pub fn set_metadata_enabled(&mut self, on: bool) {
+        if self.metadata.enabled != on {
+            self.metadata.enabled = on;
+            self.settings_changed = true;
+            self.refresh_radio();
+            self.log(if on {
+                "Metadata lookups are on"
+            } else {
+                "Metadata lookups are off"
+            });
+        }
+    }
+
+    /// Switches Last.fm on or off. It also needs a key, and the Metadata switch.
+    pub fn set_lastfm_enabled(&mut self, on: bool) {
+        if self.metadata.lastfm_enabled != on {
+            self.metadata.lastfm_enabled = on;
+            self.settings_changed = true;
+        }
+    }
+
+    /// Whether Last.fm should be asked for genres: switched on, with a key to use.
+    pub fn wants_lastfm(&self) -> bool {
+        self.metadata.enabled && self.metadata.lastfm_enabled && self.lastfm_key != KeySource::None
+    }
+
+    /// Gives the app the Hot 100 index (or takes it away) and marks the songs that charted.
+    pub fn set_radio(&mut self, index: Option<Arc<Hot100>>) {
+        self.radio = index;
+        self.refresh_radio();
+    }
+
+    /// How many songs the loaded Hot 100 index holds, or `None` if it is not loaded.
+    pub fn radio_songs(&self) -> Option<usize> {
+        self.radio.as_ref().map(|index| index.len())
+    }
+
+    /// Marks each song that reached the Hot 100, or clears the marks when lookups are off or
+    /// there is no index yet. Needs a CUE sheet to know who sang what; single files carry
+    /// their own tags and are not looked up yet.
+    fn refresh_radio(&mut self) {
+        for group in &mut self.groups {
+            for track in &mut group.tracks {
+                track.radio = None;
+            }
+        }
+        let Some(index) = self.radio.clone().filter(|_| self.metadata.enabled) else {
+            return;
+        };
+        for job in &self.jobs {
+            let (Some(file), Some(sheet)) = (&job.cue_file, &job.sheet) else {
+                continue;
+            };
+            let Some(group) = self.groups.get_mut(job.group) else {
+                continue;
+            };
+            for (track, row) in file.tracks.iter().zip(&mut group.tracks) {
+                let artist = track.performer.as_deref().or(sheet.performer.as_deref());
+                if let (Some(artist), Some(title)) = (artist, track.title.as_deref()) {
+                    row.radio = index.find(artist, title).map(|song| RadioHit {
+                        peak: song.peak,
+                        year: song.first_year,
+                    });
+                }
+            }
         }
     }
 
@@ -772,6 +881,7 @@ impl App {
         self.groups.extend(loaded.groups);
         self.jobs.extend(loaded.jobs.iter().cloned());
         self.log.extend(loaded.log);
+        self.refresh_radio();
         loaded.jobs
     }
 
@@ -1720,6 +1830,109 @@ mod tests {
             spec.items[0].plans[0].file_name,
             "Led Zeppelin - The Rain Song.m4a"
         );
+    }
+
+    fn charted(
+        artist: &str,
+        title: &str,
+        peak: u16,
+        year: u16,
+    ) -> rangeforge_lookup::billboard::Song {
+        rangeforge_lookup::billboard::Song {
+            artist: artist.to_string(),
+            title: title.to_string(),
+            peak,
+            first_year: year,
+        }
+    }
+
+    #[test]
+    fn songs_that_charted_are_marked_only_while_lookups_are_on() {
+        let mut app = ready_app();
+        let index = Arc::new(Hot100::from_songs(vec![charted(
+            "Led Zeppelin",
+            "The Rain Song",
+            14,
+            1973,
+        )]));
+
+        // Lookups start off, so nothing is marked even with an index.
+        app.set_radio(Some(Arc::clone(&index)));
+        assert_eq!(app.groups[0].tracks[0].radio, None);
+        assert_eq!(app.radio_songs(), Some(1));
+
+        app.set_metadata_enabled(true);
+        assert_eq!(
+            app.groups[0].tracks[0].radio,
+            Some(RadioHit {
+                peak: 14,
+                year: 1973
+            })
+        );
+        assert_eq!(
+            app.groups[0].tracks[1].radio, None,
+            "No Quarter never charted"
+        );
+
+        app.set_metadata_enabled(false);
+        assert_eq!(app.groups[0].tracks[0].radio, None);
+
+        // Taking the index away clears the marks too.
+        app.set_metadata_enabled(true);
+        app.set_radio(None);
+        assert_eq!(app.groups[0].tracks[0].radio, None);
+        assert_eq!(app.radio_songs(), None);
+    }
+
+    #[test]
+    fn files_added_later_are_marked_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let cue = dir.path().join("album.cue");
+        std::fs::write(&cue, SHEET.replace("album.flac", "other.flac")).unwrap();
+        std::fs::write(dir.path().join("other.flac"), b"").unwrap();
+
+        let mut app = app_with(Vec::new());
+        app.set_metadata_enabled(true);
+        app.set_radio(Some(Arc::new(Hot100::from_songs(vec![charted(
+            "Led Zeppelin",
+            "No Quarter",
+            1,
+            1973,
+        )]))));
+        app.add_paths(&[cue]);
+
+        assert_eq!(app.groups[0].tracks[1].radio.map(|hit| hit.peak), Some(1));
+    }
+
+    #[test]
+    fn the_lookup_switches_are_saved_and_last_fm_needs_all_three() {
+        let mut app = ready_app();
+        assert!(!app.take_settings_changed());
+        assert!(!app.wants_lastfm());
+
+        app.set_lastfm_enabled(true);
+        assert!(app.take_settings_changed());
+        assert!(!app.wants_lastfm(), "the main switch is off");
+
+        app.set_metadata_enabled(true);
+        assert!(!app.wants_lastfm(), "there is no key");
+
+        app.lastfm_key = KeySource::Saved;
+        assert!(app.wants_lastfm());
+        app.set_lastfm_enabled(false);
+        assert!(
+            !app.wants_lastfm(),
+            "a saved key stays unused while switched off"
+        );
+
+        let saved = app.saved_settings();
+        assert!(saved.metadata.enabled);
+        assert!(!saved.metadata.lastfm_enabled);
+
+        // Setting the same value again is not a change.
+        app.take_settings_changed();
+        app.set_metadata_enabled(true);
+        assert!(!app.take_settings_changed());
     }
 
     #[test]
