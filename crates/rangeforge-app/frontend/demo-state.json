@@ -10,7 +10,7 @@
       "run_state": "saved",
       "run_failure": null,
       "tracks": [
-        {"label": "1 - The Song Remains the Same", "loudness_lufs": -14.2, "true_peak_dbtp": -1.65, "range_lu": 11.0, "adjust_db": -7.8, "limited": false, "unadjustable": false, "saved": true, "included": true},
+        {"label": "1 - The Song Remains the Same", "loudness_lufs": -14.2, "true_peak_dbtp": -1.65, "range_lu": 11.0, "adjust_db": -7.8, "limited": false, "unadjustable": false, "saved": true, "included": true, "identity": {"artist": "Led Zeppelin", "title": "The Song Remains the Same", "album": "Houses of the Holy", "source": "cue"}},
         {"label": "2 - The Rain Song", "loudness_lufs": -20.66, "true_peak_dbtp": -1.91, "range_lu": 12.2, "adjust_db": 1.31, "limited": true, "unadjustable": false, "saved": true, "included": true, "tags": [{"text": "Radio", "kind": "radio", "title": "Reached #14 on the Billboard Hot 100 (1973)"}]}
       ]
     },
@@ -56,14 +56,14 @@
     "single": "{name}",
     "example": {"album_example": "07 - No Quarter.m4a", "album_problem": null, "single_example": "14 - Shot at the Night.m4a", "single_problem": null},
     "variables": [
-      {"key": "{track}", "meaning": "track number; {track:02} pads it to two digits", "for_singles": false},
-      {"key": "{title}", "meaning": "song title", "for_singles": false},
-      {"key": "{artist}", "meaning": "song artist", "for_singles": false},
-      {"key": "{album}", "meaning": "album title", "for_singles": false},
-      {"key": "{albumartist}", "meaning": "album artist", "for_singles": false},
-      {"key": "{year}", "meaning": "year, from the CUE sheet's date", "for_singles": false},
-      {"key": "{genre}", "meaning": "genre", "for_singles": false},
-      {"key": "{name}", "meaning": "the original file's name, without its extension", "for_singles": true}
+      {"key": "{track}", "meaning": "track number; {track:02} pads it to two digits"},
+      {"key": "{title}", "meaning": "song title"},
+      {"key": "{artist}", "meaning": "song artist"},
+      {"key": "{album}", "meaning": "album title"},
+      {"key": "{albumartist}", "meaning": "album artist"},
+      {"key": "{year}", "meaning": "year, from the CUE sheet's date"},
+      {"key": "{genre}", "meaning": "genre"},
+      {"key": "{name}", "meaning": "the original file's name, without its extension"}
     ]
   },
   "options": {

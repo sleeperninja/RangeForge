@@ -5,12 +5,14 @@
 //! The [`cache`] module remembers results so a file is only decoded once, ever.
 //!
 //! The pieces: [`decode`] streams a file as blocks of audio, [`span`] cuts that stream into
-//! tracks, [`measure`] measures each track, and [`cache`] remembers the results.
+//! tracks, [`measure`] measures each track, [`cache`] remembers the results, and [`tags`]
+//! reads the tags stored in a file.
 
 pub mod cache;
 pub mod decode;
 mod error;
 pub mod measure;
 pub mod span;
+pub mod tags;
 
 pub use error::AudioError;

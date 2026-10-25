@@ -5,6 +5,8 @@
 //! When a value is missing, the separator text next to it goes too, so `{track:02} - {title}`
 //! gives `Title` for a song with no track number rather than ` - Title`.
 
+use rangeforge_core::identify::Identity;
+
 use crate::naming::{replace_forbidden, sanitize};
 use crate::tags::Tags;
 
@@ -68,32 +70,6 @@ impl Variable {
     }
 }
 
-/// Which kind of file a template names, which decides the variables it may use.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Scope {
-    /// A song cut from a CUE album: everything the CUE sheet says.
-    Album,
-    /// A single file: only its own name, since its tags are copied through untouched.
-    Single,
-}
-
-impl Scope {
-    #[must_use]
-    pub fn allows(self, variable: Variable) -> bool {
-        match self {
-            Self::Album => true,
-            Self::Single => variable == Variable::Name,
-        }
-    }
-
-    fn describe(self) -> &'static str {
-        match self {
-            Self::Album => "CUE albums",
-            Self::Single => "single files",
-        }
-    }
-}
-
 /// The values a template can use. A value that is `None` counts as missing.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct NameValues {
@@ -111,19 +87,30 @@ impl NameValues {
     /// The values for a song with these tags, from the file called `name` (no extension).
     #[must_use]
     pub fn from_tags(tags: &Tags, name: &str) -> Self {
-        // A CUE date can be a full date; a year is its first four digits.
-        let year = tags.date.as_deref().and_then(|date| {
-            let digits: String = date.chars().take_while(char::is_ascii_digit).collect();
-            (digits.len() >= 4).then(|| digits[..4].to_string())
-        });
         Self {
             track: tags.track,
             title: Some(tags.title.clone().unwrap_or_else(|| "untitled".to_string())),
             artist: tags.artist.clone(),
             album: tags.album.clone(),
             album_artist: tags.album_artist.clone(),
-            year,
+            year: tags.date.as_deref().and_then(year_of),
             genre: tags.genre.clone(),
+            name: Some(name.to_string()),
+        }
+    }
+
+    /// The values for a song known by this identity (from its tags, or guessed from its path),
+    /// from the file called `name` (no extension). What is not known stays missing.
+    #[must_use]
+    pub fn from_identity(identity: &Identity, name: &str) -> Self {
+        Self {
+            track: identity.track,
+            title: identity.title.clone(),
+            artist: identity.artist.clone(),
+            album: identity.album.clone(),
+            album_artist: identity.album_artist.clone(),
+            year: identity.date.as_deref().and_then(year_of),
+            genre: identity.genre.clone(),
             name: Some(name.to_string()),
         }
     }
@@ -141,6 +128,12 @@ impl NameValues {
             Variable::Name => text(&self.name),
         }
     }
+}
+
+/// A date can be a whole date; the year is its first four digits.
+fn year_of(date: &str) -> Option<String> {
+    let digits: String = date.chars().take_while(char::is_ascii_digit).collect();
+    (digits.len() >= 4).then(|| digits[..4].to_string())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -186,7 +179,7 @@ impl Template {
     }
 
     /// Checks `text` and turns it into a template, or says what is wrong in plain words.
-    pub fn parse(text: &str, scope: Scope) -> Result<Self, String> {
+    pub fn parse(text: &str) -> Result<Self, String> {
         if text.trim().is_empty() {
             return Err("the name pattern is empty".to_string());
         }
@@ -210,7 +203,7 @@ impl Template {
                     if !literal.is_empty() {
                         pieces.push(Piece::Text(std::mem::take(&mut literal)));
                     }
-                    pieces.push(parse_variable(&inner, scope)?);
+                    pieces.push(parse_variable(&inner)?);
                 }
                 '}' => return Err("a } has no opening {".to_string()),
                 other => literal.push(other),
@@ -281,7 +274,7 @@ impl Template {
     }
 }
 
-fn parse_variable(inner: &str, scope: Scope) -> Result<Piece, String> {
+fn parse_variable(inner: &str) -> Result<Piece, String> {
     let inner = inner.trim();
     let (key, width) = match inner.split_once(':') {
         Some((key, width)) => (key.trim(), Some(width.trim())),
@@ -297,13 +290,6 @@ fn parse_variable(inner: &str, scope: Scope) -> Result<Piece, String> {
             known.join(", ")
         )
     })?;
-    if !scope.allows(variable) {
-        return Err(format!(
-            "{{{}}} cannot be used for {}",
-            variable.key(),
-            scope.describe()
-        ));
-    }
     let width = match width {
         None => 0,
         Some(digits) if variable == Variable::Track => digits
@@ -341,16 +327,13 @@ mod tests {
     }
 
     fn album(text: &str) -> Template {
-        Template::parse(text, Scope::Album).unwrap()
+        Template::parse(text).unwrap()
     }
 
     #[test]
     fn the_standard_templates_are_what_they_say() {
         assert_eq!(Template::standard_album(), album("{track:02} - {title}"));
-        assert_eq!(
-            Template::standard_single(),
-            Template::parse("{name}", Scope::Single).unwrap()
-        );
+        assert_eq!(Template::standard_single(), album("{name}"));
         assert_eq!(
             Template::standard_album().file_name(&song(), "m4a"),
             "07 - No Quarter.m4a"
@@ -455,26 +438,45 @@ mod tests {
 
     #[test]
     fn mistakes_are_explained() {
-        let error = |text: &str, scope| Template::parse(text, scope).unwrap_err();
-        assert!(error("", Scope::Album).contains("empty"));
-        assert!(error("  ", Scope::Album).contains("empty"));
-        assert!(error("{nope}", Scope::Album).contains("not a known variable"));
-        assert!(error("{nope}", Scope::Album).contains("{title}"));
-        assert!(error("{title", Scope::Album).contains("closing"));
-        assert!(error("title}", Scope::Album).contains("opening"));
-        assert!(error("just text", Scope::Album).contains("at least one variable"));
-        assert!(error("{artist}/{title}", Scope::Album).contains('/'));
-        assert!(error("{track:x}", Scope::Album).contains("1 to 4"));
-        assert!(error("{track:9}", Scope::Album).contains("1 to 4"));
-        assert!(error("{title:02}", Scope::Album).contains("only {track}"));
+        let error = |text: &str| Template::parse(text).unwrap_err();
+        assert!(error("").contains("empty"));
+        assert!(error("  ").contains("empty"));
+        assert!(error("{nope}").contains("not a known variable"));
+        assert!(error("{nope}").contains("{title}"));
+        assert!(error("{title").contains("closing"));
+        assert!(error("title}").contains("opening"));
+        assert!(error("just text").contains("at least one variable"));
+        assert!(error("{artist}/{title}").contains('/'));
+        assert!(error("{track:x}").contains("1 to 4"));
+        assert!(error("{track:9}").contains("1 to 4"));
+        assert!(error("{title:02}").contains("only {track}"));
     }
 
     #[test]
-    fn single_files_may_only_use_their_own_name() {
-        assert!(Template::parse("{name}", Scope::Single).is_ok());
-        assert!(Template::parse("{name} (lossless)", Scope::Single).is_ok());
-        let error = Template::parse("{artist} - {name}", Scope::Single).unwrap_err();
-        assert!(error.contains("single files"), "{error}");
+    fn a_song_known_by_its_identity_is_named_from_it() {
+        use rangeforge_core::identify::{Identity, IdentitySource};
+        let identity = Identity {
+            artist: Some("Led Zeppelin".to_string()),
+            title: Some("No Quarter".to_string()),
+            album: Some("Houses of the Holy".to_string()),
+            track: Some(7),
+            date: Some("1973-03-28".to_string()),
+            ..Identity::unknown(IdentitySource::FileTags)
+        };
+        let values = NameValues::from_identity(&identity, "file name");
+        assert_eq!(
+            album("{track:02} {artist} - {title} ({year})").render(&values),
+            "07 Led Zeppelin - No Quarter (1973)"
+        );
+        assert_eq!(album("{name}").render(&values), "file name");
+
+        // What the identity does not know is simply left out.
+        let guess = Identity {
+            title: Some("song".to_string()),
+            ..Identity::unknown(IdentitySource::FileName)
+        };
+        let values = NameValues::from_identity(&guess, "song");
+        assert_eq!(album("{artist} - {title}").render(&values), "song");
     }
 
     #[test]

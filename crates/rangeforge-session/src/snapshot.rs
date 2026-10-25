@@ -10,6 +10,7 @@
 
 use serde::Serialize;
 
+use rangeforge_core::identify::IdentitySource;
 use rangeforge_export::format::{BitDepth, Codec};
 
 use crate::controls::{ConflictKind, WhereKind};
@@ -41,6 +42,18 @@ pub struct TrackView {
     pub included: bool,
     /// Labels from outside lookups, shown in the Tags column.
     pub tags: Vec<TagChip>,
+    /// Who the song is, and how that was found out.
+    pub identity: Option<IdentityView>,
+}
+
+/// Who a song is, for the window to show on hover.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IdentityView {
+    pub artist: Option<String>,
+    pub title: Option<String>,
+    pub album: Option<String>,
+    /// Where it came from: `cue`, `tags`, or `name` (a guess from the file name).
+    pub source: &'static str,
 }
 
 /// One label in the Tags column.
@@ -126,8 +139,6 @@ pub struct VariableView {
     /// As typed in a pattern, braces included: `{title}`.
     pub key: String,
     pub meaning: String,
-    /// Whether single files may use it.
-    pub for_singles: bool,
 }
 
 /// The file name patterns, for the Settings window.
@@ -247,6 +258,16 @@ fn track_view(app: &App, track: &TrackRow) -> TrackView {
             })
             .into_iter()
             .collect(),
+        identity: track.identity.as_ref().map(|identity| IdentityView {
+            artist: identity.artist.clone(),
+            title: identity.title.clone(),
+            album: identity.album.clone(),
+            source: match identity.source {
+                IdentitySource::CueSheet => "cue",
+                IdentitySource::FileTags => "tags",
+                IdentitySource::FileName => "name",
+            },
+        }),
     }
 }
 
@@ -364,11 +385,7 @@ impl App {
                 ),
                 variables: naming::variables()
                     .into_iter()
-                    .map(|(key, meaning, for_singles)| VariableView {
-                        key,
-                        meaning,
-                        for_singles,
-                    })
+                    .map(|(key, meaning)| VariableView { key, meaning })
                     .collect(),
             },
             metadata: MetadataView {
@@ -573,12 +590,7 @@ mod tests {
             Some("07 - No Quarter.m4a")
         );
         assert_eq!(naming.variables.len(), 8);
-        assert!(
-            naming
-                .variables
-                .iter()
-                .any(|v| v.key == "{albumartist}" && !v.for_singles)
-        );
+        assert!(naming.variables.iter().any(|v| v.key == "{albumartist}"));
 
         // The example follows the chosen format's extension.
         app.set_codec(Codec::Flac);

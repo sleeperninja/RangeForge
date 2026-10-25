@@ -46,6 +46,22 @@
       .join('');
   }
 
+  // What to say when the pointer rests on a song: who it is taken to be, and how that was
+  // worked out. A guess from the file name is called one, since it can be wrong.
+  function identityTitle(identity) {
+    if (!identity || (!identity.artist && !identity.title)) {
+      return '';
+    }
+    const who = [identity.artist, identity.title].filter(Boolean).join(' – ');
+    const album = identity.album ? ` (${identity.album})` : '';
+    const how = {
+      cue: 'from the CUE sheet',
+      tags: "from the file's tags",
+      name: "a guess from the file's name and folders",
+    }[identity.source];
+    return `${who}${album} · ${how}`;
+  }
+
   // What the Settings window says about the Last.fm key. The key itself is never shown.
   function lastfmStatusText(metadata) {
     switch (metadata.lastfm_key) {
@@ -66,7 +82,7 @@
     const checked = track.included ? ' checked' : '';
     return (
       `<tr class="${cls}" data-group="${groupIndex}" data-track="${trackIndex}">` +
-      `<td class="name"><input type="checkbox" class="include" data-group="${groupIndex}" data-track="${trackIndex}"${checked} title="Include this song in the run">` +
+      `<td class="name" title="${esc(identityTitle(track.identity))}"><input type="checkbox" class="include" data-group="${groupIndex}" data-track="${trackIndex}"${checked} title="Include this song in the run">` +
       `<span class="mark">${mark}</span>${esc(track.label)}</td>` +
       `<td class="codec">${esc(outputCodec)}</td>` +
       `<td class="num">${fixed(track.loudness_lufs, 2)}</td>` +
@@ -162,12 +178,7 @@
 
   // The variables a file name pattern can use, for the Settings window.
   function variablesHtml(variables) {
-    return variables
-      .map((v) => {
-        const note = v.for_singles ? ' <span class="single">(also single files)</span>' : '';
-        return `<li><code>${esc(v.key)}</code> ${esc(v.meaning)}${note}</li>`;
-      })
-      .join('');
+    return variables.map((v) => `<li><code>${esc(v.key)}</code> ${esc(v.meaning)}</li>`).join('');
   }
 
   // What to tell the user before a run that overwrites files or deletes originals.
@@ -236,6 +247,7 @@
     fixed,
     signed,
     chipsHtml,
+    identityTitle,
     lastfmStatusText,
     trackRowHtml,
     groupRowsHtml,

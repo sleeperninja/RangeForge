@@ -5,6 +5,8 @@
 //!
 //! - [`cue`]: parse CUE sheets into tracks with sample-accurate offsets.
 //! - [`planner`]: decide how much gain each track gets, with true-peak protection.
+//! - [`identify`]: who a song is (artist, title, album), from a CUE sheet or a file name.
 
 pub mod cue;
+pub mod identify;
 pub mod planner;

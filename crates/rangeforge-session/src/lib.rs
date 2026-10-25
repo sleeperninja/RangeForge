@@ -16,6 +16,7 @@
 pub mod appsettings;
 pub mod controls;
 pub mod engine;
+pub mod identity;
 pub mod load;
 pub mod measuring;
 pub mod model;

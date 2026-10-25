@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use rangeforge_core::identify::Identity;
 use rangeforge_core::planner::{GainPlan, Measurement, PlanError, Target, plan_gain};
 use rangeforge_export::format::OutputFormat;
 use rangeforge_export::pipeline::TrackPlan;
@@ -63,6 +64,7 @@ pub fn track_plans(
     planned: &[Planned],
     format: OutputFormat,
     names: &NameTemplates,
+    identities: &[Option<Identity>],
 ) -> (Vec<TrackPlan>, PathBuf) {
     let extension = format.codec.extension();
     let source_dir = job
@@ -91,10 +93,15 @@ pub fn track_plans(
             .collect(),
         _ => planned
             .iter()
-            .map(|planned| {
-                let values = NameValues {
-                    name: Some(source_name.clone()),
-                    ..NameValues::default()
+            .enumerate()
+            .map(|(index, planned)| {
+                // A single file is named from what is known about its song, if anything is.
+                let values = match identities.get(index).and_then(Option::as_ref) {
+                    Some(identity) => NameValues::from_identity(identity, &source_name),
+                    None => NameValues {
+                        name: Some(source_name.clone()),
+                        ..NameValues::default()
+                    },
                 };
                 TrackPlan {
                     gain_db: gain_of(planned),
@@ -175,7 +182,7 @@ mod tests {
             &[measurement(-20.0, -2.0), measurement(-20.0, -2.0)],
             TARGET,
         );
-        let (plans, dir) = track_plans(&job, &planned, alac(), &NameTemplates::default());
+        let (plans, dir) = track_plans(&job, &planned, alac(), &NameTemplates::default(), &[]);
 
         assert_eq!(dir, PathBuf::from("music/album"));
         assert_eq!(plans[0].file_name, "01 - First.m4a");
@@ -188,7 +195,7 @@ mod tests {
     fn single_files_keep_their_name_and_their_own_tags() {
         let job = single_job();
         let planned = plan_tracks(&job, &[measurement(-20.0, -2.0)], TARGET);
-        let (plans, dir) = track_plans(&job, &planned, alac(), &NameTemplates::default());
+        let (plans, dir) = track_plans(&job, &planned, alac(), &NameTemplates::default(), &[]);
 
         assert_eq!(dir, PathBuf::from("music"));
         assert_eq!(plans[0].file_name, "14 - Shot at the Night.m4a");
@@ -211,12 +218,12 @@ mod tests {
             &[measurement(-20.0, -2.0), measurement(-20.0, -2.0)],
             TARGET,
         );
-        let (plans, _) = track_plans(&job, &planned, alac(), &names);
+        let (plans, _) = track_plans(&job, &planned, alac(), &names, &[]);
         assert_eq!(plans[0].file_name, "The Band - Album - 01 First.m4a");
 
         let job = single_job();
         let planned = plan_tracks(&job, &[measurement(-20.0, -2.0)], TARGET);
-        let (plans, _) = track_plans(&job, &planned, alac(), &names);
+        let (plans, _) = track_plans(&job, &planned, alac(), &names, &[]);
         assert_eq!(plans[0].file_name, "14 - Shot at the Night (balanced).m4a");
     }
 
@@ -229,7 +236,7 @@ mod tests {
             TARGET,
         );
         assert!(planned[0].gain.is_err());
-        let (plans, _) = track_plans(&job, &planned, alac(), &NameTemplates::default());
+        let (plans, _) = track_plans(&job, &planned, alac(), &NameTemplates::default(), &[]);
         assert!(plans[0].gain_db.abs() < f64::EPSILON);
     }
 }

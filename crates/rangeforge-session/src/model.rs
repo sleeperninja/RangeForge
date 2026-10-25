@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use rangeforge_core::identify::Identity;
 use rangeforge_core::planner::{self, GainPlan, Measurement, PlanError, Target};
 use rangeforge_export::format::{BitDepth, Codec, OutputFormat};
 use rangeforge_export::pipeline::TrackPlan;
@@ -153,6 +154,9 @@ pub struct TrackRow {
     pub included: bool,
     /// The song reached the Billboard Hot 100 (the blue "Radio" tag), once looked up.
     pub radio: Option<RadioHit>,
+    /// Who the song is: from the CUE sheet, the file's tags, or a guess from its name. What
+    /// every lookup works from.
+    pub identity: Option<Identity>,
 }
 
 /// How a song did on the Billboard Hot 100.
@@ -173,6 +177,7 @@ impl TrackRow {
             saved: false,
             included: true,
             radio: None,
+            identity: None,
         }
     }
 }
@@ -212,6 +217,9 @@ pub struct MeasureOutcome {
     pub group: usize,
     pub result: Result<(Vec<Measurement>, Origin), String>,
     pub elapsed: Duration,
+    /// For a single file, who its song is, read from the file's tags. `None` for CUE albums,
+    /// which are identified from their sheet.
+    pub identity: Option<Identity>,
 }
 
 /// Progress of a run, sent back from the worker that is writing the files.
@@ -387,33 +395,19 @@ impl App {
     }
 
     /// Marks each song that reached the Hot 100, or clears the marks when lookups are off or
-    /// there is no index yet. Needs a CUE sheet to know who sang what; single files carry
-    /// their own tags and are not looked up yet.
+    /// there is no index yet. A song is looked up by its identity, so it needs an artist and a
+    /// title from somewhere: its CUE sheet, its file's tags, or its file name.
     fn refresh_radio(&mut self) {
-        for group in &mut self.groups {
-            for track in &mut group.tracks {
-                track.radio = None;
-            }
-        }
-        let Some(index) = self.radio.clone().filter(|_| self.metadata.enabled) else {
-            return;
-        };
-        for job in &self.jobs {
-            let (Some(file), Some(sheet)) = (&job.cue_file, &job.sheet) else {
-                continue;
-            };
-            let Some(group) = self.groups.get_mut(job.group) else {
-                continue;
-            };
-            for (track, row) in file.tracks.iter().zip(&mut group.tracks) {
-                let artist = track.performer.as_deref().or(sheet.performer.as_deref());
-                if let (Some(artist), Some(title)) = (artist, track.title.as_deref()) {
-                    row.radio = index.find(artist, title).map(|song| RadioHit {
-                        peak: song.peak,
-                        year: song.first_year,
-                    });
-                }
-            }
+        let index = self.radio.clone().filter(|_| self.metadata.enabled);
+        for track in self.groups.iter_mut().flat_map(|group| &mut group.tracks) {
+            track.radio = index.as_ref().and_then(|index| {
+                let identity = track.identity.as_ref()?;
+                let song = index.find(identity.artist.as_deref()?, identity.title.as_deref()?)?;
+                Some(RadioHit {
+                    peak: song.peak,
+                    year: song.first_year,
+                })
+            });
         }
     }
 
@@ -490,6 +484,12 @@ impl App {
             return;
         };
         let name = group.name.clone();
+        // A single file's tags arrive with its measurement.
+        if group.kind == Kind::SingleFile
+            && let (Some(identity), Some(track)) = (outcome.identity, group.tracks.first_mut())
+        {
+            track.identity = Some(identity);
+        }
         let line = match outcome.result {
             Ok((measurements, origin)) if measurements.len() == group.tracks.len() => {
                 for (track, measurement) in group.tracks.iter_mut().zip(measurements) {
@@ -519,6 +519,7 @@ impl App {
             }
         };
         self.log(line);
+        self.refresh_radio();
     }
 
     /// Records progress of a run.
@@ -639,7 +640,12 @@ impl App {
                 continue;
             }
             let planned = plan_tracks(job, &measurements, self.settings.target());
-            let (mut plans, directory) = track_plans(job, &planned, format, &names);
+            let identities: Vec<Option<Identity>> = group
+                .tracks
+                .iter()
+                .map(|track| track.identity.clone())
+                .collect();
+            let (mut plans, directory) = track_plans(job, &planned, format, &names, &identities);
             for (plan, track) in plans.iter_mut().zip(&group.tracks) {
                 plan.skip = !track.included;
             }
@@ -1117,16 +1123,20 @@ mod tests {
     /// An app with one measured two-song CUE album, ready to run.
     fn ready_app() -> App {
         let sheet = cue::parse(SHEET).unwrap();
+        let mut group = album(vec![
+            row("1 - The Rain Song", Some(measurement(-20.66, -1.91))),
+            row("2 - No Quarter", Some(measurement(-19.05, -2.37))),
+        ]);
+        // As when loaded from the sheet, each song knows who it is.
+        for (row, track) in group.tracks.iter_mut().zip(&sheet.files[0].tracks) {
+            row.identity = Some(Identity::from_cue(&sheet, track));
+        }
         let job = Job {
             group: 0,
             audio: PathBuf::from("music/album/album.flac"),
             cue_file: Some(sheet.files[0].clone()),
             sheet: Some(sheet),
         };
-        let mut group = album(vec![
-            row("1 - The Rain Song", Some(measurement(-20.66, -1.91))),
-            row("2 - No Quarter", Some(measurement(-19.05, -2.37))),
-        ]);
         group.status = Status::Done(Origin::Decoded);
         let mut app = App::new(vec![group], vec![job], Vec::new(), Settings::default());
         app.presets = PresetList::new(built_in());
@@ -1217,6 +1227,7 @@ mod tests {
                 Origin::Cache,
             )),
             elapsed: Duration::ZERO,
+            identity: None,
         });
 
         assert_eq!(app.pending(), 0);
@@ -1235,11 +1246,13 @@ mod tests {
             group: 0,
             result: Err("file not found".to_string()),
             elapsed: Duration::ZERO,
+            identity: None,
         });
         app.apply(MeasureOutcome {
             group: 1,
             result: Ok((vec![measurement(-15.0, -3.0)], Origin::Decoded)),
             elapsed: Duration::ZERO,
+            identity: None,
         });
 
         assert_eq!(
@@ -1902,6 +1915,106 @@ mod tests {
         app.add_paths(&[cue]);
 
         assert_eq!(app.groups[0].tracks[1].radio.map(|hit| hit.peak), Some(1));
+    }
+
+    #[test]
+    fn a_single_file_is_looked_up_by_its_tags_once_they_are_read_and_by_its_name_before() {
+        use rangeforge_core::identify::IdentitySource;
+
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("Led Zeppelin").join("Houses of the Holy");
+        std::fs::create_dir_all(&folder).unwrap();
+        let song = folder.join("04 - The Song Remains the Same.flac");
+        std::fs::write(&song, b"").unwrap();
+
+        let mut app = app_with(Vec::new());
+        app.set_metadata_enabled(true);
+        app.set_radio(Some(Arc::new(Hot100::from_songs(vec![
+            charted("Led Zeppelin", "Dyer Maker", 20, 1973),
+            charted("Led Zeppelin", "The Song Remains The Same (Live)", 99, 1976),
+        ]))));
+        app.add_paths(&[song]);
+
+        // Added: only its name is known, and it names a song that did not chart.
+        let track = &app.groups[0].tracks[0];
+        let guess = track.identity.as_ref().unwrap();
+        assert_eq!(guess.source, IdentitySource::FileName);
+        assert_eq!(guess.artist.as_deref(), Some("Led Zeppelin"));
+        assert_eq!(guess.title.as_deref(), Some("The Song Remains the Same"));
+        assert_eq!(
+            track.radio.map(|hit| hit.peak),
+            Some(99),
+            "found by its guessed name"
+        );
+
+        // Measured: the file's own tags say something else, and they win.
+        let tagged = Identity {
+            artist: Some("Led Zeppelin".to_string()),
+            title: Some("D'yer Mak'er".to_string()),
+            ..Identity::unknown(IdentitySource::FileTags)
+        };
+        app.apply(MeasureOutcome {
+            group: 0,
+            result: Ok((vec![measurement(-15.0, -3.0)], Origin::Decoded)),
+            elapsed: Duration::ZERO,
+            identity: Some(tagged),
+        });
+        let track = &app.groups[0].tracks[0];
+        assert_eq!(
+            track.identity.as_ref().unwrap().source,
+            IdentitySource::FileTags
+        );
+        assert_eq!(track.radio.map(|hit| hit.peak), Some(20));
+    }
+
+    #[test]
+    fn a_cue_albums_identity_is_not_replaced_by_a_measurement() {
+        let mut app = ready_app();
+        let before = app.groups[0].tracks[0].identity.clone();
+        app.groups[0].status = Status::Pending;
+        app.apply(MeasureOutcome {
+            group: 0,
+            result: Ok((
+                vec![measurement(-20.0, -2.0), measurement(-19.0, -2.0)],
+                Origin::Decoded,
+            )),
+            elapsed: Duration::ZERO,
+            identity: Some(Identity::unknown(
+                rangeforge_core::identify::IdentitySource::FileTags,
+            )),
+        });
+        assert_eq!(app.groups[0].tracks[0].identity, before);
+    }
+
+    #[test]
+    fn single_files_are_named_from_what_is_known_about_them() {
+        use rangeforge_core::identify::IdentitySource;
+
+        let dir = tempfile::tempdir().unwrap();
+        let song = dir.path().join("whatever.flac");
+        std::fs::write(&song, b"").unwrap();
+        let mut app = app_with(Vec::new());
+        app.add_paths(&[song]);
+        app.apply(MeasureOutcome {
+            group: 0,
+            result: Ok((vec![measurement(-15.0, -3.0)], Origin::Decoded)),
+            elapsed: Duration::ZERO,
+            identity: Some(Identity {
+                artist: Some("The Killers".to_string()),
+                title: Some("Shot at the Night".to_string()),
+                track: Some(14),
+                ..Identity::unknown(IdentitySource::FileTags)
+            }),
+        });
+        app.set_naming("{track:02} - {title}", "{artist} - {title}")
+            .unwrap();
+
+        app.handle_key(Key::Enter);
+        let spec = app.take_run_spec().unwrap();
+        assert_eq!(
+            spec.items[0].plans[0].file_name,
+            "The Killers - Shot at the Night.m4a"
+        );
     }
 
     #[test]

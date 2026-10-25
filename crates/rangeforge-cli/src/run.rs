@@ -10,6 +10,7 @@ use rangeforge_export::ffmpeg::Ffmpeg;
 use rangeforge_export::format::OutputFormat;
 use rangeforge_export::pipeline::{Options, Progress, export_file, preview};
 use rangeforge_export::strategy::{Resolved, Strategy};
+use rangeforge_session::identity::identify_file;
 use rangeforge_session::load::{Job, load};
 use rangeforge_session::measuring::{measure_split, measure_whole};
 use rangeforge_session::model::{Group, Settings, Status};
@@ -137,7 +138,13 @@ fn run_job(
         None => measure_whole(&job.audio, cache)?,
     };
     let planned = plan_tracks(job, &measured.tracks, settings.target());
-    let (plans, source_dir) = track_plans(job, &planned, format, names);
+    // A single file is named from its own tags, or failing that its file name.
+    let identities = if job.cue_file.is_none() {
+        vec![Some(identify_file(&job.audio))]
+    } else {
+        Vec::new()
+    };
+    let (plans, source_dir) = track_plans(job, &planned, format, names, &identities);
     let write_options = Options {
         format,
         strategy: strategy.clone(),

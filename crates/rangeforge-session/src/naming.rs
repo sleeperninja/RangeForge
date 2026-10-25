@@ -1,7 +1,7 @@
 //! The file name patterns: what the user typed, the checked templates made from them, and an
 //! example of each so the screen can show what a pattern will produce.
 
-use rangeforge_export::template::{NameValues, Scope, Template, Variable};
+use rangeforge_export::template::{NameValues, Template, Variable};
 
 /// The usual name of a song cut from a CUE album.
 pub const DEFAULT_ALBUM: &str = "{track:02} - {title}";
@@ -46,9 +46,9 @@ impl NameSettings {
     /// Checks both patterns, naming the one that is wrong.
     pub fn templates(&self) -> Result<NameTemplates, String> {
         Ok(NameTemplates {
-            album: Template::parse(&self.album, Scope::Album)
+            album: Template::parse(&self.album)
                 .map_err(|problem| format!("CUE album names: {problem}"))?,
-            single: Template::parse(&self.single, Scope::Single)
+            single: Template::parse(&self.single)
                 .map_err(|problem| format!("single file names: {problem}"))?,
         })
     }
@@ -70,8 +70,14 @@ fn sample_album_song() -> NameValues {
 
 fn sample_single() -> NameValues {
     NameValues {
+        track: Some(14),
+        title: Some("Shot at the Night".to_string()),
+        artist: Some("The Killers".to_string()),
+        album: Some("Direct Hits".to_string()),
+        album_artist: Some("The Killers".to_string()),
+        year: Some("2013".to_string()),
+        genre: Some("Rock".to_string()),
         name: Some("14 - Shot at the Night".to_string()),
-        ..NameValues::default()
     }
 }
 
@@ -88,8 +94,8 @@ pub struct NamingPreview {
 /// Works out the examples for patterns that may not be valid yet, using `extension`.
 #[must_use]
 pub fn preview(album: &str, single: &str, extension: &str) -> NamingPreview {
-    let album = Template::parse(album, Scope::Album);
-    let single = Template::parse(single, Scope::Single);
+    let album = Template::parse(album);
+    let single = Template::parse(single);
     NamingPreview {
         album_example: album
             .as_ref()
@@ -106,14 +112,13 @@ pub fn preview(album: &str, single: &str, extension: &str) -> NamingPreview {
 
 /// The variables a pattern can use, with what each means, for the Settings window to list.
 #[must_use]
-pub fn variables() -> Vec<(String, String, bool)> {
+pub fn variables() -> Vec<(String, String)> {
     Variable::ALL
         .into_iter()
         .map(|variable| {
             (
                 format!("{{{}}}", variable.key()),
                 variable.describe().to_string(),
-                Scope::Single.allows(variable),
             )
         })
         .collect()
@@ -143,7 +148,7 @@ mod tests {
         );
 
         let settings = NameSettings {
-            single: "{artist}".to_string(),
+            single: "no variable here".to_string(),
             ..NameSettings::default()
         };
         assert!(
@@ -151,6 +156,20 @@ mod tests {
                 .templates()
                 .unwrap_err()
                 .starts_with("single file names:")
+        );
+    }
+
+    #[test]
+    fn single_files_can_use_everything_a_song_is_known_by() {
+        let settings = NameSettings {
+            single: "{artist} - {title}".to_string(),
+            ..NameSettings::default()
+        };
+        assert!(settings.templates().is_ok());
+        let shown = preview("{title}", "{artist} - {title}", "m4a");
+        assert_eq!(
+            shown.single_example.as_deref(),
+            Some("The Killers - Shot at the Night.m4a")
         );
     }
 
@@ -170,16 +189,14 @@ mod tests {
         let broken = preview("{oops}", "{title}", "flac");
         assert_eq!(broken.album_example, None);
         assert!(broken.album_problem.is_some());
-        assert!(broken.single_problem.unwrap().contains("single files"));
+        assert_eq!(broken.single_problem, None);
     }
 
     #[test]
-    fn the_variable_list_says_which_apply_to_single_files() {
+    fn the_variable_list_names_every_variable() {
         let list = variables();
         assert_eq!(list.len(), 8);
-        let name = list.iter().find(|(key, ..)| key == "{name}").unwrap();
-        assert!(name.2);
-        let title = list.iter().find(|(key, ..)| key == "{title}").unwrap();
-        assert!(!title.2);
+        assert!(list.iter().any(|(key, _)| key == "{albumartist}"));
+        assert!(list.iter().all(|(_, meaning)| !meaning.is_empty()));
     }
 }

@@ -560,6 +560,52 @@ fn preview_matches_what_a_run_does_and_writes_nothing() {
 }
 
 #[test]
+fn tags_written_to_a_file_can_be_read_back() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let (dir, input) = with_source("in.wav", 1, 200);
+    let tags = Tags {
+        title: Some("The Rain Song".to_string()),
+        artist: Some("Led Zeppelin".to_string()),
+        album: Some("Houses of the Holy".to_string()),
+        album_artist: Some("Led Zeppelin".to_string()),
+        track: Some(2),
+        track_total: Some(8),
+        genre: Some("Rock".to_string()),
+        date: Some("1973".to_string()),
+    };
+    for (codec, name) in [(Codec::Flac, "tagged.flac"), (Codec::Alac, "tagged.m4a")] {
+        let opts = options(codec, serialize(), dir.path());
+        let plan = TrackPlan {
+            tags: tags.clone(),
+            ..plan(0.0, name)
+        };
+        let written = export_whole(&ffmpeg, &input, plan, &opts).unwrap();
+
+        let found = rangeforge_audio::tags::read_tags(&written[0].path).unwrap();
+        assert_eq!(found.title.as_deref(), Some("The Rain Song"), "{name}");
+        assert_eq!(found.artist.as_deref(), Some("Led Zeppelin"), "{name}");
+        assert_eq!(found.album.as_deref(), Some("Houses of the Holy"), "{name}");
+        assert_eq!(
+            found.album_artist.as_deref(),
+            Some("Led Zeppelin"),
+            "{name}"
+        );
+        assert_eq!(found.genre.as_deref(), Some("Rock"), "{name}");
+        assert_eq!(found.date.as_deref(), Some("1973"), "{name}");
+        assert_eq!(found.track, Some(2), "{name}");
+    }
+
+    // A file with no tags gives back nothing, not an error.
+    let opts = options(Codec::Flac, serialize(), dir.path());
+    let written = export_whole(&ffmpeg, &input, plan(0.0, "bare.flac"), &opts).unwrap();
+    assert!(
+        rangeforge_audio::tags::read_tags(&written[0].path)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
 fn single_files_carry_their_tags_over() {
     let Some(ffmpeg) = ffmpeg() else { return };
     let (dir, input) = with_source("in.wav", 2, 200);

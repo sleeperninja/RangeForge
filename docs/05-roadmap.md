@@ -14,7 +14,7 @@ Still to do: benchmarks, `--json` and the HTML report, Sample Rate and Channels 
 | **1. Core slice** | Decode once, parse CUE, measure, plan gain, cache | Numbers match FFmpeg `ebur128` on real albums; CUE albums split into correct tracks |
 | **2. CLI view** | `analyze` table, interactive `ui`, `--json`, HTML report | The Led Zeppelin + Killers example from the mockup renders and the target can be changed live |
 | **3. Run** | Gain, split, encode (ALAC, FLAC, WAV, AAC), tags, file strategies | PowerShell script no longer needed |
-| **4. Metadata** | File name patterns (done), Billboard "Radio" tag (done for CUE songs), Last.fm genres (key storage done, lookups next), tag editing | Genre and Radio tags fill in for an album |
+| **4. Metadata** | File name patterns (done), Billboard "Radio" tag (done), who-a-song-is from tags and file names (done; editing by hand next), Last.fm genres (key storage done, lookups next), tag editing | Genre and Radio tags fill in for an album |
 | **5. Presets and Settings** | Save/delete presets, encrypted keys, CPU limit, DSD fallback | Matches the Settings mockup |
 | **6. Multichannel** | 4-8 channel loudness, FLAC for Plex, DSD/MLP input | The 206 GB collection processes |
 | **7. Desktop app** | Tauri 2 UI matching the mockups | Mockup layout works end to end |

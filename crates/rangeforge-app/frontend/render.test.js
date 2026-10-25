@@ -85,11 +85,28 @@ test('the confirmation says what will happen', () => {
   assert.match(both, /original is deleted/);
 });
 
-test('the variable list marks which ones single files may use', () => {
+test('the variable list names every variable and what it means', () => {
   const html = Render.variablesHtml(demo.naming.variables);
   assert.match(html, /<code>\{title\}<\/code> song title<\/li>/);
-  assert.match(html, /<code>\{name\}<\/code>[^<]*<span class="single">\(also single files\)<\/span>/);
+  assert.match(html, /<code>\{name\}<\/code> the original file/);
   assert.strictEqual((html.match(/<li>/g) || []).length, 8);
+});
+
+test('hovering a song says who it is and how that was worked out', () => {
+  const cue = { artist: 'Led Zeppelin', title: 'No Quarter', album: 'Houses of the Holy', source: 'cue' };
+  assert.strictEqual(
+    Render.identityTitle(cue),
+    'Led Zeppelin – No Quarter (Houses of the Holy) · from the CUE sheet',
+  );
+  assert.match(Render.identityTitle({ ...cue, source: 'tags' }), /from the file's tags$/);
+  assert.match(Render.identityTitle({ ...cue, source: 'name' }), /a guess from the file's name/);
+  // No album: no empty brackets. Nothing known: nothing said.
+  assert.doesNotMatch(Render.identityTitle({ ...cue, album: null }), /\(/);
+  assert.strictEqual(Render.identityTitle(null), '');
+  assert.strictEqual(Render.identityTitle({ artist: null, title: null, source: 'name' }), '');
+  // It lands on the row, escaped.
+  const row = Render.trackRowHtml({ ...houses.tracks[0], identity: { ...cue, title: '<b>' } }, 'alac', 0, 0);
+  assert.match(row, /<td class="name" title="Led Zeppelin – &lt;b&gt;/);
 });
 
 test('a Radio tag shows as a blue chip with its explanation, and tag text is escaped', () => {

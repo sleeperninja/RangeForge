@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use rangeforge_core::cue::{CueFile, CueSheet};
+use rangeforge_core::identify::Identity;
 
 use crate::measuring::read_sheet;
 use crate::model::{Group, Kind, RunState, Status, TrackRow};
@@ -206,8 +207,9 @@ fn add_cue(cue_path: &Path, loaded: &mut Loaded) {
         let tracks = file
             .tracks
             .iter()
-            .map(|track| {
-                TrackRow::new(format!(
+            .map(|track| TrackRow {
+                identity: Some(Identity::from_cue(&sheet, track)),
+                ..TrackRow::new(format!(
                     "{} - {}",
                     track.number,
                     track.title.as_deref().unwrap_or("(untitled)")
@@ -262,7 +264,11 @@ fn add_single(path: &Path, loaded: &mut Loaded) {
         name: name.clone(),
         kind: Kind::SingleFile,
         source_extension: extension_of(path),
-        tracks: vec![TrackRow::new(stem)],
+        // Until the file's tags are read (with its measurement), its name is the best guide.
+        tracks: vec![TrackRow {
+            identity: Some(Identity::guess_from_path(path)),
+            ..TrackRow::new(stem)
+        }],
         status: Status::Pending,
         run: RunState::Idle,
     });

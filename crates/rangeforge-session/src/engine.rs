@@ -8,6 +8,7 @@ use std::time::Instant;
 use rangeforge_audio::cache::{Cache, Source};
 use rangeforge_core::planner::Measurement;
 
+use crate::identity::identify_file;
 use crate::load::Job;
 use crate::measuring::{measure_split, measure_whole};
 use crate::model::{MeasureOutcome, Origin};
@@ -55,6 +56,8 @@ fn work(queue: &Mutex<Receiver<Job>>, outcomes: &Sender<MeasureOutcome>, cache: 
             group: job.group,
             result,
             elapsed: started.elapsed(),
+            // A single file brings its tags along; a CUE album is identified by its sheet.
+            identity: job.cue_file.is_none().then(|| identify_file(&job.audio)),
         };
         if outcomes.send(outcome).is_err() {
             return;
