@@ -32,5 +32,4 @@ Still to do: benchmarks, `--json` and the HTML report, Sample Rate and Channels 
 
 See [04-decisions.md](04-decisions.md) for anything marked Parked.
 
-- **A genre tag editor for the Apple Music library** (idea, D-26): change genres in the Music app on the Mac mini that serves the library, through its scripting, since Music keeps its own database and does not notice tags changed in the files.
 - **Tag chips with × and right-click Add tag / Rescan tags on a selection** (planned, D-25), after identities can be edited by hand.
