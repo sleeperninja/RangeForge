@@ -96,7 +96,7 @@ node --test crates/rangeforge-app/frontend/render.test.js  # tests of how rows a
 
 The window is a Tauri program. The page lives in `crates/rangeforge-app/frontend/` as plain HTML, CSS and JavaScript, so building needs only Rust. It shows what `rangeforge-session` describes (a `Snapshot`) and sends the user's actions back; every rule stays in Rust. Drop files or folders on it, or use Add files. Outside the program, `index.html` shows sample data from `demo-state.json`, which is how the layout is checked without a window. On Linux it needs the WebKitGTK libraries (see `ci.yml`). It also needs FFmpeg for Run, like the terminal view.
 
-CI uploads a download for each platform (the `RangeForge-<platform>` artifacts on a run's page): the window and the `rangeforge` command, as plain executables. They are not signed or installed, so macOS may ask you to allow them.
+Downloads to try come from the Release workflow (see Releases below), not from the everyday CI run.
 
 ## The analysis cache
 
@@ -144,7 +144,25 @@ Also planned: `cargo deny` (licences, advisories), `criterion` benchmarks, and a
 
 ## Releases
 
-Target order: Windows x64, macOS Apple Silicon, macOS Intel, Linux GNU, Windows ARM. `cargo-dist` will build the artifacts. Each release bundles an FFmpeg binary per platform. This is planned for Phase 8.
+Installers are built by the **Release** workflow (`.github/workflows/release.yml`). Start it by hand from the Actions tab (Run workflow) to try it, or push a tag such as `v0.1.0` to also put the installers on a draft GitHub Release. It makes:
+
+| Platform | What you get |
+| --- | --- |
+| Windows x64 | `RangeForge_<version>_x64_en-US.msi` |
+| macOS Apple Silicon and Intel | a `.dmg` holding `RangeForge.app`, one per chip |
+| Linux GNU, Windows ARM | a `.deb` and an `.msi`, allowed to fail (not hand-tested) |
+
+The installers are **not signed**. On Windows, SmartScreen says the publisher is unknown: choose More info, then Run anyway. On macOS the app is signed ad-hoc (which Apple Silicon requires), but a downloaded app is still quarantined: open the DMG, drag the app out, then right-click it and choose Open the first time. Proper signing would need an Apple Developer account and a Windows certificate; that is a later decision (D-23).
+
+**FFmpeg is inside the installer** (decision D-23), as an LGPL build named in `THIRD_PARTY_NOTICES.md`. `scripts/fetch-ffmpeg.sh <rust-target> <folder>` fetches it: the prebuilt LGPL build on Windows, and a build from the pinned source tag on macOS and Linux (about ten minutes the first time, then cached). The release workflow runs the export tests against that very FFmpeg before packaging anything. The file lands in `crates/rangeforge-app/binaries/` (not in git).
+
+To build an installer on your own Windows machine, install the Tauri build tool once (`cargo install tauri-cli --version "^2" --locked`), put an FFmpeg at `crates\rangeforge-app\binaries\ffmpeg-x86_64-pc-windows-msvc.exe`, and run, from `crates\rangeforge-app`:
+
+```powershell
+cargo tauri build --config tauri.bundle.conf.json --bundles msi
+```
+
+The extra `--config` file is what adds FFmpeg and the notices, so an ordinary `cargo build` does not need them.
 
 ## Secrets
 

@@ -32,3 +32,6 @@ ehthumbs.db
 
 # Written by the Tauri build
 crates/rangeforge-app/gen/
+
+# FFmpeg programs fetched for the installers (scripts/fetch-ffmpeg.sh)
+crates/rangeforge-app/binaries/

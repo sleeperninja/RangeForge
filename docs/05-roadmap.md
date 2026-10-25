@@ -4,9 +4,9 @@ One phase scheme. Status is updated here and nowhere else.
 
 **Now:** Phases 0 and 1 are done except benchmarks. Phases 2, 3 and 5 are mostly done through the terminal view (`rangeforge ui`) and `rangeforge run`: measure, plan gain, split CUE albums, tag and write ALAC, FLAC, WAV or AAC, all four File Strategy choices, presets saved between sessions. On Houses of the Holy the whole album is written in about 9 s, every file measures -22.00 LUFS, and a 0 dB export is sample-for-sample identical to the source.
 
-Phase 7 has started: `rangeforge-app` is a Tauri window (plain HTML, no Node needed to build) with the mockup's layout, drag and drop, file pickers, the settings panels and a working Run. CI now builds both programs on every platform and uploads them.
+Phase 7 has started: `rangeforge-app` is a Tauri window (plain HTML, no Node needed to build) with the mockup's layout, drag and drop, file pickers, the settings panels and a working Run. A Release workflow is set up to build the MSI and DMG installers with FFmpeg inside (D-23); it has not been run on CI yet.
 
-Still to do: benchmarks, `--json` and the HTML report, Sample Rate and Channels controls, multichannel and DSD input, the Settings window, metadata tags, installers and bundled FFmpeg. Settled: D-09 (keep Symphonia), D-12 (gain only, the true-peak ceiling is the limit, no compression).
+Still to do: benchmarks, `--json` and the HTML report, Sample Rate and Channels controls, multichannel and DSD input, the Settings window, the Last.fm and Radio tags, and signing the installers. Settled: D-09 (keep Symphonia), D-12 (gain only, the true-peak ceiling is the limit, no compression).
 
 | Phase | Goal | Done when |
 | --- | --- | --- |
@@ -18,7 +18,7 @@ Still to do: benchmarks, `--json` and the HTML report, Sample Rate and Channels 
 | **5. Presets and Settings** | Save/delete presets, encrypted keys, CPU limit, DSD fallback | Matches the Settings mockup |
 | **6. Multichannel** | 4-8 channel loudness, FLAC for Plex, DSD/MLP input | The 206 GB collection processes |
 | **7. Desktop app** | Tauri 2 UI matching the mockups | Mockup layout works end to end |
-| **8. Releases** | Five-platform CI builds and bundled FFmpeg | Tagged release produces all artifacts |
+| **8. Releases** | MSI and DMG installers with FFmpeg inside, built by CI (set up, not yet run); signing later | Tagged release produces all artifacts |
 
 ## Phase 1 detail
 

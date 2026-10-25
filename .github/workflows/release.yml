@@ -1,0 +1,114 @@
+name: Release
+
+# Builds the installers: an MSI for Windows, and a DMG holding RangeForge.app for macOS.
+# Start it by hand from the Actions tab to try it, or push a tag such as v0.1.0 to also put
+# the installers on a draft GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # First class
+          - { name: Windows x64, os: windows-latest, triple: x86_64-pc-windows-msvc, bundles: msi, experimental: false }
+          - { name: macOS Apple Silicon, os: macos-latest, triple: aarch64-apple-darwin, bundles: "app,dmg", experimental: false }
+          # Secondary
+          - { name: macOS Intel, os: macos-15-intel, triple: x86_64-apple-darwin, bundles: "app,dmg", experimental: false }
+          # Cannot be hand-tested, so a failure here does not fail the run
+          - { name: Linux GNU, os: ubuntu-latest, triple: x86_64-unknown-linux-gnu, bundles: deb, experimental: true }
+          - { name: Windows ARM, os: windows-11-arm, triple: aarch64-pc-windows-msvc, bundles: msi, experimental: true }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install window libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+            librsvg2-dev libxdo-dev libssl-dev
+
+      # FFmpeg is built or downloaded once per platform and kept for the next run.
+      - name: Remember FFmpeg
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: crates/rangeforge-app/binaries
+          key: ffmpeg-${{ matrix.triple }}-${{ hashFiles('scripts/fetch-ffmpeg.sh') }}
+      - name: Get FFmpeg
+        shell: bash
+        run: bash scripts/fetch-ffmpeg.sh "${{ matrix.triple }}" crates/rangeforge-app/binaries
+
+      # The export tests write real files, so run them against the very FFmpeg that goes into
+      # the installer. If it cannot do the job, nothing is packaged.
+      - name: Test the export with the bundled FFmpeg
+        shell: bash
+        run: |
+          ext=""
+          case "${{ matrix.triple }}" in *windows*) ext=".exe" ;; esac
+          ffmpeg="$PWD/crates/rangeforge-app/binaries/ffmpeg-${{ matrix.triple }}$ext"
+          # On Windows, Git Bash paths must become Windows paths for the Rust tests to use.
+          if command -v cygpath > /dev/null; then ffmpeg="$(cygpath -w "$ffmpeg")"; fi
+          export RANGEFORGE_FFMPEG="$ffmpeg"
+          cargo test -p rangeforge-export -p rangeforge-session
+
+      - name: Remember the Tauri build tool
+        id: tauri-cli
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/cargo-tauri
+            ~/.cargo/bin/cargo-tauri.exe
+          key: tauri-cli-${{ runner.os }}-${{ runner.arch }}-v2
+      - name: Install the Tauri build tool
+        if: steps.tauri-cli.outputs.cache-hit != 'true'
+        run: cargo install tauri-cli --version "^2" --locked
+
+      - name: Build the installers
+        working-directory: crates/rangeforge-app
+        run: cargo tauri build --config tauri.bundle.conf.json --bundles ${{ matrix.bundles }} --ci
+
+      - name: Collect the installers
+        shell: bash
+        run: |
+          mkdir dist
+          for pattern in msi/*.msi dmg/*.dmg deb/*.deb; do
+            cp target/release/bundle/$pattern dist/ 2> /dev/null || true
+          done
+          ls -l dist
+          test -n "$(ls -A dist)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RangeForge-${{ matrix.name }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Draft release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: dist/*
