@@ -40,9 +40,16 @@
   }
 
   // The labels from outside lookups in the Tags column. Each kind has its own colour.
-  function chipsHtml(tags) {
+  // With the song's place in the list given, each has a × that removes it.
+  function chipsHtml(tags, groupIndex, trackIndex) {
+    const removable = groupIndex !== undefined && trackIndex !== undefined;
     return (tags || [])
-      .map((tag) => `<span class="chip ${esc(tag.kind)}" title="${esc(tag.title)}">${esc(tag.text)}</span>`)
+      .map((tag) => {
+        const x = removable
+          ? `<button type="button" class="chip-x" data-group="${groupIndex}" data-track="${trackIndex}" data-tag="${esc(tag.text)}" title="Remove this tag">×</button>`
+          : '';
+        return `<span class="chip ${esc(tag.kind)}" title="${esc(tag.title)}">${esc(tag.text)}${x}</span>`;
+      })
       .join('');
   }
 
@@ -55,6 +62,7 @@
     const who = [identity.artist, identity.title].filter(Boolean).join(' – ');
     const album = identity.album ? ` (${identity.album})` : '';
     const how = {
+      hand: 'typed in by you',
       cue: 'from the CUE sheet',
       tags: "from the file's tags",
       name: "a guess from the file's name and folders",
@@ -89,7 +97,7 @@
       `<td class="num">${fixed(track.true_peak_dbtp, 2)}</td>` +
       adjustCell(track) +
       `<td class="num">${fixed(track.range_lu, 1)}</td>` +
-      `<td class="tags">${chipsHtml(track.tags)}</td>` +
+      `<td class="tags">${chipsHtml(track.tags, groupIndex, trackIndex)}</td>` +
       '</tr>'
     );
   }
@@ -166,7 +174,20 @@
       group: groupIndex,
       on: !all,
     });
-    if (trackIndex !== null && group.tracks[trackIndex]) {
+    const song = trackIndex !== null && group.tracks[trackIndex];
+    items.push({
+      action: 'add_tag',
+      label: song ? 'Add a tag to this song…' : 'Add a tag to every song of this album…',
+      group: groupIndex,
+      track: song ? trackIndex : null,
+    });
+    items.push({
+      action: 'edit_names',
+      label: song ? 'Edit artist, title and album…' : 'Edit album name and artist…',
+      group: groupIndex,
+      track: song ? trackIndex : null,
+    });
+    if (song) {
       items.push({
         action: 'lastfm',
         label: 'Get tags from Last.fm for this song',

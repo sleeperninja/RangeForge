@@ -12,6 +12,8 @@ use crate::cue::{CueSheet, CueTrack};
 /// Where an identity came from, from most to least trustworthy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdentitySource {
+    /// Typed in by the user. Nothing replaces it.
+    Hand,
     /// The performer and title lines of a CUE sheet.
     CueSheet,
     /// Tags stored in the audio file.

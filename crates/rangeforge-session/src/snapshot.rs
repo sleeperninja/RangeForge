@@ -53,7 +53,8 @@ pub struct IdentityView {
     pub artist: Option<String>,
     pub title: Option<String>,
     pub album: Option<String>,
-    /// Where it came from: `cue`, `tags`, or `name` (a guess from the file name).
+    pub album_artist: Option<String>,
+    /// Where it came from: `hand`, `cue`, `tags`, or `name` (a guess from the file name).
     pub source: &'static str,
 }
 
@@ -281,7 +282,12 @@ fn chips(app: &App, track: &TrackRow) -> Vec<TagChip> {
             title: "A genre that stands out for this song".to_string(),
         }))
         .collect();
-    if let Some(hit) = track.radio {
+    chips.extend(genres.mine.into_iter().map(|text| TagChip {
+        text,
+        kind: "mine",
+        title: "Added by you".to_string(),
+    }));
+    if let Some(hit) = track.radio.filter(|_| app.shows_radio(track)) {
         chips.push(TagChip {
             text: "Radio".to_string(),
             kind: "radio",
@@ -315,7 +321,9 @@ fn track_view(app: &App, track: &TrackRow) -> TrackView {
             artist: identity.artist.clone(),
             title: identity.title.clone(),
             album: identity.album.clone(),
+            album_artist: identity.album_artist.clone(),
             source: match identity.source {
+                IdentitySource::Hand => "hand",
                 IdentitySource::CueSheet => "cue",
                 IdentitySource::FileTags => "tags",
                 IdentitySource::FileName => "name",

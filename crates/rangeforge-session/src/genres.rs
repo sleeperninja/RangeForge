@@ -49,12 +49,70 @@ pub struct SongGenres {
     pub album: Vec<String>,
     /// What stands out about this song alone. Pink chips.
     pub song: Vec<String>,
+    /// Added by hand. Green chips.
+    pub mine: Vec<String>,
+}
+
+/// What the user has changed about one song's tags by hand. A removed tag stays removed when
+/// Last.fm is asked again; an added tag stays until it is removed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TagEdits {
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+}
+
+impl TagEdits {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.removed.is_empty()
+    }
+
+    /// True if this tag (any capitalisation) has been taken away by hand.
+    #[must_use]
+    pub fn hides(&self, tag: &str) -> bool {
+        self.removed.iter().any(|r| r.eq_ignore_ascii_case(tag))
+    }
+
+    /// Adds a tag, undoing an earlier removal of it. Does nothing if it is already added.
+    pub fn add(&mut self, tag: &str) {
+        self.removed.retain(|r| !r.eq_ignore_ascii_case(tag));
+        if !self.added.iter().any(|a| a.eq_ignore_ascii_case(tag)) {
+            self.added.push(tag.to_string());
+        }
+    }
+
+    /// Takes a tag away: forgets it if it was added by hand, otherwise hides it.
+    pub fn remove(&mut self, tag: &str) {
+        let before = self.added.len();
+        self.added.retain(|a| !a.eq_ignore_ascii_case(tag));
+        if self.added.len() == before && !self.hides(tag) {
+            self.removed.push(tag.to_string());
+        }
+    }
 }
 
 impl SongGenres {
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.album.is_empty() && self.song.is_empty()
+        self.album.is_empty() && self.song.is_empty() && self.mine.is_empty()
+    }
+
+    /// These genres with the user's changes applied.
+    #[must_use]
+    pub fn with_edits(mut self, edits: &TagEdits) -> Self {
+        self.album.retain(|genre| !edits.hides(genre));
+        self.song.retain(|genre| !edits.hides(genre));
+        for added in &edits.added {
+            let known = self
+                .album
+                .iter()
+                .chain(&self.song)
+                .any(|g| g.eq_ignore_ascii_case(added));
+            if !known {
+                self.mine.push(added.clone());
+            }
+        }
+        self
     }
 }
 
@@ -134,7 +192,11 @@ pub fn song_genres(identity: &Identity, answers: &Answers) -> SongGenres {
     {
         song = pick(tags, artist, &album, Rules::SONG);
     }
-    SongGenres { album, song }
+    SongGenres {
+        album,
+        song,
+        mine: Vec::new(),
+    }
 }
 
 /// The text for the genre tag: the genres in order, then Radio if the song charted, joined with
@@ -143,6 +205,7 @@ pub fn song_genres(identity: &Identity, answers: &Answers) -> SongGenres {
 pub fn genre_tag(genres: &SongGenres, radio: bool) -> Option<String> {
     let mut all = genres.album.clone();
     add_new(&mut all, genres.song.clone());
+    add_new(&mut all, genres.mine.clone());
     if radio {
         add_new(&mut all, ["Radio".to_string()]);
     }
@@ -247,8 +310,38 @@ mod tests {
         let genres = SongGenres {
             album: vec!["Rock".to_string(), "radio".to_string()],
             song: Vec::new(),
+            mine: Vec::new(),
         };
         assert_eq!(genre_tag(&genres, true).as_deref(), Some("Rock, radio"));
+    }
+
+    #[test]
+    fn hand_edits_remove_and_add_tags_and_stay_put() {
+        let found = SongGenres {
+            album: vec!["Rock".to_string(), "Prog".to_string()],
+            song: vec!["Epic".to_string()],
+            mine: Vec::new(),
+        };
+        let mut edits = TagEdits::default();
+        edits.remove("prog");
+        edits.add("Favourite");
+        edits.add("favourite");
+        let shown = found.clone().with_edits(&edits);
+        assert_eq!(shown.album, ["Rock"]);
+        assert_eq!(shown.song, ["Epic"]);
+        assert_eq!(shown.mine, ["Favourite"]);
+        assert_eq!(
+            genre_tag(&shown, false).as_deref(),
+            Some("Rock, Epic, Favourite")
+        );
+
+        // Removing something added by hand forgets it; adding a removed tag brings it back.
+        edits.remove("Favourite");
+        edits.add("Prog");
+        let shown = found.with_edits(&edits);
+        assert_eq!(shown.album, ["Rock", "Prog"]);
+        assert_eq!(shown.mine.len(), 0);
+        assert!(!edits.hides("Prog"));
     }
 
     #[test]

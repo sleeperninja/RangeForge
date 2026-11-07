@@ -65,6 +65,8 @@ test('the right-click menu depends on the row and what is switched on', () => {
     [
       'Include this song',
       'Include every song of this album',
+      'Add a tag to this song…',
+      'Edit artist, title and album…',
       'Get tags from Last.fm for this song',
       'Get tags from Last.fm for this album',
       'Remove from the list',
@@ -75,12 +77,24 @@ test('the right-click menu depends on the row and what is switched on', () => {
   const album = Render.menuItems(demo, 0, null);
   assert.deepStrictEqual(
     album.map((item) => item.label),
-    ['Leave out every song of this album', 'Get tags from Last.fm for this album', 'Remove from the list'],
+    [
+      'Leave out every song of this album',
+      'Add a tag to every song of this album…',
+      'Edit album name and artist…',
+      'Get tags from Last.fm for this album',
+      'Remove from the list',
+    ],
   );
   assert.strictEqual(album[0].on, false);
+  assert.deepStrictEqual(album[1], { action: 'add_tag', label: 'Add a tag to every song of this album…', group: 0, track: null });
 
   assert.deepStrictEqual(Render.menuItems(demo, 99, null), []);
-  assert.match(Render.menuHtml(album), /data-item="2">Remove from the list/);
+  assert.match(Render.menuHtml(album), /data-item="4">Remove from the list/);
+
+  // Tags can be removed with a ×, once the song's place in the list is known.
+  const chips = Render.chipsHtml([{ text: 'Prog "Rock"', kind: 'mine', title: 'x' }], 2, 5);
+  assert.match(chips, /<button type="button" class="chip-x" data-group="2" data-track="5" data-tag="Prog &quot;Rock&quot;"/);
+  assert.doesNotMatch(Render.chipsHtml([{ text: 'a', kind: 'genre', title: 'x' }]), /chip-x/);
 });
 
 test('the confirmation says what will happen', () => {
@@ -117,7 +131,7 @@ test('hovering a song says who it is and how that was worked out', () => {
 
 test('a Radio tag shows as a blue chip with its explanation, and tag text is escaped', () => {
   const html = Render.trackRowHtml(houses.tracks[1], 'alac', 0, 1);
-  assert.match(html, /<span class="chip radio" title="Reached #14 on the Billboard Hot 100 \(1973\)">Radio<\/span><\/td>/);
+  assert.match(html, /<span class="chip radio" title="Reached #14 on the Billboard Hot 100 \(1973\)">Radio<button [^>]*data-tag="Radio"[^>]*>×<\/button><\/span><\/td>/);
   // A song with no tags, or from older data with no tags field, has an empty cell.
   assert.match(Render.trackRowHtml(coda.tracks[0], 'alac', 1, 0), /<td class="tags"><\/td>/);
   const odd = Render.chipsHtml([{ text: '<b>', kind: 'radio', title: '"x"' }]);

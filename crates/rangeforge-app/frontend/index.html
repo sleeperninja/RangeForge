@@ -179,6 +179,32 @@
     </form>
   </dialog>
 
+  <dialog id="tagDialog">
+    <form method="dialog">
+      <p id="tagPrompt"></p>
+      <p><input id="tagText" class="text wide" type="text" autocomplete="off" placeholder="For example: Progressive Rock"></p>
+      <div class="dialog-buttons">
+        <button value="cancel" class="button">Cancel</button>
+        <button value="save" class="button primary">Add</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="namesDialog">
+    <form method="dialog">
+      <p id="namesPrompt"></p>
+      <p id="namesArtistRow"><label>Artist<br><input id="namesArtist" class="text wide" type="text" autocomplete="off"></label></p>
+      <p id="namesTitleRow"><label>Title<br><input id="namesTitle" class="text wide" type="text" autocomplete="off"></label></p>
+      <p><label>Album<br><input id="namesAlbum" class="text wide" type="text" autocomplete="off"></label></p>
+      <p><label>Album artist<br><input id="namesAlbumArtist" class="text wide" type="text" autocomplete="off"></label></p>
+      <p class="hint">Last.fm is asked with these names. Leave a field empty if it is not known.</p>
+      <div class="dialog-buttons">
+        <button value="cancel" class="button">Cancel</button>
+        <button value="save" class="button primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toast" class="toast hidden" role="status"></div>
 
   <script src="render.js"></script>

@@ -181,6 +181,10 @@
       call('set_included', { group: item.group, track: item.track, on: item.on });
     } else if (item.action === 'toggle_group') {
       call('set_included', { group: item.group, track: null, on: item.on });
+    } else if (item.action === 'add_tag') {
+      askForTag(item);
+    } else if (item.action === 'edit_names') {
+      askForNames(item);
     } else if (item.action === 'lastfm') {
       call('get_lastfm_tags', { group: item.group, track: item.track });
     } else if (item.action === 'remove') {
@@ -285,6 +289,65 @@
     );
     dialog.showModal();
     $('presetName').select();
+  }
+
+  // Asks for a tag to add to one song, or to every song of an album (`track` is null).
+  function askForTag(item) {
+    const dialog = $('tagDialog');
+    $('tagPrompt').textContent =
+      item.track === null ? 'Add a tag to every song of this album:' : 'Add a tag to this song:';
+    $('tagText').value = '';
+    dialog.returnValue = '';
+    dialog.addEventListener(
+      'close',
+      () => {
+        if (dialog.returnValue === 'save') {
+          call('add_tag', { group: item.group, track: item.track, text: $('tagText').value });
+        }
+      },
+      { once: true },
+    );
+    dialog.showModal();
+    $('tagText').focus();
+  }
+
+  // Asks for who a song is (item.track given) or what its album is called (item.track null).
+  function askForNames(item) {
+    const group = state.groups[item.group];
+    const whole = item.track === null;
+    const row = whole ? group.tracks.find((t) => t.identity) : group.tracks[item.track];
+    const identity = (row && row.identity) || {};
+    $('namesPrompt').textContent = whole
+      ? 'The album’s names, for every song in it:'
+      : 'Who this song is:';
+    $('namesArtistRow').classList.toggle('hidden', whole);
+    $('namesTitleRow').classList.toggle('hidden', whole);
+    $('namesArtist').value = identity.artist || '';
+    $('namesTitle').value = identity.title || '';
+    $('namesAlbum').value = identity.album || '';
+    $('namesAlbumArtist').value = identity.album_artist || '';
+    const dialog = $('namesDialog');
+    dialog.returnValue = '';
+    dialog.addEventListener(
+      'close',
+      () => {
+        if (dialog.returnValue === 'save') {
+          call('set_names', {
+            group: item.group,
+            track: item.track,
+            names: {
+              artist: $('namesArtist').value,
+              title: $('namesTitle').value,
+              album: $('namesAlbum').value,
+              albumArtist: $('namesAlbumArtist').value,
+            },
+          });
+        }
+      },
+      { once: true },
+    );
+    dialog.showModal();
+    (whole ? $('namesAlbum') : $('namesArtist')).select();
   }
 
   function wire() {
@@ -393,6 +456,18 @@
       const args = { group: Number(box.dataset.group), on: box.checked };
       args.track = box.dataset.track === undefined ? null : Number(box.dataset.track);
       call('set_included', args);
+    });
+
+    // The × on a tag takes it off that song.
+    $('rows').addEventListener('click', (e) => {
+      const x = e.target.closest('button.chip-x');
+      if (x) {
+        call('remove_tag', {
+          group: Number(x.dataset.group),
+          track: Number(x.dataset.track),
+          text: x.dataset.tag,
+        });
+      }
     });
 
     // Right-click a row for the same actions plus removing it.

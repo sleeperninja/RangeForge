@@ -16,7 +16,9 @@ use rangeforge_lookup::lastfm::{LastFmError, RawTag};
 use rangeforge_lookup::tagcache::{Subject, TagCache};
 use rangeforge_session::controls::PresetList;
 use rangeforge_session::load::Job;
-use rangeforge_session::model::{App, MeasureOutcome, RunEvent, RunRequest, RunSpec, Settings};
+use rangeforge_session::model::{
+    App, MeasureOutcome, Names, RunEvent, RunRequest, RunSpec, Settings,
+};
 use rangeforge_session::presets;
 use rangeforge_session::secrets::{self, SecretStore};
 use rangeforge_session::snapshot::{Snapshot, conflict_from_id, place_from_id};
@@ -610,6 +612,21 @@ fn stop(shared: &Shared, why: &str, show: &mut dyn FnMut(Reply)) {
 /// switch says. The caller then starts the asking.
 pub fn request_lastfm(shared: &Shared, group: usize, track: Option<usize>) -> Reply {
     with_app(shared, |app| app.request_lastfm(group, track))
+}
+
+/// Adds a tag by hand to a song, or to every song of an album when no song is given.
+pub fn add_tag(shared: &Shared, group: usize, track: Option<usize>, text: &str) -> Reply {
+    with_app(shared, |app| app.add_tag(group, track, text))
+}
+
+/// Takes a tag away from a song by hand.
+pub fn remove_tag(shared: &Shared, group: usize, track: usize, text: &str) -> Reply {
+    with_app(shared, |app| app.remove_tag(group, track, text))
+}
+
+/// Types in a song's names, or an album's, replacing what was known.
+pub fn set_names(shared: &Shared, group: usize, track: Option<usize>, names: &Names) -> Reply {
+    with_app(shared, |app| app.set_names(group, track, names))
 }
 
 pub fn clear_list(shared: &Shared) -> Reply {

@@ -24,7 +24,7 @@ use crate::controls::{
     apply_preset,
 };
 use crate::dsd::DsdFormat;
-use crate::genres::{self, Answers, SongGenres};
+use crate::genres::{self, Answers, SongGenres, TagEdits};
 use crate::load::{Job, load_from};
 use crate::naming::NameSettings;
 use crate::plan::{plan_tracks, track_plans};
@@ -162,6 +162,17 @@ pub struct TrackRow {
     /// Who the song is: from the CUE sheet, the file's tags, or a guess from its name. What
     /// every lookup works from.
     pub identity: Option<Identity>,
+    /// Tags the user added or took away by hand. Kept for this session.
+    pub edits: TagEdits,
+}
+
+/// Names typed in by hand for a song or an album. A blank field means "not known".
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Names {
+    pub artist: String,
+    pub title: String,
+    pub album: String,
+    pub album_artist: String,
 }
 
 /// How a song did on the Billboard Hot 100.
@@ -183,6 +194,7 @@ impl TrackRow {
             included: true,
             radio: None,
             identity: None,
+            edits: TagEdits::default(),
         }
     }
 }
@@ -453,18 +465,110 @@ impl App {
     /// The genres for a song, as shown and as written. Empty while lookups are off, so nothing
     /// shows and nothing in a file is changed.
     pub fn song_genres(&self, track: &TrackRow) -> SongGenres {
-        match (&track.identity, self.metadata.enabled) {
-            (Some(identity), true) => genres::song_genres(identity, &self.answers),
-            _ => SongGenres::default(),
+        if !self.metadata.enabled {
+            return SongGenres::default();
         }
+        let found = match &track.identity {
+            Some(identity) => genres::song_genres(identity, &self.answers),
+            None => SongGenres::default(),
+        };
+        found.with_edits(&track.edits)
     }
 
-    /// The text to write in a song's genre tag, or `None` to leave the tag as it is.
+    /// Whether the song carries the Radio tag: it charted, and nobody took the tag away.
+    pub fn shows_radio(&self, track: &TrackRow) -> bool {
+        track.radio.is_some() && !track.edits.hides("Radio")
+    }
+
+    /// The text to write in a song's genre tag, or `None` to leave the tag as it is. If every
+    /// tag was taken away by hand, the tag is written empty rather than left as it was.
     pub fn genre_tag(&self, track: &TrackRow) -> Option<String> {
         if !self.metadata.enabled {
             return None;
         }
-        genres::genre_tag(&self.song_genres(track), track.radio.is_some())
+        genres::genre_tag(&self.song_genres(track), self.shows_radio(track))
+            .or_else(|| (!track.edits.removed.is_empty()).then(String::new))
+    }
+
+    /// Adds a tag by hand to one song, or with no song given, to every song of the album.
+    pub fn add_tag(
+        &mut self,
+        group: usize,
+        track: Option<usize>,
+        text: &str,
+    ) -> Result<(), String> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err("Type the tag first.".to_string());
+        }
+        if text.contains([',', ';']) {
+            return Err("A tag cannot hold a comma or semicolon: they separate tags.".to_string());
+        }
+        for row in self.rows_mut(group, track)? {
+            row.edits.add(text);
+        }
+        Ok(())
+    }
+
+    /// Takes a tag away from one song, by hand. It stays away when Last.fm is asked again.
+    pub fn remove_tag(&mut self, group: usize, track: usize, text: &str) -> Result<(), String> {
+        for row in self.rows_mut(group, Some(track))? {
+            row.edits.remove(text);
+        }
+        Ok(())
+    }
+
+    /// The songs a change applies to: the one given, or all of the group's.
+    fn rows_mut(
+        &mut self,
+        group: usize,
+        track: Option<usize>,
+    ) -> Result<Vec<&mut TrackRow>, String> {
+        let group = self
+            .groups
+            .get_mut(group)
+            .ok_or("That album is not in the list.")?;
+        match track {
+            Some(index) => Ok(vec![
+                group
+                    .tracks
+                    .get_mut(index)
+                    .ok_or("That song is not in the list.")?,
+            ]),
+            None => Ok(group.tracks.iter_mut().collect()),
+        }
+    }
+
+    /// Types in who a song is. With a song, sets its artist, title, album and album artist;
+    /// with none, sets the album and album artist of every song in the group. A blank field
+    /// clears it. What was typed replaces whatever was known, and nothing replaces it later.
+    pub fn set_names(
+        &mut self,
+        group: usize,
+        track: Option<usize>,
+        names: &Names,
+    ) -> Result<(), String> {
+        let clean = |text: &str| Some(text.trim().to_string()).filter(|t| !t.is_empty());
+        let (artist, title) = (clean(&names.artist), clean(&names.title));
+        let (album, album_artist) = (clean(&names.album), clean(&names.album_artist));
+        let whole_album = track.is_none();
+        for row in self.rows_mut(group, track)? {
+            let identity = row.identity.get_or_insert_with(|| {
+                Identity::unknown(rangeforge_core::identify::IdentitySource::Hand)
+            });
+            let before = identity.clone();
+            if !whole_album {
+                identity.artist.clone_from(&artist);
+                identity.title.clone_from(&title);
+            }
+            identity.album.clone_from(&album);
+            identity.album_artist.clone_from(&album_artist);
+            if *identity != before {
+                identity.source = rangeforge_core::identify::IdentitySource::Hand;
+            }
+        }
+        self.refresh_radio();
+        Ok(())
     }
 
     /// The questions for Last.fm that nobody has been sent to ask yet, once. Empty unless
@@ -489,7 +593,11 @@ impl App {
             self.answers.get(subject).is_none() && !self.asked.contains(&subject.key())
         };
         self.requested.values().any(waiting)
-            || (self.wants_lastfm() && self.askable().flat_map(genres::questions).any(|s| waiting(&s)))
+            || (self.wants_lastfm()
+                && self
+                    .askable()
+                    .flat_map(genres::questions)
+                    .any(|s| waiting(&s)))
     }
 
     /// Whether this question was asked for by hand, so the saved answer should not be used.
@@ -507,7 +615,10 @@ impl App {
         if self.lastfm_key == KeySource::None {
             return Err("There is no Last.fm key yet. Add one in Settings.".to_string());
         }
-        let group = self.groups.get(group).ok_or("That album is not in the list.")?;
+        let group = self
+            .groups
+            .get(group)
+            .ok_or("That album is not in the list.")?;
         let identities: Vec<&Identity> = match track {
             Some(index) => vec![
                 group
@@ -516,7 +627,11 @@ impl App {
                     .and_then(|row| row.identity.as_ref())
                     .ok_or("That song is not known yet.")?,
             ],
-            None => group.tracks.iter().filter_map(|row| row.identity.as_ref()).collect(),
+            None => group
+                .tracks
+                .iter()
+                .filter_map(|row| row.identity.as_ref())
+                .collect(),
         };
         let mut subjects = Vec::new();
         for identity in identities {
@@ -680,6 +795,8 @@ impl App {
         // A single file's tags arrive with its measurement.
         if group.kind == Kind::SingleFile
             && let (Some(identity), Some(track)) = (outcome.identity, group.tracks.first_mut())
+            && track.identity.as_ref().map(|known| known.source)
+                != Some(rangeforge_core::identify::IdentitySource::Hand)
         {
             track.identity = Some(identity);
         }
@@ -2327,6 +2444,88 @@ mod tests {
         app.set_lastfm_enabled(true);
         app.lastfm_key = KeySource::Saved;
         app
+    }
+
+    #[test]
+    fn tags_and_names_can_be_edited_by_hand() {
+        let mut app = ready_app();
+        app.set_metadata_enabled(true);
+        app.groups[0].tracks[0].identity.as_mut().unwrap().genre = Some("Rock, Prog".to_string());
+        let shown = |app: &App| app.song_genres(&app.groups[0].tracks[0]);
+
+        assert!(app.add_tag(0, Some(0), "  ").is_err());
+        assert!(
+            app.add_tag(0, Some(0), "a, b").is_err(),
+            "commas separate tags"
+        );
+        app.add_tag(0, Some(0), "Favourite").unwrap();
+        app.remove_tag(0, 0, "prog").unwrap();
+        assert_eq!(shown(&app).album, ["Rock"]);
+        assert_eq!(shown(&app).mine, ["Favourite"]);
+        assert_eq!(
+            app.genre_tag(&app.groups[0].tracks[0]).as_deref(),
+            Some("Rock, Favourite")
+        );
+        assert!(app.add_tag(0, Some(99), "x").is_err());
+
+        // Taking away everything writes an empty tag, rather than leaving the old one.
+        app.remove_tag(0, 0, "Rock").unwrap();
+        app.remove_tag(0, 0, "Favourite").unwrap();
+        assert_eq!(app.genre_tag(&app.groups[0].tracks[0]).as_deref(), Some(""));
+
+        // An album-wide tag reaches every song.
+        app.add_tag(0, None, "Mine").unwrap();
+        assert!(
+            app.groups[0]
+                .tracks
+                .iter()
+                .all(|t| t.edits.added == ["Mine"])
+        );
+
+        // Names typed in replace what was known, and a measurement does not undo them.
+        let names = Names {
+            artist: "The Alan Parsons Project".to_string(),
+            title: "I Robot".to_string(),
+            album: " I Robot ".to_string(),
+            album_artist: String::new(),
+        };
+        app.set_names(0, Some(0), &names).unwrap();
+        let identity = app.groups[0].tracks[0].identity.clone().unwrap();
+        assert_eq!(identity.artist.as_deref(), Some("The Alan Parsons Project"));
+        assert_eq!(identity.album.as_deref(), Some("I Robot"));
+        assert_eq!(identity.album_artist, None);
+        assert_eq!(
+            identity.source,
+            rangeforge_core::identify::IdentitySource::Hand
+        );
+        // Last.fm is now asked about the typed names.
+        assert!(genres::questions(&identity).iter().any(|s| matches!(
+            s,
+            Subject::Track { artist, .. } if artist == "The Alan Parsons Project"
+        )));
+
+        // The album's names go to every song but leave artist and title alone.
+        let album = Names {
+            album: "Other".to_string(),
+            ..Names::default()
+        };
+        app.set_names(0, None, &album).unwrap();
+        assert!(
+            app.groups[0]
+                .tracks
+                .iter()
+                .all(|t| t.identity.as_ref().unwrap().album.as_deref() == Some("Other"))
+        );
+        assert_eq!(
+            app.groups[0].tracks[0]
+                .identity
+                .as_ref()
+                .unwrap()
+                .title
+                .as_deref(),
+            Some("I Robot")
+        );
+        assert!(app.set_names(9, None, &album).is_err());
     }
 
     #[test]

@@ -24,7 +24,7 @@ use rangeforge_lookup::billboard::{HttpFetcher, unix_now};
 use rangeforge_lookup::lastfm::{HttpGet, LastFm};
 use rangeforge_lookup::tagcache::Subject;
 use rangeforge_session::load::Job;
-use rangeforge_session::model::RunEvent;
+use rangeforge_session::model::{Names, RunEvent};
 use rangeforge_session::naming::NamingPreview;
 use rangeforge_session::{engine, paths, runner, secrets};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -267,6 +267,56 @@ async fn get_lastfm_tags(
 }
 
 #[tauri::command]
+async fn add_tag(
+    group: usize,
+    track: Option<usize>,
+    text: String,
+    state: Session<'_>,
+) -> Result<Reply, String> {
+    Ok(ops::add_tag(&state, group, track, &text))
+}
+
+#[tauri::command]
+async fn remove_tag(
+    group: usize,
+    track: usize,
+    text: String,
+    state: Session<'_>,
+) -> Result<Reply, String> {
+    Ok(ops::remove_tag(&state, group, track, &text))
+}
+
+/// The names typed into the edit window.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NamesInput {
+    artist: String,
+    title: String,
+    album: String,
+    album_artist: String,
+}
+
+/// Types in names by hand, then lets Last.fm be asked about the new ones if lookups are on.
+#[tauri::command]
+async fn set_names(
+    group: usize,
+    track: Option<usize>,
+    names: NamesInput,
+    state: Session<'_>,
+    app: AppHandle,
+) -> Result<Reply, String> {
+    let names = Names {
+        artist: names.artist,
+        title: names.title,
+        album: names.album,
+        album_artist: names.album_artist,
+    };
+    let reply = ops::set_names(&state, group, track, &names);
+    watch_genres(&app, state.inner());
+    Ok(reply)
+}
+
+#[tauri::command]
 async fn remove_group(group: usize, state: Session<'_>) -> Result<Reply, String> {
     Ok(ops::remove_group(&state, group))
 }
@@ -347,6 +397,9 @@ fn main() {
             clear_completed,
             remove_group,
             get_lastfm_tags,
+            add_tag,
+            remove_tag,
+            set_names,
             set_included,
             run,
         ])
