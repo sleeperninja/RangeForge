@@ -96,7 +96,7 @@ node --test crates/rangeforge-app/frontend/render.test.js  # tests of how rows a
 
 The window is a Tauri program. The page lives in `crates/rangeforge-app/frontend/` as plain HTML, CSS and JavaScript, so building needs only Rust. It shows what `rangeforge-session` describes (a `Snapshot`) and sends the user's actions back; every rule stays in Rust. Drop files or folders on it, or use Add files. Outside the program, `index.html` shows sample data from `demo-state.json`, which is how the layout is checked without a window. On Linux it needs the WebKitGTK libraries (see `ci.yml`). It also needs FFmpeg for Run, like the terminal view.
 
-Downloads to try come from the Release workflow (see Releases below), not from the everyday CI run.
+Downloads to try come from the Release workflow (see Releases below), not from CI.
 
 ## Metadata lookups
 
@@ -155,13 +155,13 @@ Every change must pass:
 2. `cargo clippy --workspace --all-targets -- -D warnings`
 3. `cargo test --workspace`
 
-CI (`.github/workflows/ci.yml`) runs these on Windows x64, macOS Apple Silicon, macOS Intel and Linux. Windows ARM is added when a runner is available.
+Checks are run on your own machine before merging. CI (`.github/workflows/ci.yml`) is only started by hand from the Actions tab (Windows x64 and macOS Apple Silicon), so free Actions minutes are kept for releases.
 
 Also planned: `cargo deny` (licences, advisories), `criterion` benchmarks, and a comparison test against FFmpeg's `ebur128`.
 
 ## Releases
 
-Installers are built by the **Release** workflow (`.github/workflows/release.yml`). Start it by hand from the Actions tab (Run workflow) to try it, or push a tag such as `v0.1.0` to also put the installers on a draft GitHub Release. It makes:
+Installers are built by the **Release** workflow (`.github/workflows/release.yml`). It runs when something is merged into `main`, and puts the installers on a draft pre-release named after the version in `Cargo.toml` (so raise the version before merging). Start it by hand from the Actions tab to build without making a release. It makes:
 
 | Platform | What you get |
 | --- | --- |

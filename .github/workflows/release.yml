@@ -1,11 +1,12 @@
 name: Release
 
 # Builds the installers: an MSI for Windows, and a DMG holding RangeForge.app for macOS.
-# Start it by hand from the Actions tab to try it, or push a tag such as v0.1.0 to also put
-# the installers on a draft GitHub Release.
+# Runs when something is merged into main, and puts the installers on a draft pre-release named
+# after the version in Cargo.toml (so raise the version before merging). It can also be started by
+# hand from the Actions tab, which builds the installers without making a release.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -101,15 +102,21 @@ jobs:
   publish:
     name: Draft release
     needs: package
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - name: Read the version
+        id: version
+        run: echo "tag=v$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           draft: true
           # Everything before 1.0 is a pre-release.
           prerelease: true

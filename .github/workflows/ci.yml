@@ -1,9 +1,9 @@
 name: CI
 
+# Checks are run on your own machine (cargo fmt, clippy, test). This workflow is only started
+# by hand from the Actions tab, to keep free Actions minutes for releases.
 on:
-  push:
-    branches: [dev, main]
-  pull_request:
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
