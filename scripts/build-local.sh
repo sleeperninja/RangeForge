@@ -37,6 +37,18 @@ case "$(uname -s)-$(uname -m)" in
   Linux-x86_64) host="linux" ;;
 esac
 
+# Build on this computer's own disk, never inside the repository: the repository may be on a
+# network drive, where Windows refuses to replace the programs a build makes ("Access is
+# denied") and everything is slow. Set CARGO_TARGET_DIR yourself to choose another place.
+if [ -z "${CARGO_TARGET_DIR:-}" ]; then
+  if [ "$host" = windows ]; then
+    base="${LOCALAPPDATA:-$HOME/AppData/Local}/RangeForge"
+  else
+    base="${XDG_CACHE_HOME:-$HOME/.cache}/rangeforge"
+  fi
+  export CARGO_TARGET_DIR="$base/target"
+fi
+
 # Per target: what it is, the Rust target, the bundle kind, and where it can be built.
 target_info() {
   case "$1" in
@@ -133,6 +145,7 @@ target_info "$choice"
 version="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
 echo
 echo "== Building $name, version $version"
+echo "   (building in $CARGO_TARGET_DIR)"
 
 step() { echo; echo "== $*"; }
 die() { echo; echo "Stopped: $*" >&2; exit 1; }
