@@ -138,7 +138,7 @@
 
   function tableBodyHtml(state) {
     return state.groups
-      .map((group, index) => groupRowsHtml(group, state.output.codec, index))
+      .map((group, index) => groupRowsHtml(group, group.output_codec || state.output.codec, index))
       .join('');
   }
 

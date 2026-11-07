@@ -74,6 +74,9 @@ pub struct GroupView {
     pub name: String,
     /// What the Codec column says on this row: `Split(cue)` or the source format in brackets.
     pub codec_label: String,
+    /// The codec this group's songs will be written in. Differs from the main Output Format
+    /// for DSD files when the DSD Format setting names a codec of its own.
+    pub output_codec: String,
     /// `cue` or `single`.
     pub kind: &'static str,
     pub measuring: bool,
@@ -334,6 +337,15 @@ fn group_view(app: &App, group: &Group) -> GroupView {
     GroupView {
         name: group.name.clone(),
         codec_label: group.codec_label(),
+        output_codec: app
+            .dsd
+            .format_for(
+                app.output.format(),
+                std::path::Path::new(&format!("x.{}", group.source_extension)),
+            )
+            .codec
+            .name()
+            .to_string(),
         kind: match group.kind {
             Kind::CueAlbum => "cue",
             Kind::SingleFile => "single",
