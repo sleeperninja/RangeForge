@@ -526,6 +526,7 @@ fn ask_all(
                 match answer {
                     Ok(tags) => {
                         cache.put(&subject, now, tags.clone());
+                        shared.lock().log(lookup_line(&subject, &tags));
                         tags
                     }
                     Err(error @ (LastFmError::InvalidKey | LastFmError::RateLimited)) => {
@@ -545,7 +546,13 @@ fn ask_all(
                         break 'rounds;
                     }
                     // An answer that makes no sense: leave this one without genres.
-                    Err(LastFmError::Unexpected(_)) => Vec::new(),
+                    Err(LastFmError::Unexpected(why)) => {
+                        shared.lock().log(format!(
+                            "Last.fm gave an answer that could not be used for {}: {why}",
+                            describe_subject(&subject)
+                        ));
+                        Vec::new()
+                    }
                 }
             };
             shared.lock().apply_answer(&subject, tags);
@@ -567,6 +574,26 @@ fn ask_all(
     }
     show(describe(shared));
     stopped
+}
+
+/// The question as it was put to Last.fm, for the log: the exact names that were sent.
+fn describe_subject(subject: &Subject) -> String {
+    match subject {
+        Subject::Album { artist, album } => format!("album “{album}” by “{artist}”"),
+        Subject::Track { artist, title } => format!("song “{title}” by “{artist}”"),
+    }
+}
+
+/// What the log says after Last.fm answered.
+fn lookup_line(subject: &Subject, tags: &[RawTag]) -> String {
+    let what = describe_subject(subject);
+    if tags.is_empty() {
+        return format!(
+            "Last.fm has no tags for {what}. If the names look wrong, fix them in the file's tags."
+        );
+    }
+    let top: Vec<&str> = tags.iter().take(6).map(|tag| tag.name.as_str()).collect();
+    format!("Last.fm: {what} → {}", top.join(", "))
 }
 
 /// Stops asking: says why in the log, and lets the unanswered questions be asked again later.
