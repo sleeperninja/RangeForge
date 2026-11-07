@@ -70,6 +70,10 @@ fn collect(revision: &MetadataRevision, tags: &mut FileTags) {
 
 /// Reads the tags of the audio file at `path`.
 pub fn read_tags(path: &Path) -> Result<FileTags, AudioError> {
+    // Symphonia cannot open DSD, so FFmpeg reads those tags.
+    if crate::dsd::is_dsd(path) {
+        return crate::dsd::read_tags(path);
+    }
     let file = File::open(path).map_err(|source| AudioError::Open {
         path: path.to_path_buf(),
         source,

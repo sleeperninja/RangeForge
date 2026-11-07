@@ -326,3 +326,100 @@ mod tests {
         assert!(!is_dsd(Path::new("song")));
     }
 }
+
+/// Reads the tags of a DSD file through FFmpeg (Symphonia cannot open DSD). DSD files keep their
+/// tags as ID3 near the end, which FFmpeg finds without reading the audio, so this is quick even
+/// for a file of hundreds of megabytes.
+pub fn read_tags(path: &Path) -> Result<crate::tags::FileTags, AudioError> {
+    let mut command = ffmpeg_command()?;
+    let output = command
+        .args(["-nostdin", "-v", "error", "-i"])
+        .arg(path)
+        .args(["-t", "0", "-f", "ffmetadata", "-"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .map_err(|error| AudioError::Dsd(format!("could not start FFmpeg: {error}")))?;
+    if !output.status.success() {
+        return Err(AudioError::Dsd(format!(
+            "FFmpeg could not read the tags of {}",
+            path.display()
+        )));
+    }
+    Ok(parse_metadata(&String::from_utf8_lossy(&output.stdout)))
+}
+
+/// Turns FFmpeg's `key=value` metadata text into tags. A backslash escapes the character after
+/// it, and keys are not case sensitive.
+fn parse_metadata(text: &str) -> crate::tags::FileTags {
+    let mut tags = crate::tags::FileTags::default();
+    for line in text.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let mut unescaped = String::new();
+        let mut chars = value.chars();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                unescaped.extend(chars.next());
+            } else {
+                unescaped.push(c);
+            }
+        }
+        let value = unescaped.trim().to_string();
+        if value.is_empty() {
+            continue;
+        }
+        let slot = match key.trim().to_ascii_lowercase().as_str() {
+            "title" => &mut tags.title,
+            "artist" => &mut tags.artist,
+            "album" => &mut tags.album,
+            "album_artist" => &mut tags.album_artist,
+            "genre" => &mut tags.genre,
+            "date" | "year" => &mut tags.date,
+            "track" => {
+                // Often written `9/10`: the number is what comes before the slash.
+                let digits: String = value.chars().take_while(char::is_ascii_digit).collect();
+                if tags.track.is_none() {
+                    tags.track = digits.parse().ok().filter(|n| *n > 0);
+                }
+                continue;
+            }
+            _ => continue,
+        };
+        if slot.is_none() {
+            *slot = Some(value);
+        }
+    }
+    tags
+}
+
+#[cfg(test)]
+mod metadata_tests {
+    use super::*;
+
+    #[test]
+    fn ffmpeg_metadata_becomes_tags() {
+        let tags = parse_metadata(
+            ";FFMETADATA1\ntitle=Total Eclipce\nALBUM=1977 - I Robot\nartist=Alan Parsons Project\n\
+             album_artist=Alan Parsons Project\nPERFORMER=ignored\ndisc=1/1\ntrack=9/10\n\
+             date=2013-09-23\ngenre=Progressive Rock\nencoder=Lavf63\n",
+        );
+        assert_eq!(tags.title.as_deref(), Some("Total Eclipce"));
+        assert_eq!(tags.album.as_deref(), Some("1977 - I Robot"));
+        assert_eq!(tags.artist.as_deref(), Some("Alan Parsons Project"));
+        assert_eq!(tags.album_artist.as_deref(), Some("Alan Parsons Project"));
+        assert_eq!(tags.genre.as_deref(), Some("Progressive Rock"));
+        assert_eq!(tags.date.as_deref(), Some("2013-09-23"));
+        assert_eq!(tags.track, Some(9));
+    }
+
+    #[test]
+    fn escapes_and_blanks_are_handled() {
+        let tags = parse_metadata("title=AC\\=DC \\\\ live\nartist=   \nnoise without equals\n");
+        assert_eq!(tags.title.as_deref(), Some("AC=DC \\ live"));
+        assert_eq!(tags.artist, None);
+        assert!(parse_metadata("").is_empty());
+    }
+}

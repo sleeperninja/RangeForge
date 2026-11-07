@@ -889,3 +889,65 @@ fn dsd_is_written_at_the_asked_rate_and_depth() {
         }
     }
 }
+
+/// Adds an ID3v2.3 tag to the end of a DSF file, which is where DSF keeps its tags, and points
+/// the header at it.
+fn add_id3(path: &Path, frames: &[(&str, &str)]) {
+    let mut body = Vec::new();
+    for (id, text) in frames {
+        body.extend(id.as_bytes());
+        body.extend((u32::try_from(text.len()).unwrap() + 1).to_be_bytes());
+        body.extend([0, 0]);
+        body.push(0); // Latin-1
+        body.extend(text.as_bytes());
+    }
+    // The tag's size is written seven bits to a byte.
+    let size = u32::try_from(body.len()).unwrap();
+    let syncsafe = [
+        u8::try_from((size >> 21) & 0x7f).unwrap(),
+        u8::try_from((size >> 14) & 0x7f).unwrap(),
+        u8::try_from((size >> 7) & 0x7f).unwrap(),
+        u8::try_from(size & 0x7f).unwrap(),
+    ];
+    let mut bytes = fs::read(path).unwrap();
+    let pointer = bytes.len() as u64;
+    bytes[20..28].copy_from_slice(&pointer.to_le_bytes());
+    bytes.extend(b"ID3");
+    bytes.extend([3, 0, 0]);
+    bytes.extend(syncsafe);
+    bytes.extend(body);
+    let total = bytes.len() as u64;
+    bytes[12..20].copy_from_slice(&total.to_le_bytes());
+    fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn the_tags_of_a_dsd_file_are_read() {
+    let Some(_ffmpeg) = ffmpeg() else { return };
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("tagged.dsf");
+    write_dsf(&input, 2);
+    add_id3(
+        &input,
+        &[
+            ("TIT2", "Total Eclipse"),
+            ("TPE1", "Alan Parsons Project"),
+            ("TALB", "I Robot"),
+            ("TCON", "Progressive Rock"),
+            ("TRCK", "9/10"),
+            ("TYER", "1977"),
+        ],
+    );
+    let tags = rangeforge_audio::tags::read_tags(&input).unwrap();
+    assert_eq!(tags.title.as_deref(), Some("Total Eclipse"));
+    assert_eq!(tags.artist.as_deref(), Some("Alan Parsons Project"));
+    assert_eq!(tags.album.as_deref(), Some("I Robot"));
+    assert_eq!(tags.genre.as_deref(), Some("Progressive Rock"));
+    assert_eq!(tags.track, Some(9));
+    assert_eq!(tags.date.as_deref(), Some("1977"));
+
+    // And a DSD file with no tags simply has none.
+    let bare = dir.path().join("bare.dsf");
+    write_dsf(&bare, 2);
+    assert!(rangeforge_audio::tags::read_tags(&bare).unwrap().is_empty());
+}

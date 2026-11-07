@@ -32,6 +32,7 @@ pub fn merge_tags(guess: Identity, tags: &FileTags) -> Identity {
 /// read is identified by its name.
 #[must_use]
 pub fn identify_file(path: &Path) -> Identity {
+    crate::measuring::prepare(path);
     let guess = Identity::guess_from_path(path);
     match read_tags(path) {
         Ok(tags) => merge_tags(guess, &tags),

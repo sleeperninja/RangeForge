@@ -18,7 +18,7 @@ pub fn read_sheet(path: &Path) -> Result<CueSheet> {
 
 /// DSD files are opened through FFmpeg, so find it first. Finding it also tells the audio reader
 /// where it is. A missing FFmpeg shows up as the reader's own plain-words error.
-fn prepare(audio: &Path) {
+pub(crate) fn prepare(audio: &Path) {
     if rangeforge_audio::dsd::is_dsd(audio) {
         let _ = rangeforge_export::ffmpeg::Ffmpeg::locate();
     }

@@ -76,34 +76,66 @@ pub fn resolve_audio(cue_dir: &Path, name: &str) -> Option<PathBuf> {
     })
 }
 
+/// How many folders down from a dropped folder are searched. An album ripped from a disc often
+/// sits three deep: `Artist - Album / 1977 - Album / 6ch`. Four covers a disc folder as well.
+const MAX_DEPTH: usize = 4;
+
+/// The folder this program's own output goes in, unless the user named another. It is never
+/// searched, so output that was already written is not added again.
+const OUTPUT_FOLDER: &str = "RangeForge";
+
 /// Replaces folders with what they contain: their CUE sheets, or if there are none, their
-/// audio files.
+/// audio files, and the same for the folders inside them.
 fn expand(inputs: &[PathBuf], log: &mut Vec<String>) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     for input in inputs {
-        if !input.is_dir() {
-            paths.push(input.clone());
-            continue;
-        }
-        let mut entries: Vec<PathBuf> = match fs::read_dir(input) {
-            Ok(entries) => entries.filter_map(Result::ok).map(|e| e.path()).collect(),
-            Err(error) => {
-                log.push(format!(
-                    "Could not read folder {}: {error}",
-                    input.display()
-                ));
-                continue;
-            }
-        };
-        entries.sort();
-        let cues: Vec<PathBuf> = entries.iter().filter(|p| is_cue(p)).cloned().collect();
-        if cues.is_empty() {
-            paths.extend(entries.into_iter().filter(|p| is_audio(p)));
+        if input.is_dir() {
+            collect_folder(input, 0, log, &mut paths);
         } else {
-            paths.extend(cues);
+            paths.push(input.clone());
         }
     }
     paths
+}
+
+/// Adds what is in one folder, then goes into its subfolders (in name order) up to the depth
+/// limit. Subfolders that are links are not followed, so a loop cannot trap the search.
+fn collect_folder(dir: &Path, depth: usize, log: &mut Vec<String>, paths: &mut Vec<PathBuf>) {
+    let mut entries: Vec<(PathBuf, bool)> = match fs::read_dir(dir) {
+        Ok(entries) => entries
+            .filter_map(Result::ok)
+            .map(|e| {
+                let is_folder = e.file_type().is_ok_and(|kind| kind.is_dir());
+                (e.path(), is_folder)
+            })
+            .collect(),
+        Err(error) => {
+            log.push(format!("Could not read folder {}: {error}", dir.display()));
+            return;
+        }
+    };
+    entries.sort();
+    let files: Vec<&PathBuf> = entries
+        .iter()
+        .filter(|(_, is_folder)| !is_folder)
+        .map(|(path, _)| path)
+        .collect();
+    let cues: Vec<&PathBuf> = files.iter().copied().filter(|p| is_cue(p)).collect();
+    if cues.is_empty() {
+        paths.extend(files.into_iter().filter(|p| is_audio(p)).cloned());
+    } else {
+        paths.extend(cues.into_iter().cloned());
+    }
+    if depth >= MAX_DEPTH {
+        return;
+    }
+    for (path, _) in entries.iter().filter(|(_, is_folder)| *is_folder) {
+        let name = file_name(path);
+        if name.starts_with('.') || name.eq_ignore_ascii_case(OUTPUT_FOLDER) {
+            continue;
+        }
+        collect_folder(path, depth + 1, log, paths);
+    }
 }
 
 /// The CUE sheet that goes with an audio file: one with the same name beside it, that names
@@ -358,6 +390,64 @@ mod tests {
         assert_eq!(group.tracks.len(), 1);
         assert_eq!(group.tracks[0].label, "14 - Shot at the Night");
         assert!(loaded.jobs[0].cue_file.is_none());
+    }
+
+    fn nested(root: &Path, path: &str) -> PathBuf {
+        let full = root.join(path);
+        fs::create_dir_all(full.parent().unwrap()).unwrap();
+        fs::write(&full, "").unwrap();
+        full
+    }
+
+    #[test]
+    fn a_dropped_folder_is_searched_down_through_its_folders() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("Alan Parsons Project - I Robot");
+        nested(&root, "1977 - I Robot/6ch/01 - I Robot.dsf");
+        nested(&root, "1977 - I Robot/6ch/02 - Breakdown.dsf");
+        nested(&root, "1977 - I Robot/2ch/01 - I Robot.dsf");
+        nested(&root, "cover.jpg");
+
+        let loaded = load(&[root]);
+
+        assert_eq!(loaded.groups.len(), 3);
+        assert_eq!(loaded.jobs.len(), 3);
+        assert!(
+            loaded
+                .jobs
+                .iter()
+                .all(|job| job.audio.extension().unwrap() == "dsf")
+        );
+    }
+
+    #[test]
+    fn each_folder_uses_its_own_cue_sheet_or_else_its_own_audio() {
+        let dir = tempdir().unwrap();
+        nested(dir.path(), "Disc 1/album.cue");
+        fs::write(dir.path().join("Disc 1/album.cue"), CUE).unwrap();
+        nested(dir.path(), "Disc 1/album.wav");
+        nested(dir.path(), "Disc 1/stray.flac");
+        nested(dir.path(), "Disc 2/loose.flac");
+
+        let loaded = load(&[dir.path().to_path_buf()]);
+
+        let kinds: Vec<_> = loaded.groups.iter().map(|g| g.kind).collect();
+        assert_eq!(kinds, [Kind::CueAlbum, Kind::SingleFile]);
+    }
+
+    #[test]
+    fn the_search_stops_four_folders_down_and_skips_hidden_and_output_folders() {
+        let dir = tempdir().unwrap();
+        nested(dir.path(), "a/b/c/d/four.flac");
+        nested(dir.path(), "a/b/c/d/e/five.flac");
+        nested(dir.path(), ".hidden/secret.flac");
+        nested(dir.path(), "RangeForge/earlier output.flac");
+        nested(dir.path(), "rangeforge/lower case.flac");
+
+        let loaded = load(&[dir.path().to_path_buf()]);
+
+        let names: Vec<_> = loaded.groups.iter().map(|g| g.name.as_str()).collect();
+        assert_eq!(names, ["four.flac"]);
     }
 
     #[test]
