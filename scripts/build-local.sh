@@ -138,7 +138,15 @@ step() { echo; echo "== $*"; }
 die() { echo; echo "Stopped: $*" >&2; exit 1; }
 
 step "Getting FFmpeg"
-bash scripts/fetch-ffmpeg.sh "$triple" crates/rangeforge-app/binaries || die "FFmpeg could not be fetched"
+bash scripts/fetch-ffmpeg.sh "$triple" crates/rangeforge-app/binaries || {
+  echo
+  echo "If the message above mentions CRYPT_E_NO_REVOCATION_CHECK, this network blocks Windows'"
+  echo "certificate check. If you accept that for this download, run again with:"
+  echo "    CURL_OPTIONS=--ssl-no-revoke scripts/build-local.sh $choice"
+  echo "(or set CURL_OPTIONS=--ssl-no-revoke before double-clicking build-local.bat), or put an"
+  echo "FFmpeg at crates/rangeforge-app/binaries/ffmpeg-$triple by hand."
+  die "FFmpeg could not be fetched"
+}
 
 if [ $skip_tests -eq 0 ]; then
   step "Testing the export with the bundled FFmpeg"
