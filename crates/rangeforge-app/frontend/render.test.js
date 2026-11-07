@@ -69,6 +69,7 @@ test('the right-click menu depends on the row and what is switched on', () => {
       'Edit artist, title and album…',
       'Get tags from Last.fm for this song',
       'Get tags from Last.fm for this album',
+      'Select every song with this album',
       'Remove from the list',
     ],
   );
@@ -86,7 +87,13 @@ test('the right-click menu depends on the row and what is switched on', () => {
     ],
   );
   assert.strictEqual(album[0].on, false);
-  assert.deepStrictEqual(album[1], { action: 'add_tag', label: 'Add a tag to every song of this album…', group: 0, track: null });
+  assert.deepStrictEqual(album[1], {
+    action: 'add_tag',
+    label: 'Add a tag to every song of this album…',
+    targets: [{ group: 0, track: null }],
+  });
+  assert.deepStrictEqual(album[3].targets, [{ group: 0, track: null }]);
+  assert.strictEqual(album[3].albums, true);
 
   assert.deepStrictEqual(Render.menuItems(demo, 99, null), []);
   assert.match(Render.menuHtml(album), /data-item="4">Remove from the list/);
@@ -95,6 +102,48 @@ test('the right-click menu depends on the row and what is switched on', () => {
   const chips = Render.chipsHtml([{ text: 'Prog "Rock"', kind: 'mine', title: 'x' }], 2, 5);
   assert.match(chips, /<button type="button" class="chip-x" data-group="2" data-track="5" data-tag="Prog &quot;Rock&quot;"/);
   assert.doesNotMatch(Render.chipsHtml([{ text: 'a', kind: 'genre', title: 'x' }]), /chip-x/);
+});
+
+test('several picked songs get one menu that works on all of them', () => {
+  const picks = [
+    { group: 0, track: 0 },
+    { group: 0, track: 1 },
+    { group: 1, track: 0 },
+  ];
+  const menu = Render.menuItems(demo, 0, 1, picks);
+  assert.deepStrictEqual(
+    menu.map((item) => item.label),
+    [
+      'Leave out these 3 songs',
+      'Add a tag to these 3 songs…',
+      'Edit names of these 3 songs…',
+      'Get tags from Last.fm for these 3 songs',
+      'Get tags from Last.fm for their albums',
+      'Select every song with this album',
+    ],
+  );
+  assert.deepStrictEqual(menu[1].targets, picks);
+  assert.strictEqual(menu[3].albums, false);
+  assert.strictEqual(menu[4].albums, true);
+  // One picked song is just that song's own menu.
+  assert.strictEqual(Render.menuItems(demo, 0, 1, [picks[1]])[0].action, 'toggle_track');
+});
+
+test('songs with the same album name are found across the whole list', () => {
+  const song = (album) => ({ identity: album === undefined ? null : { album } });
+  const state = {
+    groups: [
+      { tracks: [song('I Robot'), song('Other')] },
+      { tracks: [song(' i robot ')] },
+      { tracks: [song(undefined)] },
+    ],
+  };
+  assert.deepStrictEqual(Render.sameAlbum(state, 0, 0), [
+    { group: 0, track: 0 },
+    { group: 1, track: 0 },
+  ]);
+  assert.deepStrictEqual(Render.sameAlbum(state, 2, 0), [], 'no album name, nothing to match');
+  assert.deepStrictEqual(Render.sameAlbum(state, 9, 0), []);
 });
 
 test('the confirmation says what will happen', () => {

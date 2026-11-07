@@ -24,7 +24,7 @@ use rangeforge_lookup::billboard::{HttpFetcher, unix_now};
 use rangeforge_lookup::lastfm::{HttpGet, LastFm};
 use rangeforge_lookup::tagcache::Subject;
 use rangeforge_session::load::Job;
-use rangeforge_session::model::{Names, RunEvent};
+use rangeforge_session::model::{Names, Pick, RunEvent};
 use rangeforge_session::naming::NamingPreview;
 use rangeforge_session::{engine, paths, runner, secrets};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -256,24 +256,19 @@ async fn clear_completed(state: Session<'_>) -> Result<Reply, String> {
 
 #[tauri::command]
 async fn get_lastfm_tags(
-    group: usize,
-    track: Option<usize>,
+    targets: Vec<Pick>,
+    albums: bool,
     state: Session<'_>,
     app: AppHandle,
 ) -> Result<Reply, String> {
-    let reply = ops::request_lastfm(&state, group, track);
+    let reply = ops::request_lastfm(&state, &targets, albums);
     watch_genres(&app, state.inner());
     Ok(reply)
 }
 
 #[tauri::command]
-async fn add_tag(
-    group: usize,
-    track: Option<usize>,
-    text: String,
-    state: Session<'_>,
-) -> Result<Reply, String> {
-    Ok(ops::add_tag(&state, group, track, &text))
+async fn add_tag(targets: Vec<Pick>, text: String, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::add_tag(&state, &targets, &text))
 }
 
 #[tauri::command]
@@ -299,9 +294,9 @@ struct NamesInput {
 /// Types in names by hand, then lets Last.fm be asked about the new ones if lookups are on.
 #[tauri::command]
 async fn set_names(
-    group: usize,
-    track: Option<usize>,
+    targets: Vec<Pick>,
     names: NamesInput,
+    only_filled: bool,
     state: Session<'_>,
     app: AppHandle,
 ) -> Result<Reply, String> {
@@ -311,7 +306,7 @@ async fn set_names(
         album: names.album,
         album_artist: names.album_artist,
     };
-    let reply = ops::set_names(&state, group, track, &names);
+    let reply = ops::set_names(&state, &targets, &names, only_filled);
     watch_genres(&app, state.inner());
     Ok(reply)
 }

@@ -17,7 +17,7 @@ use rangeforge_lookup::tagcache::{Subject, TagCache};
 use rangeforge_session::controls::PresetList;
 use rangeforge_session::load::Job;
 use rangeforge_session::model::{
-    App, MeasureOutcome, Names, RunEvent, RunRequest, RunSpec, Settings,
+    App, MeasureOutcome, Names, Pick, RunEvent, RunRequest, RunSpec, Settings,
 };
 use rangeforge_session::presets;
 use rangeforge_session::secrets::{self, SecretStore};
@@ -608,15 +608,15 @@ fn stop(shared: &Shared, why: &str, show: &mut dyn FnMut(Reply)) {
     show(describe(shared));
 }
 
-/// Marks a song (or a row's album) to be asked about at Last.fm, whatever the automatic lookup
+/// Marks songs (or their albums) to be asked about at Last.fm, whatever the automatic lookup
 /// switch says. The caller then starts the asking.
-pub fn request_lastfm(shared: &Shared, group: usize, track: Option<usize>) -> Reply {
-    with_app(shared, |app| app.request_lastfm(group, track))
+pub fn request_lastfm(shared: &Shared, targets: &[Pick], albums: bool) -> Reply {
+    with_app(shared, |app| app.request_lastfm(targets, albums))
 }
 
-/// Adds a tag by hand to a song, or to every song of an album when no song is given.
-pub fn add_tag(shared: &Shared, group: usize, track: Option<usize>, text: &str) -> Reply {
-    with_app(shared, |app| app.add_tag(group, track, text))
+/// Adds a tag by hand to the songs named (every song of a group for a target with no song).
+pub fn add_tag(shared: &Shared, targets: &[Pick], text: &str) -> Reply {
+    with_app(shared, |app| app.add_tag(targets, text))
 }
 
 /// Takes a tag away from a song by hand.
@@ -624,9 +624,10 @@ pub fn remove_tag(shared: &Shared, group: usize, track: usize, text: &str) -> Re
     with_app(shared, |app| app.remove_tag(group, track, text))
 }
 
-/// Types in a song's names, or an album's, replacing what was known.
-pub fn set_names(shared: &Shared, group: usize, track: Option<usize>, names: &Names) -> Reply {
-    with_app(shared, |app| app.set_names(group, track, names))
+/// Types in names for songs, or for albums, replacing what was known. With `only_filled`, blank
+/// fields leave what is known alone.
+pub fn set_names(shared: &Shared, targets: &[Pick], names: &Names, only_filled: bool) -> Reply {
+    with_app(shared, |app| app.set_names(targets, names, only_filled))
 }
 
 pub fn clear_list(shared: &Shared) -> Reply {

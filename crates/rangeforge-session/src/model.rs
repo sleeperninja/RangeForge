@@ -166,6 +166,14 @@ pub struct TrackRow {
     pub edits: TagEdits,
 }
 
+/// What a change from the window applies to: one song, or with no song, every song of a group.
+/// A window sends a list of these, so one action can work on a selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+pub struct Pick {
+    pub group: usize,
+    pub track: Option<usize>,
+}
+
 /// Names typed in by hand for a song or an album. A blank field means "not known".
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Names {
@@ -490,13 +498,8 @@ impl App {
             .or_else(|| (!track.edits.removed.is_empty()).then(String::new))
     }
 
-    /// Adds a tag by hand to one song, or with no song given, to every song of the album.
-    pub fn add_tag(
-        &mut self,
-        group: usize,
-        track: Option<usize>,
-        text: &str,
-    ) -> Result<(), String> {
+    /// Adds a tag by hand to every song the targets name.
+    pub fn add_tag(&mut self, targets: &[Pick], text: &str) -> Result<(), String> {
         let text = text.trim();
         if text.is_empty() {
             return Err("Type the tag first.".to_string());
@@ -504,7 +507,7 @@ impl App {
         if text.contains([',', ';']) {
             return Err("A tag cannot hold a comma or semicolon: they separate tags.".to_string());
         }
-        for row in self.rows_mut(group, track)? {
+        for row in self.rows_for(targets)? {
             row.edits.add(text);
         }
         Ok(())
@@ -512,57 +515,79 @@ impl App {
 
     /// Takes a tag away from one song, by hand. It stays away when Last.fm is asked again.
     pub fn remove_tag(&mut self, group: usize, track: usize, text: &str) -> Result<(), String> {
-        for row in self.rows_mut(group, Some(track))? {
+        let target = Pick {
+            group,
+            track: Some(track),
+        };
+        for row in self.rows_for(&[target])? {
             row.edits.remove(text);
         }
         Ok(())
     }
 
-    /// The songs a change applies to: the one given, or all of the group's.
-    fn rows_mut(
-        &mut self,
-        group: usize,
-        track: Option<usize>,
-    ) -> Result<Vec<&mut TrackRow>, String> {
-        let group = self
-            .groups
-            .get_mut(group)
-            .ok_or("That album is not in the list.")?;
-        match track {
-            Some(index) => Ok(vec![
-                group
-                    .tracks
-                    .get_mut(index)
-                    .ok_or("That song is not in the list.")?,
-            ]),
-            None => Ok(group.tracks.iter_mut().collect()),
+    /// The songs a change applies to, each once: the ones named, or all of a group's songs for
+    /// a target with no song.
+    fn rows_for(&mut self, targets: &[Pick]) -> Result<Vec<&mut TrackRow>, String> {
+        let mut wanted: HashSet<(usize, usize)> = HashSet::new();
+        for target in targets {
+            let group = self
+                .groups
+                .get(target.group)
+                .ok_or("That album is not in the list.")?;
+            match target.track {
+                Some(index) if index < group.tracks.len() => {
+                    wanted.insert((target.group, index));
+                }
+                Some(_) => return Err("That song is not in the list.".to_string()),
+                None => wanted.extend((0..group.tracks.len()).map(|index| (target.group, index))),
+            }
         }
+        let wanted = &wanted;
+        Ok(self
+            .groups
+            .iter_mut()
+            .enumerate()
+            .flat_map(|(group, rows)| {
+                rows.tracks
+                    .iter_mut()
+                    .enumerate()
+                    .filter(move |(index, _)| wanted.contains(&(group, *index)))
+                    .map(|(_, row)| row)
+            })
+            .collect())
     }
 
-    /// Types in who a song is. With a song, sets its artist, title, album and album artist;
-    /// with none, sets the album and album artist of every song in the group. A blank field
-    /// clears it. What was typed replaces whatever was known, and nothing replaces it later.
+    /// Types in who songs are. For songs, sets artist, title, album and album artist; for a
+    /// whole album (targets with no song), only the album and album artist of every song in it.
+    /// A blank field clears it, unless `only_filled`, which leaves fields alone that were left
+    /// blank: for changing the album of many songs without touching each one's title. What was
+    /// typed replaces whatever was known, and nothing replaces it later.
     pub fn set_names(
         &mut self,
-        group: usize,
-        track: Option<usize>,
+        targets: &[Pick],
         names: &Names,
+        only_filled: bool,
     ) -> Result<(), String> {
         let clean = |text: &str| Some(text.trim().to_string()).filter(|t| !t.is_empty());
         let (artist, title) = (clean(&names.artist), clean(&names.title));
         let (album, album_artist) = (clean(&names.album), clean(&names.album_artist));
-        let whole_album = track.is_none();
-        for row in self.rows_mut(group, track)? {
+        let whole_album = targets.iter().all(|target| target.track.is_none());
+        let set = |slot: &mut Option<String>, value: &Option<String>| {
+            if !(only_filled && value.is_none()) {
+                slot.clone_from(value);
+            }
+        };
+        for row in self.rows_for(targets)? {
             let identity = row.identity.get_or_insert_with(|| {
                 Identity::unknown(rangeforge_core::identify::IdentitySource::Hand)
             });
             let before = identity.clone();
             if !whole_album {
-                identity.artist.clone_from(&artist);
-                identity.title.clone_from(&title);
+                set(&mut identity.artist, &artist);
+                set(&mut identity.title, &title);
             }
-            identity.album.clone_from(&album);
-            identity.album_artist.clone_from(&album_artist);
+            set(&mut identity.album, &album);
+            set(&mut identity.album_artist, &album_artist);
             if *identity != before {
                 identity.source = rangeforge_core::identify::IdentitySource::Hand;
             }
@@ -605,39 +630,25 @@ impl App {
         self.requested.contains_key(&subject.key())
     }
 
-    /// Asks Last.fm, by hand, about one song (with `track`) or about the album a row stands for.
-    /// Works even while automatic lookups are off, but needs a key and the main metadata switch.
-    /// A song is asked about as a song; an album as an album, for every song in it.
-    pub fn request_lastfm(&mut self, group: usize, track: Option<usize>) -> Result<(), String> {
+    /// Asks Last.fm, by hand, about the songs the targets name (`albums` false) or about their
+    /// albums (`albums` true). Works even while automatic lookups are off, but needs a key and
+    /// the main metadata switch. Songs asked about again are asked afresh.
+    pub fn request_lastfm(&mut self, targets: &[Pick], albums: bool) -> Result<(), String> {
         if !self.metadata.enabled {
             return Err("Metadata lookups are switched off. Turn them on in Settings.".to_string());
         }
         if self.lastfm_key == KeySource::None {
             return Err("There is no Last.fm key yet. Add one in Settings.".to_string());
         }
-        let group = self
-            .groups
-            .get(group)
-            .ok_or("That album is not in the list.")?;
-        let identities: Vec<&Identity> = match track {
-            Some(index) => vec![
-                group
-                    .tracks
-                    .get(index)
-                    .and_then(|row| row.identity.as_ref())
-                    .ok_or("That song is not known yet.")?,
-            ],
-            None => group
-                .tracks
-                .iter()
-                .filter_map(|row| row.identity.as_ref())
-                .collect(),
-        };
         let mut subjects = Vec::new();
-        for identity in identities {
-            let subject = match track {
-                Some(_) => genres::track_subject(identity),
-                None => genres::album_subject(identity),
+        for row in self.rows_for(targets)? {
+            let Some(identity) = row.identity.as_ref() else {
+                continue;
+            };
+            let subject = if albums {
+                genres::album_subject(identity)
+            } else {
+                genres::track_subject(identity)
             };
             if let Some(subject) = subject
                 && !subjects.contains(&subject)
@@ -646,9 +657,10 @@ impl App {
             }
         }
         if subjects.is_empty() {
-            return Err(match track {
-                Some(_) => "Last.fm needs the song's artist and title, and they are not known.",
-                None => "Last.fm needs the album's artist and name, and they are not known.",
+            return Err(if albums {
+                "Last.fm needs an album's artist and name, and they are not known."
+            } else {
+                "Last.fm needs a song's artist and title, and they are not known."
             }
             .to_string());
         }
@@ -2446,6 +2458,63 @@ mod tests {
         app
     }
 
+    fn pick_song(group: usize, track: usize) -> Pick {
+        Pick {
+            group,
+            track: Some(track),
+        }
+    }
+
+    fn pick_album(group: usize) -> Pick {
+        Pick { group, track: None }
+    }
+
+    #[test]
+    fn one_change_can_reach_a_selection_of_songs() {
+        let mut app = ready_app();
+        app.set_metadata_enabled(true);
+        app.lastfm_key = KeySource::Saved;
+        // The same song twice, and the other, are each changed once.
+        let picked = [pick_song(0, 1), pick_song(0, 0), pick_song(0, 1)];
+        app.add_tag(&picked, "Mixtape").unwrap();
+        assert!(
+            app.groups[0]
+                .tracks
+                .iter()
+                .all(|t| t.edits.added == ["Mixtape"])
+        );
+        assert!(
+            app.add_tag(&[pick_song(0, 0), pick_song(5, 0)], "x")
+                .is_err(),
+            "nothing half-done"
+        );
+
+        // Only the fields filled in are changed, so each song keeps its own title.
+        let titles: Vec<_> = app.groups[0]
+            .tracks
+            .iter()
+            .map(|t| t.identity.as_ref().unwrap().title.clone())
+            .collect();
+        let names = Names {
+            album: "Shared".to_string(),
+            album_artist: "Band".to_string(),
+            ..Names::default()
+        };
+        app.set_names(&picked, &names, true).unwrap();
+        for (row, title) in app.groups[0].tracks.iter().zip(&titles) {
+            let identity = row.identity.as_ref().unwrap();
+            assert_eq!(identity.album.as_deref(), Some("Shared"));
+            assert_eq!(identity.album_artist.as_deref(), Some("Band"));
+            assert_eq!(&identity.title, title);
+        }
+
+        // Both songs are asked about in one go, each once.
+        app.request_lastfm(&picked, false).unwrap();
+        assert_eq!(app.take_questions().len(), 2);
+        app.request_lastfm(&picked, true).unwrap();
+        assert_eq!(app.take_questions().len(), 1, "they share one album");
+    }
+
     #[test]
     fn tags_and_names_can_be_edited_by_hand() {
         let mut app = ready_app();
@@ -2453,12 +2522,12 @@ mod tests {
         app.groups[0].tracks[0].identity.as_mut().unwrap().genre = Some("Rock, Prog".to_string());
         let shown = |app: &App| app.song_genres(&app.groups[0].tracks[0]);
 
-        assert!(app.add_tag(0, Some(0), "  ").is_err());
+        assert!(app.add_tag(&[pick_song(0, 0)], "  ").is_err());
         assert!(
-            app.add_tag(0, Some(0), "a, b").is_err(),
+            app.add_tag(&[pick_song(0, 0)], "a, b").is_err(),
             "commas separate tags"
         );
-        app.add_tag(0, Some(0), "Favourite").unwrap();
+        app.add_tag(&[pick_song(0, 0)], "Favourite").unwrap();
         app.remove_tag(0, 0, "prog").unwrap();
         assert_eq!(shown(&app).album, ["Rock"]);
         assert_eq!(shown(&app).mine, ["Favourite"]);
@@ -2466,7 +2535,7 @@ mod tests {
             app.genre_tag(&app.groups[0].tracks[0]).as_deref(),
             Some("Rock, Favourite")
         );
-        assert!(app.add_tag(0, Some(99), "x").is_err());
+        assert!(app.add_tag(&[pick_song(0, 99)], "x").is_err());
 
         // Taking away everything writes an empty tag, rather than leaving the old one.
         app.remove_tag(0, 0, "Rock").unwrap();
@@ -2474,7 +2543,7 @@ mod tests {
         assert_eq!(app.genre_tag(&app.groups[0].tracks[0]).as_deref(), Some(""));
 
         // An album-wide tag reaches every song.
-        app.add_tag(0, None, "Mine").unwrap();
+        app.add_tag(&[pick_album(0)], "Mine").unwrap();
         assert!(
             app.groups[0]
                 .tracks
@@ -2489,7 +2558,7 @@ mod tests {
             album: " I Robot ".to_string(),
             album_artist: String::new(),
         };
-        app.set_names(0, Some(0), &names).unwrap();
+        app.set_names(&[pick_song(0, 0)], &names, false).unwrap();
         let identity = app.groups[0].tracks[0].identity.clone().unwrap();
         assert_eq!(identity.artist.as_deref(), Some("The Alan Parsons Project"));
         assert_eq!(identity.album.as_deref(), Some("I Robot"));
@@ -2509,7 +2578,7 @@ mod tests {
             album: "Other".to_string(),
             ..Names::default()
         };
-        app.set_names(0, None, &album).unwrap();
+        app.set_names(&[pick_album(0)], &album, false).unwrap();
         assert!(
             app.groups[0]
                 .tracks
@@ -2525,18 +2594,21 @@ mod tests {
                 .as_deref(),
             Some("I Robot")
         );
-        assert!(app.set_names(9, None, &album).is_err());
+        assert!(app.set_names(&[pick_album(9)], &album, false).is_err());
     }
 
     #[test]
     fn asking_last_fm_by_hand_works_with_lookups_off_and_asks_afresh() {
         let mut app = ready_app();
         app.set_metadata_enabled(true);
-        assert!(app.request_lastfm(0, Some(0)).is_err(), "no key yet");
+        assert!(
+            app.request_lastfm(&[pick_song(0, 0)], false).is_err(),
+            "no key yet"
+        );
 
         app.lastfm_key = KeySource::Saved;
         assert!(!app.wants_lastfm(), "automatic lookups stay off");
-        app.request_lastfm(0, Some(0)).unwrap();
+        app.request_lastfm(&[pick_song(0, 0)], false).unwrap();
         assert!(app.has_questions());
         let song = app.take_questions();
         assert_eq!(song.len(), 1, "only that song, nothing automatic");
@@ -2546,13 +2618,13 @@ mod tests {
         assert!(!app.has_questions());
 
         // Asking again forgets the answer and asks again.
-        app.request_lastfm(0, Some(0)).unwrap();
+        app.request_lastfm(&[pick_song(0, 0)], false).unwrap();
         assert_eq!(app.take_questions().len(), 1);
 
         // The album row asks about the album.
-        app.request_lastfm(0, None).unwrap();
+        app.request_lastfm(&[pick_album(0)], true).unwrap();
         assert_eq!(app.take_questions().len(), 1);
-        assert!(app.request_lastfm(99, None).is_err());
+        assert!(app.request_lastfm(&[pick_album(99)], true).is_err());
     }
 
     #[test]

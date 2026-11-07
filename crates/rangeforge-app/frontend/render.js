@@ -150,14 +150,56 @@
       .join('');
   }
 
+  // Every song with the same album name as this one (ignoring capitals and spaces), anywhere in
+  // the list, as `{group, track}` pairs. Empty when the song has no album name.
+  function sameAlbum(state, groupIndex, trackIndex) {
+    const album = (state.groups[groupIndex]?.tracks[trackIndex]?.identity?.album || '').trim().toLowerCase();
+    if (!album) {
+      return [];
+    }
+    const picks = [];
+    state.groups.forEach((group, g) => {
+      group.tracks.forEach((track, t) => {
+        if (((track.identity && track.identity.album) || '').trim().toLowerCase() === album) {
+          picks.push({ group: g, track: t });
+        }
+      });
+    });
+    return picks;
+  }
+
   // What the right-click menu offers for a row. `trackIndex` is null on an album's own row.
-  function menuItems(state, groupIndex, trackIndex) {
+  // `picks` is the selected songs as `{group, track}` pairs when several are selected and the
+  // row is one of them: the menu then works on all of them. Items that work on songs carry
+  // their `targets`; a target with no song means every song of that album.
+  function menuItems(state, groupIndex, trackIndex, picks) {
     const group = state.groups[groupIndex];
     if (!group) {
       return [];
     }
+    const song = trackIndex !== null && group.tracks[trackIndex];
     const items = [];
-    if (trackIndex !== null && group.tracks[trackIndex]) {
+    const selectSame = { action: 'select_album', label: 'Select every song with this album', group: groupIndex, track: trackIndex };
+
+    if (song && picks && picks.length > 1) {
+      const n = picks.length;
+      const everyOn = picks.every((p) => state.groups[p.group].tracks[p.track].included);
+      items.push({
+        action: 'include_many',
+        label: everyOn ? `Leave out these ${n} songs` : `Include these ${n} songs`,
+        targets: picks,
+        on: !everyOn,
+      });
+      items.push({ action: 'add_tag', label: `Add a tag to these ${n} songs…`, targets: picks });
+      items.push({ action: 'edit_names', label: `Edit names of these ${n} songs…`, targets: picks });
+      items.push({ action: 'lastfm', label: `Get tags from Last.fm for these ${n} songs`, targets: picks, albums: false });
+      items.push({ action: 'lastfm', label: 'Get tags from Last.fm for their albums', targets: picks, albums: true });
+      items.push(selectSame);
+      return items;
+    }
+
+    const here = [{ group: groupIndex, track: song ? trackIndex : null }];
+    if (song) {
       const on = group.tracks[trackIndex].included;
       items.push({
         action: 'toggle_track',
@@ -174,33 +216,28 @@
       group: groupIndex,
       on: !all,
     });
-    const song = trackIndex !== null && group.tracks[trackIndex];
     items.push({
       action: 'add_tag',
       label: song ? 'Add a tag to this song…' : 'Add a tag to every song of this album…',
-      group: groupIndex,
-      track: song ? trackIndex : null,
+      targets: here,
     });
     items.push({
       action: 'edit_names',
       label: song ? 'Edit artist, title and album…' : 'Edit album name and artist…',
-      group: groupIndex,
-      track: song ? trackIndex : null,
+      targets: here,
     });
     if (song) {
-      items.push({
-        action: 'lastfm',
-        label: 'Get tags from Last.fm for this song',
-        group: groupIndex,
-        track: trackIndex,
-      });
+      items.push({ action: 'lastfm', label: 'Get tags from Last.fm for this song', targets: here, albums: false });
     }
     items.push({
       action: 'lastfm',
       label: 'Get tags from Last.fm for this album',
-      group: groupIndex,
-      track: null,
+      targets: [{ group: groupIndex, track: null }],
+      albums: true,
     });
+    if (song) {
+      items.push(selectSame);
+    }
     items.push({ action: 'remove', label: 'Remove from the list', group: groupIndex });
     return items;
   }
@@ -289,6 +326,7 @@
     tableBodyHtml,
     includedState,
     menuItems,
+    sameAlbum,
     menuHtml,
     variablesHtml,
     confirmText,
