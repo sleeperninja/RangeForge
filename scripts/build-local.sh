@@ -157,16 +157,27 @@ if [ $skip_tests -eq 0 ]; then
 fi
 
 step "Building the installer"
+started="$(mktemp)"
+trap 'rm -f "$started"' EXIT
 (cd crates/rangeforge-app && cargo tauri build --config tauri.bundle.conf.json --bundles "$bundles" --ci) \
   || die "the build failed"
 
 step "Collecting the results"
+# Cargo builds in CARGO_TARGET_DIR when it is set (the repository may be on a network share, where
+# building is slow and unreliable), and otherwise in target/.
+target_dir="${CARGO_TARGET_DIR:-target}"
+have cygpath && target_dir="$(cygpath -u "$target_dir")"
 out="dist/$version"
 mkdir -p "$out"
+# Only what this build just made: an older installer left in the folder must not be passed off
+# as the new one.
 for pattern in msi/*.msi dmg/*.dmg deb/*.deb; do
-  cp target/release/bundle/$pattern "$out/" 2> /dev/null || true
+  for built in "$target_dir"/release/bundle/$pattern; do
+    [ -f "$built" ] && [ "$built" -nt "$started" ] && cp "$built" "$out/"
+  done
 done
-[ -n "$(ls -A "$out")" ] || die "no installer was produced"
+fresh="$(find "$out" -type f -newer "$started")"
+[ -n "$fresh" ] || die "no new installer was produced (looked in $target_dir/release/bundle)"
 ls -l "$out"
 echo
 echo "Done. The installer is in $root/$out"
