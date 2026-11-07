@@ -10,6 +10,7 @@ use rangeforge_export::ffmpeg::Ffmpeg;
 use rangeforge_export::format::OutputFormat;
 use rangeforge_export::pipeline::{Options, Progress, export_file, preview};
 use rangeforge_export::strategy::{Resolved, Strategy};
+use rangeforge_session::dsd::DsdFormat;
 use rangeforge_session::identity::identify_file;
 use rangeforge_session::load::{Job, load};
 use rangeforge_session::measuring::{measure_split, measure_whole};
@@ -131,7 +132,10 @@ fn run_job(
     cache: Option<&Cache>,
     ffmpeg: Option<&Ffmpeg>,
 ) -> Result<usize> {
-    let (settings, format) = (plan.settings, plan.format);
+    let settings = plan.settings;
+    // A DSD source cannot be written as it is, so it gets the usual DSD Format (88.2 kHz, 24-bit)
+    // wherever the output says original or source.
+    let format = DsdFormat::default().format_for(plan.format, &job.audio);
     let (strategy, names) = (plan.strategy, plan.names);
     if let Status::Failed(message) = &group.status {
         bail!("{message}");

@@ -12,7 +12,7 @@ use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 
-use crate::AudioError;
+use crate::{AudioError, dsd};
 
 /// Facts about the decoded audio.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,11 +29,24 @@ pub struct StreamInfo {
 ///
 /// The file is read front to back, so it is safe on a network drive. A corrupt packet is an
 /// error and not something to skip, because skipping would quietly change the audio.
-pub fn for_each_block<E, F>(path: &Path, mut on_block: F) -> Result<StreamInfo, E>
+pub fn for_each_block<E, F>(path: &Path, on_block: F) -> Result<StreamInfo, E>
 where
     E: From<AudioError>,
     F: FnMut(&StreamInfo, &[f32]) -> Result<(), E>,
 {
+    for_each_block_at(path, dsd::ANALYSIS_RATE, on_block)
+}
+
+/// Like [`for_each_block`], but a DSD file is turned into audio at `dsd_rate`. Other files are
+/// decoded at their own rate, and `dsd_rate` does not apply to them.
+pub fn for_each_block_at<E, F>(path: &Path, dsd_rate: u32, mut on_block: F) -> Result<StreamInfo, E>
+where
+    E: From<AudioError>,
+    F: FnMut(&StreamInfo, &[f32]) -> Result<(), E>,
+{
+    if dsd::is_dsd(path) {
+        return dsd::for_each_block(path, dsd_rate, on_block);
+    }
     let file = File::open(path).map_err(|source| AudioError::Open {
         path: path.to_path_buf(),
         source,

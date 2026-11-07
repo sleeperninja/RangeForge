@@ -118,6 +118,7 @@
     <form method="dialog">
       <p><strong>This changes files that are already there.</strong></p>
       <p id="confirmText">Files at the same path will be overwritten, or originals deleted once their songs are written.</p>
+      <p><label class="check"><input id="confirmNoAsk" type="checkbox"> Don't ask me again (Settings turns this back on)</label></p>
       <div class="dialog-buttons">
         <button value="cancel" class="button">Cancel</button>
         <button value="run" class="button primary">Run anyway</button>
@@ -140,6 +141,18 @@
     <p class="example">Example: <span id="exampleSingle"></span></p>
     <p id="problemSingle" class="problem hidden"></p>
     <ul id="variableList" class="variables"></ul>
+
+    <h4 class="section">DSD Format</h4>
+    <p class="hint">DSD files cannot be written as they are. This is what they become where the Output Format says original or source. Whatever the Output Format names itself is used as it is. Channels are kept. These apply as soon as you change them.</p>
+    <div class="dsd-grid">
+      <label>Codec <select id="dsdCodec"></select></label>
+      <label>Container <select id="dsdContainer"></select></label>
+      <label>Sample Rate <select id="dsdSampleRate"></select></label>
+      <label>Bit Depth <select id="dsdBitDepth"></select></label>
+    </div>
+
+    <h4 class="section">Before changing files</h4>
+    <div class="row"><label class="check"><input id="confirmFirst" type="checkbox"> Ask before a run that overwrites files or deletes originals</label></div>
 
     <h4 class="section">API keys</h4>
     <p class="hint">Keys are kept in this computer's own credential store, not in a file. Each can be switched off without forgetting it. The Metadata API switch on the main screen must be on too.</p>

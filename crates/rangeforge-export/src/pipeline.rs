@@ -9,7 +9,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rangeforge_audio::decode::{StreamInfo, for_each_block};
+use rangeforge_audio::decode::{StreamInfo, for_each_block_at};
 use rangeforge_audio::measure::spans_for;
 use rangeforge_audio::span::{Event, Span, Splitter};
 use rangeforge_core::cue::Segment;
@@ -107,8 +107,18 @@ pub fn export_file(
         staged: Vec::new(),
     };
 
-    let encoded = for_each_block::<ExportError, _>(input, |info, samples| run.feed(info, samples))
-        .and_then(|_| run.finish_stream());
+    // A DSD source is turned into audio straight at the rate being written, so the one
+    // conversion FFmpeg does on the way in is the only one. It never goes through a middle rate.
+    ffmpeg.offer_to_audio();
+    let decode_rate = options
+        .format
+        .sample_rate
+        .hz()
+        .unwrap_or(rangeforge_audio::dsd::ANALYSIS_RATE);
+    let encoded = for_each_block_at::<ExportError, _>(input, decode_rate, |info, samples| {
+        run.feed(info, samples)
+    })
+    .and_then(|_| run.finish_stream());
     if let Err(error) = encoded {
         run.discard_staged();
         return Err(error);

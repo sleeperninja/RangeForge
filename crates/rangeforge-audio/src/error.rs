@@ -14,6 +14,8 @@ pub enum AudioError {
     Decode(#[from] symphonia::core::errors::Error),
     #[error("loudness meter error: {0}")]
     Meter(#[from] ebur128::Error),
+    #[error("{0}")]
+    Dsd(String),
     #[error("the file has no audio to measure")]
     NoAudioStream,
     #[error("the audio ended before {missing} track(s) were finished")]

@@ -784,3 +784,108 @@ fn single_files_carry_their_tags_over() {
     );
     assert!(!text.contains("Old Title"), "{text}");
 }
+
+/// Writes about a second of DSD64: a 1 kHz tone from a simple one-bit modulator, in a DSF file
+/// with `channels` channels.
+fn write_dsf(path: &Path, channels: u32) {
+    const RATE: u32 = 2_822_400;
+    const BLOCK: usize = 4096;
+    const BLOCKS: usize = 86;
+    let bits = BLOCKS * BLOCK * 8;
+    // One block-sized run of bytes per channel, channel after channel, block after block.
+    let mut data = vec![0_u8; channels as usize * BLOCKS * BLOCK];
+    for channel in 0..channels as usize {
+        let (mut integrator, mut out) = (0.0_f64, -1.0_f64);
+        for n in 0..bits {
+            #[allow(clippy::cast_precision_loss)]
+            let x = 0.5 * (std::f64::consts::TAU * 1000.0 * n as f64 / f64::from(RATE)).sin();
+            integrator += x - out;
+            out = if integrator >= 0.0 { 1.0 } else { -1.0 };
+            if out > 0.0 {
+                // Bits are stored lowest first within each byte.
+                let (block, within) = (n / (BLOCK * 8), n % (BLOCK * 8));
+                let at = (block * channels as usize + channel) * BLOCK + within / 8;
+                data[at] |= 1 << (within % 8);
+            }
+        }
+    }
+    let mut bytes = Vec::new();
+    bytes.extend(b"DSD ");
+    bytes.extend(28_u64.to_le_bytes());
+    bytes.extend((92 + data.len() as u64).to_le_bytes());
+    bytes.extend(0_u64.to_le_bytes());
+    bytes.extend(b"fmt ");
+    bytes.extend(52_u64.to_le_bytes());
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.extend(0_u32.to_le_bytes());
+    bytes.extend((if channels == 2 { 2_u32 } else { 7 }).to_le_bytes());
+    bytes.extend(channels.to_le_bytes());
+    bytes.extend(RATE.to_le_bytes());
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.extend((bits as u64).to_le_bytes());
+    bytes.extend(u32::try_from(BLOCK).unwrap().to_le_bytes());
+    bytes.extend(0_u32.to_le_bytes());
+    bytes.extend(b"data");
+    bytes.extend((12 + data.len() as u64).to_le_bytes());
+    bytes.extend(data);
+    fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn dsd_is_measured_at_a_fixed_rate_with_every_channel() {
+    let Some(_ffmpeg) = ffmpeg() else { return };
+    let dir = tempdir().unwrap();
+    for channels in [2, 6] {
+        let input = dir.path().join(format!("tone{channels}.dsf"));
+        write_dsf(&input, channels);
+        let measured = measure_whole_file(&input).unwrap();
+        assert_eq!(measured.sample_rate, 88_200);
+        assert_eq!(measured.channels, channels as usize);
+        let seconds = measured.duration_seconds();
+        assert!((0.98..1.02).contains(&seconds), "{seconds} s");
+        let lufs = measured.tracks[0].integrated_lufs;
+        assert!(lufs.is_finite() && lufs > -40.0, "{lufs} LUFS");
+    }
+}
+
+#[test]
+fn dsd_is_written_at_the_asked_rate_and_depth() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let dir = tempdir().unwrap();
+    let input = dir.path().join("tone.dsf");
+    write_dsf(&input, 2);
+    for rate in [
+        SampleRate::Hz44100,
+        SampleRate::Hz88200,
+        SampleRate::Hz176400,
+    ] {
+        for codec in [Codec::Alac, Codec::Flac] {
+            let format = OutputFormat::new(codec, BitDepth::TwentyFour).with_sample_rate(rate);
+            let opts = Options {
+                format,
+                strategy: serialize(),
+                directory: dir.path().to_path_buf(),
+                copy_source_tags: false,
+            };
+            let name = format!(
+                "out-{}-{}.{}",
+                codec.name(),
+                rate.name(),
+                format.extension()
+            );
+            let written = export_whole(&ffmpeg, &input, plan(-3.0, &name), &opts).unwrap();
+            assert_eq!(
+                probed_rate(&ffmpeg, &written[0].path),
+                rate.hz().unwrap(),
+                "{name}"
+            );
+            // A tone that was written is not silence, and the gain took it down 3 dB.
+            let written_lufs = loudness(&written[0].path);
+            let source_lufs = measure_whole_file(&input).unwrap().tracks[0].integrated_lufs;
+            assert!(
+                (written_lufs - (source_lufs - 3.0)).abs() < 0.3,
+                "{name}: {written_lufs} against {source_lufs}"
+            );
+        }
+    }
+}

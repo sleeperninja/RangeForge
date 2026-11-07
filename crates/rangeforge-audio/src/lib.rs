@@ -5,11 +5,12 @@
 //! The [`cache`] module remembers results so a file is only decoded once, ever.
 //!
 //! The pieces: [`decode`] streams a file as blocks of audio, [`span`] cuts that stream into
-//! tracks, [`measure`] measures each track, [`cache`] remembers the results, and [`tags`]
-//! reads the tags stored in a file.
+//! tracks, [`measure`] measures each track, [`cache`] remembers the results, [`tags`] reads
+//! the tags stored in a file, and [`dsd`] turns DSD files into ordinary audio through FFmpeg.
 
 pub mod cache;
 pub mod decode;
+pub mod dsd;
 mod error;
 pub mod measure;
 pub mod span;

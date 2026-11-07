@@ -14,6 +14,7 @@ use rangeforge_core::identify::IdentitySource;
 use rangeforge_export::format::{BitDepth, Codec, Container};
 
 use crate::controls::{ConflictKind, OutputSettings, WhereKind, sample_rates_for};
+use crate::dsd::DsdFormat;
 use crate::model::{App, Group, Kind, RunState, Status, TrackRow};
 use crate::naming::{self, NamingPreview};
 use crate::secrets::KeySource;
@@ -127,6 +128,18 @@ pub struct StrategyView {
     pub problem: Option<String>,
     /// Running with this choice should ask the user first.
     pub needs_confirmation: bool,
+    /// The user wants to be asked before such a run. "Don't ask again" turns it off, and
+    /// Settings turns it back on. `needs_confirmation` says whether this run is one.
+    pub confirm_first: bool,
+}
+
+/// What DSD files are written as. `same` means "whatever the Output Format says".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DsdView {
+    pub codec: String,
+    pub container: String,
+    pub sample_rate: String,
+    pub bit_depth: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -182,6 +195,12 @@ pub struct Options {
     pub sample_rates: Vec<Choice>,
     pub places: Vec<Choice>,
     pub conflicts: Vec<Choice>,
+    /// For the DSD Format: the Output Format's own choice, or a codec of its own.
+    pub dsd_codecs: Vec<Choice>,
+    pub dsd_containers: Vec<Choice>,
+    /// Real rates only: DSD has no original rate to keep.
+    pub dsd_sample_rates: Vec<Choice>,
+    pub dsd_bit_depths: Vec<Choice>,
 }
 
 /// The whole screen.
@@ -191,6 +210,7 @@ pub struct Snapshot {
     pub volume: VolumeView,
     pub output: OutputView,
     pub strategy: StrategyView,
+    pub dsd: DsdView,
     pub presets: PresetsView,
     pub naming: NamingView,
     pub metadata: MetadataView,
@@ -208,7 +228,7 @@ pub struct Snapshot {
     pub log: Vec<String>,
 }
 
-fn place_id(kind: WhereKind) -> &'static str {
+pub fn place_id(kind: WhereKind) -> &'static str {
     match kind {
         WhereKind::NextToOriginal => "next",
         WhereKind::Subfolder => "subfolder",
@@ -216,7 +236,7 @@ fn place_id(kind: WhereKind) -> &'static str {
     }
 }
 
-fn conflict_id(kind: ConflictKind) -> &'static str {
+pub fn conflict_id(kind: ConflictKind) -> &'static str {
     match kind {
         ConflictKind::Number => "number",
         ConflictKind::RenameExisting => "rename_existing",
@@ -380,7 +400,49 @@ fn options(output: OutputSettings) -> Options {
                 label: kind.label().to_string(),
             })
             .collect(),
+        dsd_codecs: same_as_output()
+            .into_iter()
+            .chain(Codec::ALL.into_iter().map(|codec| Choice {
+                id: codec.name().to_string(),
+                label: codec.name().to_string(),
+            }))
+            .collect(),
+        dsd_containers: same_as_output()
+            .into_iter()
+            .chain([
+                Choice {
+                    id: Container::Native.name().to_string(),
+                    label: "Native (m4a, flac or wav)".to_string(),
+                },
+                Choice {
+                    id: Container::Mka.name().to_string(),
+                    label: "mka".to_string(),
+                },
+            ])
+            .collect(),
+        dsd_sample_rates: DsdFormat::SAMPLE_RATES
+            .into_iter()
+            .map(|rate| Choice {
+                id: rate.name().to_string(),
+                label: rate.label().to_string(),
+            })
+            .collect(),
+        dsd_bit_depths: DsdFormat::BIT_DEPTHS
+            .into_iter()
+            .map(|depth| Choice {
+                id: depth.name().to_string(),
+                label: depth.label().to_string(),
+            })
+            .collect(),
     }
+}
+
+/// The first choice in a DSD list: follow the main Output Format.
+fn same_as_output() -> Vec<Choice> {
+    vec![Choice {
+        id: "same".to_string(),
+        label: "Same as Output Format".to_string(),
+    }]
 }
 
 impl App {
@@ -415,6 +477,17 @@ impl App {
                 delete_original: self.strategy.delete_original,
                 problem: self.strategy.to_strategy().err(),
                 needs_confirmation: self.strategy.needs_confirmation(),
+                confirm_first: self.confirm_destructive,
+            },
+            dsd: DsdView {
+                codec: self.dsd.codec.map_or("same", Codec::name).to_string(),
+                container: self
+                    .dsd
+                    .container
+                    .map_or("same", Container::name)
+                    .to_string(),
+                sample_rate: self.dsd.sample_rate.name().to_string(),
+                bit_depth: self.dsd.bit_depth.name().to_string(),
             },
             presets: PresetsView {
                 names: self.presets.items.iter().map(|p| p.name.clone()).collect(),

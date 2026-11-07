@@ -90,7 +90,9 @@ impl Ffmpeg {
             .status()
             .is_ok_and(|status| status.success());
         if works {
-            Ok(Self { path })
+            let found = Self { path };
+            found.offer_to_audio();
+            Ok(found)
         } else {
             Err(ExportError::FfmpegNotFound { tried: path })
         }
@@ -98,6 +100,13 @@ impl Ffmpeg {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    /// Lets the audio reader use this FFmpeg to open DSD files. Every FFmpeg that is found is
+    /// offered, so measuring DSD works as soon as FFmpeg is known, without passing it along.
+    pub fn offer_to_audio(&self) {
+        let path = self.path.clone();
+        rangeforge_audio::dsd::use_ffmpeg(move || quiet(Command::new(&path)));
     }
 }
 

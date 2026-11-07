@@ -88,6 +88,11 @@
     fillSelect($('bitDepth'), s.options.bit_depths, s.output.bit_depth);
     fillSelect($('container'), s.options.containers, s.output.container);
     fillSelect($('sampleRate'), s.options.sample_rates, s.output.sample_rate);
+    fillSelect($('dsdCodec'), s.options.dsd_codecs, s.dsd.codec);
+    fillSelect($('dsdContainer'), s.options.dsd_containers, s.dsd.container);
+    fillSelect($('dsdSampleRate'), s.options.dsd_sample_rates, s.dsd.sample_rate);
+    fillSelect($('dsdBitDepth'), s.options.dsd_bit_depths, s.dsd.bit_depth);
+    $('confirmFirst').checked = s.strategy.confirm_first;
 
     setValue($('target'), s.volume.target_lufs.toFixed(1));
     $('peakProtection').checked = s.volume.peak_protection;
@@ -187,10 +192,15 @@
       $('confirmText').textContent = Render.confirmText(state.strategy);
       const dialog = $('confirmDialog');
       dialog.returnValue = '';
+      $('confirmNoAsk').checked = false;
       dialog.addEventListener(
         'close',
-        () => {
+        async () => {
           if (dialog.returnValue === 'run') {
+            // Only "Run anyway" can turn the question off, never Cancel.
+            if ($('confirmNoAsk').checked) {
+              await call('set_confirm_destructive', { on: false });
+            }
             pressRun(true);
           }
         },
@@ -294,6 +304,17 @@
     $('codec').addEventListener('change', (e) => call('set_codec', { id: e.target.value }));
     $('bitDepth').addEventListener('change', (e) => call('set_bit_depth', { id: e.target.value }));
     $('container').addEventListener('change', (e) => call('set_container', { id: e.target.value }));
+    for (const [id, field] of [
+      ['dsdCodec', 'codec'],
+      ['dsdContainer', 'container'],
+      ['dsdSampleRate', 'sample_rate'],
+      ['dsdBitDepth', 'bit_depth'],
+    ]) {
+      $(id).addEventListener('change', (e) => call('set_dsd_format', { field, id: e.target.value }));
+    }
+    $('confirmFirst').addEventListener('change', (e) =>
+      call('set_confirm_destructive', { on: e.target.checked }),
+    );
     $('sampleRate').addEventListener('change', (e) => call('set_sample_rate', { id: e.target.value }));
 
     $('presetList').addEventListener('click', (e) => {

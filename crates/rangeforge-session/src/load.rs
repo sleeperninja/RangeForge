@@ -10,7 +10,9 @@ use rangeforge_core::identify::Identity;
 use crate::measuring::read_sheet;
 use crate::model::{Group, Kind, RunState, Status, TrackRow};
 
-const AUDIO_EXTENSIONS: [&str; 7] = ["flac", "wav", "m4a", "mp3", "ogg", "aac", "aiff"];
+const AUDIO_EXTENSIONS: [&str; 9] = [
+    "flac", "wav", "m4a", "mp3", "ogg", "aac", "aiff", "dsf", "dff",
+];
 
 /// One file to measure.
 #[derive(Debug, Clone)]

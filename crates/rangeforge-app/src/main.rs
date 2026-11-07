@@ -155,6 +155,16 @@ async fn set_sample_rate(id: String, state: Session<'_>) -> Result<Reply, String
 }
 
 #[tauri::command]
+async fn set_dsd_format(field: String, id: String, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_dsd_format(&state, &field, &id))
+}
+
+#[tauri::command]
+async fn set_confirm_destructive(on: bool, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_confirm_destructive(&state, on))
+}
+
+#[tauri::command]
 async fn set_bit_depth(id: String, state: Session<'_>) -> Result<Reply, String> {
     Ok(ops::set_bit_depth(&state, &id))
 }
@@ -307,6 +317,8 @@ fn main() {
             set_container,
             set_sample_rate,
             set_bit_depth,
+            set_dsd_format,
+            set_confirm_destructive,
             select_preset,
             save_preset,
             delete_preset,

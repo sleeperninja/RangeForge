@@ -23,6 +23,7 @@ use crate::controls::{
     ConflictKind, Focus, Mode, OutputSettings, PresetList, Saved, StrategySettings, WhereKind,
     apply_preset,
 };
+use crate::dsd::DsdFormat;
 use crate::genres::{self, Answers, SongGenres};
 use crate::load::{Job, load_from};
 use crate::naming::NameSettings;
@@ -261,6 +262,9 @@ pub struct RunItem {
     pub group: usize,
     pub job: Job,
     pub plans: Vec<TrackPlan>,
+    /// What to write this file as: the main Output Format, with the DSD Format filled in for a
+    /// DSD source.
+    pub format: OutputFormat,
     /// The folder the source lives in.
     pub directory: PathBuf,
 }
@@ -313,6 +317,12 @@ pub struct App {
     settings_changed: bool,
     /// Which outside lookups are switched on.
     pub metadata: MetadataSettings,
+    /// What DSD files are written as.
+    pub dsd: DsdFormat,
+    /// Ask before a run that overwrites files or deletes originals.
+    pub confirm_destructive: bool,
+    /// The settings as last saved or loaded, to notice any change however it was made.
+    saved_baseline: SavedSettings,
     /// The Hot 100 index, once it has been loaded.
     radio: Option<Arc<Hot100>>,
     /// Whether a Last.fm key is available, and from where. The key itself is never held here.
@@ -344,6 +354,9 @@ impl App {
             presets_changed: false,
             settings_changed: false,
             metadata: MetadataSettings::default(),
+            dsd: DsdFormat::default(),
+            confirm_destructive: true,
+            saved_baseline: SavedSettings::default(),
             radio: None,
             lastfm_key: KeySource::None,
             answers: Answers::default(),
@@ -356,13 +369,20 @@ impl App {
         SavedSettings {
             naming: self.naming.clone(),
             metadata: self.metadata,
+            strategy: self.strategy.clone(),
+            confirm_destructive: self.confirm_destructive,
+            dsd: self.dsd,
         }
     }
 
     /// Applies settings read from disk at start-up.
     pub fn apply_saved_settings(&mut self, saved: SavedSettings) {
         self.naming = saved.naming;
+        self.strategy = saved.strategy.clone();
+        self.confirm_destructive = saved.confirm_destructive;
+        self.dsd = saved.dsd;
         self.metadata = saved.metadata;
+        self.saved_baseline = self.saved_settings();
     }
 
     /// Switches outside lookups on or off. Off hides the Radio tag too, and nothing is
@@ -386,6 +406,39 @@ impl App {
             self.metadata.lastfm_enabled = on;
             self.settings_changed = true;
         }
+    }
+
+    /// Turns the question before an overwriting or deleting run on or off. Off is what "don't
+    /// ask again" does, and Settings turns it back on.
+    pub fn set_confirm_destructive(&mut self, on: bool) {
+        if self.confirm_destructive != on {
+            self.confirm_destructive = on;
+            self.log(if on {
+                "Will ask before overwriting files or deleting originals"
+            } else {
+                "Will not ask before overwriting files or deleting originals"
+            });
+        }
+    }
+
+    /// Chooses the codec DSD files are written in, or `None` to follow the Output Format.
+    pub fn set_dsd_codec(&mut self, codec: Option<Codec>) {
+        self.dsd.codec = codec;
+    }
+
+    /// Likewise for the container.
+    pub fn set_dsd_container(&mut self, container: Option<Container>) {
+        self.dsd.container = container;
+    }
+
+    /// Chooses the sample rate DSD files get when the Output Format says original.
+    pub fn set_dsd_sample_rate(&mut self, rate: SampleRate) -> Result<(), String> {
+        self.dsd.set_sample_rate(rate)
+    }
+
+    /// Chooses the bit depth DSD files get when the Output Format says source.
+    pub fn set_dsd_bit_depth(&mut self, depth: BitDepth) -> Result<(), String> {
+        self.dsd.set_bit_depth(depth)
     }
 
     /// Whether Last.fm should be asked for genres: switched on, with a key to use.
@@ -680,7 +733,14 @@ impl App {
 
     /// True once after the saved settings change, so the caller can save them.
     pub fn take_settings_changed(&mut self) -> bool {
-        std::mem::take(&mut self.settings_changed)
+        let flagged = std::mem::take(&mut self.settings_changed);
+        // Comparing with what was last saved catches every change, whichever control made it.
+        let current = self.saved_settings();
+        let changed = flagged || current != self.saved_baseline;
+        if changed {
+            self.saved_baseline = current;
+        }
+        changed
     }
 
     /// Sets the file name patterns, or says what is wrong with them and changes nothing.
@@ -725,7 +785,9 @@ impl App {
                 .iter()
                 .map(|track| track.identity.clone())
                 .collect();
-            let (mut plans, directory) = track_plans(job, &planned, format, &names, &identities);
+            let job_format = self.dsd.format_for(format, &job.audio);
+            let (mut plans, directory) =
+                track_plans(job, &planned, job_format, &names, &identities);
             for (plan, track) in plans.iter_mut().zip(&group.tracks) {
                 plan.skip = !track.included;
                 // Genres found by lookups are written, comma separated, with Radio last.
@@ -737,6 +799,7 @@ impl App {
                 group: job.group,
                 job: job.clone(),
                 plans,
+                format: job_format,
                 directory,
             });
         }
@@ -765,12 +828,18 @@ impl App {
         }
     }
 
+    /// Whether Run should ask first: the File Strategy overwrites or deletes, and the user has
+    /// not turned the question off.
+    pub fn asks_before_run(&self) -> bool {
+        self.strategy.needs_confirmation() && self.confirm_destructive
+    }
+
     /// The user pressed Run. Checks that it makes sense, asks for confirmation if the
     /// strategy overwrites files, and otherwise prepares the run.
     fn request_run(&mut self) {
         if let Some(reason) = self.run_blocker() {
             self.log(reason);
-        } else if self.strategy.needs_confirmation() {
+        } else if self.asks_before_run() {
             self.mode = Mode::ConfirmRun;
         } else {
             self.start_run();
@@ -784,7 +853,7 @@ impl App {
             self.log(reason.clone());
             return RunRequest::Refused(reason);
         }
-        if self.strategy.needs_confirmation() && !confirmed {
+        if self.asks_before_run() && !confirmed {
             return RunRequest::NeedsConfirmation;
         }
         self.start_run();
@@ -1197,7 +1266,7 @@ mod tests {
     use super::*;
     use crate::presets::built_in;
     use rangeforge_core::cue;
-    use rangeforge_export::format::{BitDepth, Codec};
+    use rangeforge_export::format::{BitDepth, Codec, SampleRate};
 
     fn measurement(lufs: f64, peak: f64) -> Measurement {
         Measurement {
@@ -1954,6 +2023,62 @@ mod tests {
             spec.items[0].plans[0].file_name,
             "Led Zeppelin - The Rain Song.m4a"
         );
+    }
+
+    #[test]
+    fn a_dsd_source_is_written_as_the_dsd_format_and_others_are_not() {
+        let mut app = ready_app();
+        app.jobs[0].audio.set_extension("dsf");
+        app.handle_key(Key::Enter);
+        let spec = app.take_run_spec().unwrap();
+        let format = spec.items[0].format;
+        assert_eq!(format.sample_rate, SampleRate::Hz88200);
+        assert_eq!(format.bit_depth, BitDepth::TwentyFour);
+        assert_eq!(
+            spec.format.sample_rate,
+            SampleRate::Original,
+            "the main format is untouched"
+        );
+
+        let mut other = ready_app();
+        other.handle_key(Key::Enter);
+        let spec = other.take_run_spec().unwrap();
+        assert_eq!(spec.items[0].format, spec.format);
+    }
+
+    #[test]
+    fn the_file_strategy_and_the_question_are_noticed_as_changes_to_save() {
+        let mut app = ready_app();
+        app.take_settings_changed();
+        app.set_delete_original(true);
+        assert!(app.take_settings_changed());
+        assert!(!app.take_settings_changed(), "once is enough");
+        app.set_conflict(ConflictKind::Overwrite);
+        assert!(app.take_settings_changed());
+        app.set_confirm_destructive(false);
+        assert!(app.take_settings_changed());
+        assert!(!app.saved_settings().confirm_destructive);
+    }
+
+    #[test]
+    fn turning_the_question_off_lets_a_deleting_run_start_without_asking() {
+        let mut app = ready_app();
+        app.set_delete_original(true);
+        assert_eq!(app.begin_run(false), RunRequest::NeedsConfirmation);
+        app.set_confirm_destructive(false);
+        assert!(!app.asks_before_run());
+        assert_eq!(app.begin_run(false), RunRequest::Started);
+    }
+
+    #[test]
+    fn settings_loaded_at_start_are_not_saved_straight_back() {
+        let mut app = ready_app();
+        let mut saved = SavedSettings::default();
+        saved.strategy.delete_original = true;
+        saved.confirm_destructive = false;
+        app.apply_saved_settings(saved);
+        assert!(app.strategy.delete_original);
+        assert!(!app.take_settings_changed());
     }
 
     fn charted(

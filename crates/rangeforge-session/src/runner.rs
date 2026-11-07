@@ -42,7 +42,7 @@ fn write_item(
     sender: &Sender<RunEvent>,
 ) -> Result<(), String> {
     let options = Options {
-        format: spec.format,
+        format: item.format,
         strategy: spec.strategy.clone(),
         directory: item.directory.clone(),
         // A single file carries its own tags. A CUE image's tags describe the whole album.
@@ -151,6 +151,7 @@ mod tests {
                 skip: false,
             }],
             directory,
+            format: OutputFormat::new(Codec::Alac, BitDepth::Source),
         }
     }
 

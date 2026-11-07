@@ -56,6 +56,14 @@ html, body {
   background: var(--bg);
 }
 
+/* This is a program, not a web page: text is not selectable. Typing fields and the log are the
+   exceptions. Copying from the table will come with its right-click menu. */
+html, body { -webkit-user-select: none; user-select: none; cursor: default; }
+input[type="text"], input[type="number"], input[type="password"], textarea, .log-panel ul {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .hidden { display: none !important; }
 
 input, select, button { font: inherit; color: inherit; }
@@ -99,11 +107,11 @@ input:disabled, select:disabled { background: var(--input-off); color: var(--mut
 .log-panel h2 { margin: 0 0 4px; font-size: 13px; }
 .log-panel ul { margin: 0; padding: 0; list-style: none; overflow: auto; flex: 1; font-family: Consolas, Menlo, monospace; font-size: 12px; }
 
-/* Only the first and last columns change with the window; the others keep their width. */
+/* Only the first and last columns change with the window, and they share what is left equally;
+   the others keep their width. */
 table.files { width: 100%; min-width: 900px; border-collapse: collapse; table-layout: fixed; }
 col.c-codec { width: 96px; }
 col.c-num { width: 112px; }
-col.c-tags { width: 22%; }
 .files th {
   position: sticky;
   top: 0;
@@ -119,7 +127,7 @@ col.c-tags { width: 22%; }
 .name-head { display: inline-flex; align-items: center; gap: 8px; }
 .files td { padding: 2px 8px; white-space: nowrap; text-align: center; font-variant-numeric: tabular-nums; }
 .files td.name { text-align: left; overflow: hidden; text-overflow: ellipsis; }
-.files td.tags { text-align: left; }
+.files td.tags { text-align: left; overflow: hidden; text-overflow: ellipsis; }
 .files td.codec { color: var(--muted); }
 
 tr.group td { background: var(--group); font-weight: 600; }
@@ -272,3 +280,7 @@ dialog h4 { margin: 0 0 4px; font-size: 12px; color: var(--muted); }
   max-width: 70%;
   z-index: 20;
 }
+
+.dsd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin-bottom: 4px; }
+.dsd-grid label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.dsd-grid select { min-width: 150px; }
