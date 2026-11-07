@@ -1,6 +1,6 @@
 @echo off
-rem Local installer build for Windows. Opens a menu; anything typed after the command
-rem (win64, --check, --skip-tests) is passed on. It needs Git for Windows, which brings bash.
+rem Local installer build for Windows. Lists what the build needs, then builds; anything typed after the command
+rem (--check, --skip-tests) is passed on. It needs Git for Windows, which brings bash.
 rem
 rem pushd also works from a network share (Windows gives it a temporary drive letter).
 pushd "%~dp0.." || exit /b 1
