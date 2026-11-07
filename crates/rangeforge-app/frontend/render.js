@@ -166,6 +166,20 @@
       group: groupIndex,
       on: !all,
     });
+    if (trackIndex !== null && group.tracks[trackIndex]) {
+      items.push({
+        action: 'lastfm',
+        label: 'Get tags from Last.fm for this song',
+        group: groupIndex,
+        track: trackIndex,
+      });
+    }
+    items.push({
+      action: 'lastfm',
+      label: 'Get tags from Last.fm for this album',
+      group: groupIndex,
+      track: null,
+    });
     items.push({ action: 'remove', label: 'Remove from the list', group: groupIndex });
     return items;
   }

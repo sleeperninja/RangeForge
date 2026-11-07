@@ -4,7 +4,7 @@
 //! When the user asks to run, the model builds a [`RunSpec`] and leaves it for the caller to
 //! start; progress comes back as [`RunEvent`]s.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -331,6 +331,9 @@ pub struct App {
     answers: Answers,
     /// Questions already handed out to be asked, so none is asked twice at once.
     asked: HashSet<String>,
+    /// Questions the user asked for by hand (right-click). Asked even while Last.fm lookups are
+    /// switched off, and asked afresh rather than answered from the saved copy.
+    requested: HashMap<String, Subject>,
 }
 
 impl App {
@@ -361,6 +364,7 @@ impl App {
             lastfm_key: KeySource::None,
             answers: Answers::default(),
             asked: HashSet::new(),
+            requested: HashMap::new(),
         }
     }
 
@@ -466,10 +470,10 @@ impl App {
     /// The questions for Last.fm that nobody has been sent to ask yet, once. Empty unless
     /// Last.fm is switched on and has a key. Each comes back through [`App::apply_answer`].
     pub fn take_questions(&mut self) -> Vec<Subject> {
-        if !self.wants_lastfm() {
-            return Vec::new();
+        let mut subjects: Vec<Subject> = self.requested.values().cloned().collect();
+        if self.wants_lastfm() {
+            subjects.extend(self.askable().flat_map(genres::questions));
         }
-        let subjects: Vec<Subject> = self.askable().flat_map(genres::questions).collect();
         let mut wanted = Vec::new();
         for subject in subjects {
             if self.answers.get(&subject).is_none() && self.asked.insert(subject.key()) {
@@ -481,10 +485,65 @@ impl App {
 
     /// True if there is something to ask Last.fm that has not been handed out.
     pub fn has_questions(&self) -> bool {
-        self.wants_lastfm()
-            && self.askable().flat_map(genres::questions).any(|subject| {
-                self.answers.get(&subject).is_none() && !self.asked.contains(&subject.key())
-            })
+        let waiting = |subject: &Subject| {
+            self.answers.get(subject).is_none() && !self.asked.contains(&subject.key())
+        };
+        self.requested.values().any(waiting)
+            || (self.wants_lastfm() && self.askable().flat_map(genres::questions).any(|s| waiting(&s)))
+    }
+
+    /// Whether this question was asked for by hand, so the saved answer should not be used.
+    pub fn was_requested(&self, subject: &Subject) -> bool {
+        self.requested.contains_key(&subject.key())
+    }
+
+    /// Asks Last.fm, by hand, about one song (with `track`) or about the album a row stands for.
+    /// Works even while automatic lookups are off, but needs a key and the main metadata switch.
+    /// A song is asked about as a song; an album as an album, for every song in it.
+    pub fn request_lastfm(&mut self, group: usize, track: Option<usize>) -> Result<(), String> {
+        if !self.metadata.enabled {
+            return Err("Metadata lookups are switched off. Turn them on in Settings.".to_string());
+        }
+        if self.lastfm_key == KeySource::None {
+            return Err("There is no Last.fm key yet. Add one in Settings.".to_string());
+        }
+        let group = self.groups.get(group).ok_or("That album is not in the list.")?;
+        let identities: Vec<&Identity> = match track {
+            Some(index) => vec![
+                group
+                    .tracks
+                    .get(index)
+                    .and_then(|row| row.identity.as_ref())
+                    .ok_or("That song is not known yet.")?,
+            ],
+            None => group.tracks.iter().filter_map(|row| row.identity.as_ref()).collect(),
+        };
+        let mut subjects = Vec::new();
+        for identity in identities {
+            let subject = match track {
+                Some(_) => genres::track_subject(identity),
+                None => genres::album_subject(identity),
+            };
+            if let Some(subject) = subject
+                && !subjects.contains(&subject)
+            {
+                subjects.push(subject);
+            }
+        }
+        if subjects.is_empty() {
+            return Err(match track {
+                Some(_) => "Last.fm needs the song's artist and title, and they are not known.",
+                None => "Last.fm needs the album's artist and name, and they are not known.",
+            }
+            .to_string());
+        }
+        for subject in subjects {
+            let key = subject.key();
+            self.answers.remove(&subject);
+            self.asked.remove(&key);
+            self.requested.insert(key, subject);
+        }
+        Ok(())
     }
 
     /// The identities worth asking Last.fm about. A single file waits until its tags have been
@@ -503,6 +562,7 @@ impl App {
     /// Records what Last.fm said about an album or song.
     pub fn apply_answer(&mut self, subject: &Subject, tags: Vec<RawTag>) {
         self.answers.insert(subject, tags);
+        self.requested.remove(&subject.key());
     }
 
     /// Lets every question not yet answered be asked again, such as after the lookups stopped
@@ -2267,6 +2327,33 @@ mod tests {
         app.set_lastfm_enabled(true);
         app.lastfm_key = KeySource::Saved;
         app
+    }
+
+    #[test]
+    fn asking_last_fm_by_hand_works_with_lookups_off_and_asks_afresh() {
+        let mut app = ready_app();
+        app.set_metadata_enabled(true);
+        assert!(app.request_lastfm(0, Some(0)).is_err(), "no key yet");
+
+        app.lastfm_key = KeySource::Saved;
+        assert!(!app.wants_lastfm(), "automatic lookups stay off");
+        app.request_lastfm(0, Some(0)).unwrap();
+        assert!(app.has_questions());
+        let song = app.take_questions();
+        assert_eq!(song.len(), 1, "only that song, nothing automatic");
+        assert!(app.was_requested(&song[0]));
+        app.apply_answer(&song[0], vec![raw("rock", 100)]);
+        assert!(!app.was_requested(&song[0]), "done once answered");
+        assert!(!app.has_questions());
+
+        // Asking again forgets the answer and asks again.
+        app.request_lastfm(0, Some(0)).unwrap();
+        assert_eq!(app.take_questions().len(), 1);
+
+        // The album row asks about the album.
+        app.request_lastfm(0, None).unwrap();
+        assert_eq!(app.take_questions().len(), 1);
+        assert!(app.request_lastfm(99, None).is_err());
     }
 
     #[test]

@@ -62,19 +62,25 @@ test('the right-click menu depends on the row and what is switched on', () => {
   const song = Render.menuItems(demo, 1, 1);
   assert.deepStrictEqual(
     song.map((item) => item.label),
-    ['Include this song', 'Include every song of this album', 'Remove from the list'],
+    [
+      'Include this song',
+      'Include every song of this album',
+      'Get tags from Last.fm for this song',
+      'Get tags from Last.fm for this album',
+      'Remove from the list',
+    ],
   );
   assert.deepStrictEqual(song[0], { action: 'toggle_track', label: 'Include this song', group: 1, track: 1, on: true });
 
   const album = Render.menuItems(demo, 0, null);
   assert.deepStrictEqual(
     album.map((item) => item.label),
-    ['Leave out every song of this album', 'Remove from the list'],
+    ['Leave out every song of this album', 'Get tags from Last.fm for this album', 'Remove from the list'],
   );
   assert.strictEqual(album[0].on, false);
 
   assert.deepStrictEqual(Render.menuItems(demo, 99, null), []);
-  assert.match(Render.menuHtml(album), /data-item="1">Remove from the list/);
+  assert.match(Render.menuHtml(album), /data-item="2">Remove from the list/);
 });
 
 test('the confirmation says what will happen', () => {

@@ -22,6 +22,10 @@ impl Answers {
         self.by_key.insert(subject.key(), tags);
     }
 
+    pub fn remove(&mut self, subject: &Subject) {
+        self.by_key.remove(&subject.key());
+    }
+
     #[must_use]
     pub fn get(&self, subject: &Subject) -> Option<&[RawTag]> {
         self.by_key.get(&subject.key()).map(Vec::as_slice)
@@ -56,7 +60,7 @@ impl SongGenres {
 
 /// The album a song belongs to, as Last.fm is asked about it: the album's artist if known, or
 /// else the song's.
-fn album_subject(identity: &Identity) -> Option<Subject> {
+pub fn album_subject(identity: &Identity) -> Option<Subject> {
     let artist = identity
         .album_artist
         .as_deref()
@@ -68,7 +72,7 @@ fn album_subject(identity: &Identity) -> Option<Subject> {
     })
 }
 
-fn track_subject(identity: &Identity) -> Option<Subject> {
+pub fn track_subject(identity: &Identity) -> Option<Subject> {
     Some(Subject::Track {
         artist: identity.artist.clone()?,
         title: identity.title.clone()?,

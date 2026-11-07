@@ -503,7 +503,13 @@ fn ask_all(
             break;
         }
         for subject in questions {
-            let remembered = cache.get(&subject, now).map(<[RawTag]>::to_vec);
+            // Something asked for by hand is asked afresh, not answered from the saved copy.
+            let by_hand = shared.lock().was_requested(&subject);
+            let remembered = if by_hand {
+                None
+            } else {
+                cache.get(&subject, now).map(<[RawTag]>::to_vec)
+            };
             let tags = if let Some(tags) = remembered {
                 tags
             } else {
@@ -571,6 +577,12 @@ fn stop(shared: &Shared, why: &str, show: &mut dyn FnMut(Reply)) {
         app.forget_asked();
     }
     show(describe(shared));
+}
+
+/// Marks a song (or a row's album) to be asked about at Last.fm, whatever the automatic lookup
+/// switch says. The caller then starts the asking.
+pub fn request_lastfm(shared: &Shared, group: usize, track: Option<usize>) -> Reply {
+    with_app(shared, |app| app.request_lastfm(group, track))
 }
 
 pub fn clear_list(shared: &Shared) -> Reply {

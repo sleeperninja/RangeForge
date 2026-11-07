@@ -255,6 +255,18 @@ async fn clear_completed(state: Session<'_>) -> Result<Reply, String> {
 }
 
 #[tauri::command]
+async fn get_lastfm_tags(
+    group: usize,
+    track: Option<usize>,
+    state: Session<'_>,
+    app: AppHandle,
+) -> Result<Reply, String> {
+    let reply = ops::request_lastfm(&state, group, track);
+    watch_genres(&app, state.inner());
+    Ok(reply)
+}
+
+#[tauri::command]
 async fn remove_group(group: usize, state: Session<'_>) -> Result<Reply, String> {
     Ok(ops::remove_group(&state, group))
 }
@@ -334,6 +346,7 @@ fn main() {
             set_lastfm_key,
             clear_completed,
             remove_group,
+            get_lastfm_tags,
             set_included,
             run,
         ])

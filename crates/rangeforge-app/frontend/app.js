@@ -181,6 +181,8 @@
       call('set_included', { group: item.group, track: item.track, on: item.on });
     } else if (item.action === 'toggle_group') {
       call('set_included', { group: item.group, track: null, on: item.on });
+    } else if (item.action === 'lastfm') {
+      call('get_lastfm_tags', { group: item.group, track: item.track });
     } else if (item.action === 'remove') {
       call('remove_group', { group: item.group });
     }

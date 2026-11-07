@@ -59,6 +59,8 @@ html, body {
 /* This is a program, not a web page: text is not selectable. Typing fields and the log are the
    exceptions. Copying from the table will come with its right-click menu. */
 html, body { -webkit-user-select: none; user-select: none; cursor: default; }
+/* Dialogs are drawn above the page, so they need it said again. */
+dialog, dialog * { -webkit-user-select: none; user-select: none; }
 input[type="text"], input[type="number"], input[type="password"], textarea, .log-panel ul {
   -webkit-user-select: text;
   user-select: text;
