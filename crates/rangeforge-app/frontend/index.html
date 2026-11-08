@@ -186,22 +186,11 @@
   <dialog id="tagDialog">
     <form method="dialog">
       <p id="tagPrompt"></p>
-      <p><input id="tagText" class="text wide" type="text" autocomplete="off" placeholder="For example: Progressive Rock"></p>
+      <p><textarea id="tagText" class="text wide" rows="3" autocomplete="off" spellcheck="false" placeholder="For example: Progressive Rock"></textarea></p>
+      <p class="hint">Several tags can be pasted at once, separated by commas, semicolons or line breaks.</p>
       <div class="dialog-buttons">
         <button value="cancel" class="button">Cancel</button>
         <button value="save" class="button primary">Add</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="songTagsDialog">
-    <form method="dialog">
-      <p id="songTagsPrompt"></p>
-      <p><textarea id="songTagsText" class="text wide" rows="5" autocomplete="off" spellcheck="false" placeholder="Paste the list from Last.fm's tags page, for example: classic rock, rock, reggae"></textarea></p>
-      <p class="hint">Commas, semicolons or one tag per line all work. Put the most-used tag first, as Last.fm lists them. Years, decades and the artist's name are ignored, and tags the album already has are not repeated. Leave it empty to clear this song's tags.</p>
-      <div class="dialog-buttons">
-        <button value="cancel" class="button">Cancel</button>
-        <button value="save" class="button primary">Save</button>
       </div>
     </form>
   </dialog>

@@ -37,12 +37,6 @@ pub fn lastfm_cache_path() -> Option<PathBuf> {
     project_dirs().map(|dirs| dirs.cache_dir().join("lastfm.json"))
 }
 
-/// Where song tags pasted from Last.fm's tags page are kept. That is the user's own work, so it
-/// lives with the settings and not in the cache, which may be cleared at any time.
-pub fn song_tags_path() -> Option<PathBuf> {
-    default_config_dir().map(|dir| dir.join("song-tags.json"))
-}
-
 /// Where the other settings (such as the file name patterns) are kept.
 pub fn settings_path(config_dir: Option<PathBuf>) -> Option<PathBuf> {
     config_dir

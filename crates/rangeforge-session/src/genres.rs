@@ -22,11 +22,6 @@ impl Answers {
         self.by_key.insert(subject.key(), tags);
     }
 
-    /// Like [`Answers::insert`], for a question already turned into its key.
-    pub fn insert_key(&mut self, key: &str, tags: Vec<RawTag>) {
-        self.by_key.insert(key.to_string(), tags);
-    }
-
     pub fn clear(&mut self) {
         self.by_key.clear();
     }
@@ -147,20 +142,37 @@ pub fn track_subject(identity: &Identity) -> Option<Subject> {
 }
 
 /// What Last.fm needs to be asked about this song: its album, if the identity knows it. Songs
-/// are not asked: Last.fm's API has no song tags, so those are pasted in by hand.
+/// are not asked: Last.fm's API has no song tags, so those are added by hand.
 #[must_use]
 pub fn questions(identity: &Identity) -> Vec<Subject> {
     album_subject(identity).into_iter().collect()
 }
 
-/// Splits a genre tag that holds several: `Rock, Hard Rock` or `Rock; Blues`.
+/// Splits a list of tags into its tags: a genre tag that holds several (`Rock, Hard Rock` or
+/// `Rock; Blues`) or text typed or pasted in. Commas, semicolons, line breaks, tabs, `|` and
+/// bullet characters all separate tags; a leading `- ` or `* ` list mark is not part of the
+/// name. Empty pieces are dropped, a tag repeated in other letters is kept once, and the
+/// order is kept.
 #[must_use]
 pub fn split_genres(text: &str) -> Vec<String> {
-    text.split([',', ';'])
-        .map(str::trim)
-        .filter(|genre| !genre.is_empty())
-        .map(str::to_string)
-        .collect()
+    let mut names: Vec<String> = Vec::new();
+    for piece in text.split(|c: char| {
+        matches!(
+            c,
+            ',' | ';' | '\n' | '\r' | '\t' | '|' | '•' | '·' | '▪' | '●'
+        )
+    }) {
+        let piece = piece.trim();
+        let piece = piece
+            .strip_prefix("- ")
+            .or_else(|| piece.strip_prefix("* "))
+            .unwrap_or(piece);
+        let name = piece.split_whitespace().collect::<Vec<_>>().join(" ");
+        if !name.is_empty() && !names.iter().any(|n| n.eq_ignore_ascii_case(&name)) {
+            names.push(name);
+        }
+    }
+    names
 }
 
 fn add_new(list: &mut Vec<String>, more: impl IntoIterator<Item = String>) {
@@ -371,6 +383,38 @@ mod tests {
             ["Rock", "Hard Rock", "Blues"]
         );
         assert_eq!(split_genres(" , ;"), Vec::<String>::new());
+
+        // Commas, semicolons and line breaks all work, alone or mixed.
+        let expected = ["classic rock", "rock", "reggae", "hard rock"];
+        assert_eq!(
+            split_genres("classic rock, rock, reggae, hard rock"),
+            expected
+        );
+        assert_eq!(
+            split_genres("classic rock; rock ;reggae;hard rock"),
+            expected
+        );
+        assert_eq!(
+            split_genres("classic rock\nrock\r\nreggae\n\n  hard rock  \n"),
+            expected
+        );
+        assert_eq!(
+            split_genres("classic rock, rock; reggae\nhard rock"),
+            expected
+        );
+        assert_eq!(
+            split_genres("• classic rock • rock\t| reggae | hard rock"),
+            expected
+        );
+        assert_eq!(
+            split_genres("- classic rock\n* rock\n- reggae\n- hard rock"),
+            expected
+        );
+        // A hyphen inside a tag stays, and a repeat in other letters goes.
+        assert_eq!(
+            split_genres("hip-hop, Hip-Hop, , ;  trip  hop"),
+            ["hip-hop", "trip hop"]
+        );
     }
 
     #[test]

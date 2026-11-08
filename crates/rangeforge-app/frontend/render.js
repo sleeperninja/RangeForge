@@ -329,7 +329,6 @@
     });
     if (song) {
       items.push({ action: 'open_song_page', label: 'Open song tags page on Last.fm', targets: here });
-      items.push({ action: 'paste_song_tags', label: 'Paste song tags…', group: groupIndex, track: trackIndex });
     }
     items.push({
       action: 'lastfm',

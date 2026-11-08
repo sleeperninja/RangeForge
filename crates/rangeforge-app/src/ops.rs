@@ -13,7 +13,6 @@ use rangeforge_audio::cache::Cache;
 use rangeforge_export::format::{BitDepth, Codec, Container, SampleRate};
 use rangeforge_lookup::billboard::{self, Fetcher, Refresh};
 use rangeforge_lookup::lastfm::{LastFmError, RawTag};
-use rangeforge_lookup::songtags::SongTags;
 use rangeforge_lookup::tagcache::{Subject, TagCache};
 use rangeforge_session::controls::PresetList;
 use rangeforge_session::load::Job;
@@ -38,8 +37,6 @@ pub struct Locations {
     pub hot100: Option<PathBuf>,
     /// What Last.fm has said about albums and songs.
     pub lastfm_cache: Option<PathBuf>,
-    /// Song tags pasted in from Last.fm's tags page. The user's own work: never cleared.
-    pub song_tags: Option<PathBuf>,
     pub cache: Option<PathBuf>,
 }
 
@@ -50,7 +47,6 @@ pub struct Shared {
     settings_path: Option<PathBuf>,
     hot100_path: Option<PathBuf>,
     lastfm_cache_path: Option<PathBuf>,
-    song_tags_path: Option<PathBuf>,
     cache: Option<Cache>,
     /// Where API keys are kept.
     store: Box<dyn SecretStore>,
@@ -75,7 +71,6 @@ impl Shared {
             settings: settings_path,
             hot100: hot100_path,
             lastfm_cache: lastfm_cache_path,
-            song_tags: song_tags_path,
             cache,
         } = locations;
         let mut app = App::new(Vec::new(), Vec::new(), Vec::new(), Settings::default());
@@ -91,9 +86,6 @@ impl Shared {
                 app.lastfm_key = key.map_or(secrets::KeySource::None, |key| key.source);
             }
             Err(problem) => app.log(format!("Could not read the saved Last.fm key: {problem:#}")),
-        }
-        if let Some(path) = &song_tags_path {
-            app.restore_song_tags(SongTags::load(path).answers());
         }
         let stored = presets_path.as_deref().map_or_else(
             || presets::Loaded {
@@ -113,7 +105,6 @@ impl Shared {
             settings_path,
             hot100_path,
             lastfm_cache_path,
-            song_tags_path,
             cache: cache.map(Cache::new),
             store,
             env_lastfm,
@@ -714,41 +705,9 @@ pub fn notice(shared: &Shared, message: Option<String>) -> Reply {
     reply(shared, &mut app, message)
 }
 
-/// The song tags pasted for a song earlier, to show again for editing.
-pub fn pasted_song_tags(shared: &Shared, group: usize, track: usize) -> Vec<String> {
-    shared.lock().pasted_song_tags(group, track)
-}
-
-/// Keeps the song tags pasted for one song, on screen and on disk. Commas, semicolons and line
-/// breaks all separate tags; pasting nothing forgets the song's tags.
-pub fn set_song_tags(shared: &Shared, group: usize, track: usize, text: &str) -> Reply {
-    let mut app = shared.lock();
-    let error = match app.set_song_tags(group, track, text) {
-        Ok((artist, title, names)) => {
-            app.log(if names.is_empty() {
-                format!("Song tags cleared for “{title}” by “{artist}”")
-            } else {
-                format!(
-                    "Song tags for “{title}” by “{artist}”: {}",
-                    names.join(", ")
-                )
-            });
-            shared.song_tags_path.as_deref().and_then(|path| {
-                let mut kept = SongTags::load(path);
-                kept.set(&artist, &title, names);
-                kept.save(path)
-                    .err()
-                    .map(|problem| format!("Could not save the song tags: {problem:#}"))
-            })
-        }
-        Err(problem) => Some(problem),
-    };
-    reply(shared, &mut app, error)
-}
-
 /// Adds a tag by hand to the songs named (every song of a group for a target with no song).
 pub fn add_tag(shared: &Shared, targets: &[Pick], text: &str) -> Reply {
-    with_app(shared, |app| app.add_tag(targets, text))
+    with_app(shared, |app| app.add_tag(targets, text).map(|_| ()))
 }
 
 /// Takes a tag away from a song by hand.
@@ -864,7 +823,6 @@ mod tests {
             settings: Some(dir.join("settings.json")),
             hot100: Some(dir.join("hot100.json")),
             lastfm_cache: Some(dir.join("lastfm.json")),
-            song_tags: Some(dir.join("song-tags.json")),
             cache: None,
         }
     }
@@ -1008,17 +966,7 @@ mod tests {
         assert_eq!(chip_texts(last, 1), ["Classic Rock", "Hard Rock"]);
         assert!(!genres_wanted(&shared), "everything is answered");
 
-        // Song tags are pasted in from the Last.fm page, with any separators.
-        let reply = set_song_tags(&shared, 0, 0, "ballad; Classic Rock\nreggae");
-        assert_eq!(reply.error, None);
-        assert_eq!(
-            chip_texts(&reply, 0),
-            ["Classic Rock", "Hard Rock", "Ballad", "Reggae"]
-        );
-        assert_eq!(chip_texts(&reply, 1), ["Classic Rock", "Hard Rock"]);
-
-        // The next start finds the answers on disk and asks nobody, and the pasted tags are
-        // back even though nothing about the songs was asked.
+        // The next start finds the answers on disk and asks nobody.
         let again = shared_with_album(dir.path(), &store);
         let asked_again = std::cell::Cell::new(0);
         let mut screens = Vec::new();
@@ -1028,35 +976,8 @@ mod tests {
         assert_eq!(asked_again.get(), 0);
         assert_eq!(
             chip_texts(screens.last().unwrap(), 0),
-            ["Classic Rock", "Hard Rock", "Ballad", "Reggae"]
+            ["Classic Rock", "Hard Rock"]
         );
-    }
-
-    #[test]
-    fn pasted_song_tags_are_the_users_own_and_clearing_last_fm_answers_leaves_them() {
-        let dir = tempdir().unwrap();
-        let store = SharedStore::default();
-        let shared = shared_with_album(dir.path(), &store);
-        let asked = std::cell::Cell::new(0);
-        update_genres(&shared, &lastfm(&asked), 1_000, NO_PAUSE, &mut |_| {});
-        set_song_tags(&shared, 0, 1, "reggae, ska");
-        assert!(dir.path().join("song-tags.json").exists());
-
-        let reply = clear_lastfm_cache(&shared);
-        assert_eq!(reply.error, None);
-        assert!(!dir.path().join("lastfm.json").exists());
-        assert!(dir.path().join("song-tags.json").exists());
-        assert_eq!(chip_texts(&reply, 1), ["Reggae", "Ska"]);
-        assert_eq!(pasted_song_tags(&shared, 0, 1), ["reggae", "ska"]);
-
-        // Pasting nothing forgets them, on screen and on disk.
-        let reply = set_song_tags(&shared, 0, 1, "  ");
-        assert_eq!(chip_texts(&reply, 1), Vec::<String>::new());
-        let again = shared_with_album(dir.path(), &store);
-        assert_eq!(pasted_song_tags(&again, 0, 1), Vec::<String>::new());
-
-        // A song that is not there is refused.
-        assert!(set_song_tags(&shared, 0, 9, "x").error.is_some());
     }
 
     #[test]

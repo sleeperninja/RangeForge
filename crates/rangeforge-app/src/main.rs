@@ -70,7 +70,7 @@ fn watch_genres(app: &AppHandle, shared: &Arc<Shared>) {
             let answer = match subject {
                 Subject::Album { artist, album } => client.album_tags(artist, album),
                 // Last.fm's API has no song tags, so songs are never asked: their tags are
-                // pasted in by hand. (Nothing hands a song out as a question.)
+                // added by hand. (Nothing hands a song out as a question.)
                 Subject::Track { .. } => Ok(Vec::new()),
             };
             // When nothing came back, say what each spelling got, so it can be told whether
@@ -304,27 +304,6 @@ async fn open_song_pages(targets: Vec<Pick>, state: Session<'_>) -> Result<Reply
     Ok(ops::notice(&state, problem))
 }
 
-/// The song tags pasted for a song before, so the paste box can show them for editing.
-#[tauri::command]
-async fn get_song_tags(
-    group: usize,
-    track: usize,
-    state: Session<'_>,
-) -> Result<Vec<String>, String> {
-    Ok(ops::pasted_song_tags(&state, group, track))
-}
-
-/// Keeps the song tags pasted for one song.
-#[tauri::command]
-async fn set_song_tags(
-    group: usize,
-    track: usize,
-    text: String,
-    state: Session<'_>,
-) -> Result<Reply, String> {
-    Ok(ops::set_song_tags(&state, group, track, &text))
-}
-
 #[tauri::command]
 async fn add_tag(targets: Vec<Pick>, text: String, state: Session<'_>) -> Result<Reply, String> {
     Ok(ops::add_tag(&state, &targets, &text))
@@ -413,7 +392,6 @@ fn main() {
             settings: paths::settings_path(None),
             hot100: paths::hot100_path(),
             lastfm_cache: paths::lastfm_cache_path(),
-            song_tags: paths::song_tags_path(),
             cache: paths::default_cache_dir(),
         },
         Box::new(credentials::OsStore),
@@ -453,8 +431,6 @@ fn main() {
             remove_group,
             get_lastfm_tags,
             open_song_pages,
-            get_song_tags,
-            set_song_tags,
             clear_lastfm_cache,
             add_tag,
             remove_tag,

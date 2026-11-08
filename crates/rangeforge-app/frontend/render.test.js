@@ -68,7 +68,6 @@ test('the right-click menu depends on the row and what is switched on', () => {
       'Add a tag to this song…',
       'Edit artist, title and album…',
       'Open song tags page on Last.fm',
-      'Paste song tags…',
       'Get tags from Last.fm for this album',
       'Select every song with this album',
       'Remove from the list',
@@ -96,14 +95,13 @@ test('the right-click menu depends on the row and what is switched on', () => {
   assert.deepStrictEqual(album[3].targets, [{ group: 0, track: null }]);
   assert.strictEqual(album[3].action, 'lastfm');
 
-  // Song tags are opened in the browser and pasted back in, on a song's own menu only.
+  // A song's tags page is opened in the browser from the song's own menu only.
   assert.deepStrictEqual(song[4], {
     action: 'open_song_page',
     label: 'Open song tags page on Last.fm',
     targets: [{ group: 1, track: 1 }],
   });
-  assert.deepStrictEqual(song[5], { action: 'paste_song_tags', label: 'Paste song tags…', group: 1, track: 1 });
-  assert.ok(!album.some((item) => item.action === 'open_song_page' || item.action === 'paste_song_tags'));
+  assert.ok(!album.some((item) => item.action === 'open_song_page'));
 
   assert.deepStrictEqual(Render.menuItems(demo, 99, null), []);
   assert.match(Render.menuHtml(album), /data-item="4">Remove from the list/);
