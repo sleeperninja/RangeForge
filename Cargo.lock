@@ -3448,7 +3448,7 @@ dependencies = [
 
 [[package]]
 name = "rangeforge-app"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "dotenvy",
@@ -3467,7 +3467,7 @@ dependencies = [
 
 [[package]]
 name = "rangeforge-audio"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "blake3",
  "ebur128",
@@ -3481,7 +3481,7 @@ dependencies = [
 
 [[package]]
 name = "rangeforge-cli"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -3495,7 +3495,7 @@ dependencies = [
 
 [[package]]
 name = "rangeforge-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "proptest",
  "thiserror 2.0.21",
@@ -3503,7 +3503,7 @@ dependencies = [
 
 [[package]]
 name = "rangeforge-export"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "rangeforge-audio",
  "rangeforge-core",
@@ -3513,7 +3513,7 @@ dependencies = [
 
 [[package]]
 name = "rangeforge-lookup"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "reqwest",
@@ -3526,7 +3526,7 @@ dependencies = [
 
 [[package]]
 name = "rangeforge-session"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "directories",
