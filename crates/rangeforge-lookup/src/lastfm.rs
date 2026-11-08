@@ -72,6 +72,8 @@ pub struct LastFm<G> {
     api_key: String,
     /// Waited between the tries at other spellings, to stay within Last.fm's limits.
     pause: Duration,
+    /// What each try of the last question got back, for the log when nothing was found.
+    trail: std::sync::Mutex<Vec<String>>,
 }
 
 // Not derived: that would print the key into any log or test failure that shows the client.
@@ -89,7 +91,17 @@ impl<G: Get> LastFm<G> {
             get,
             api_key: api_key.into(),
             pause: Duration::from_millis(250),
+            trail: std::sync::Mutex::new(Vec::new()),
         }
+    }
+
+    /// What each try of the last question got back, such as `“Led Zeppelin” – “Song”: Last.fm
+    /// does not know it`. Taking it empties it.
+    pub fn take_trail(&self) -> Vec<String> {
+        self.trail
+            .lock()
+            .map(|mut trail| std::mem::take(&mut *trail))
+            .unwrap_or_default()
     }
 
     /// How long to wait between tries at other spellings. Tests use none.
@@ -122,6 +134,7 @@ impl<G: Get> LastFm<G> {
         artist: &str,
         name: &str,
     ) -> Result<Vec<RawTag>, LastFmError> {
+        self.take_trail();
         let mut names = spellings(name);
         let mut artists = artist_spellings(artist);
         if names.is_empty() {
@@ -161,8 +174,29 @@ impl<G: Get> LastFm<G> {
             ("format", "json"),
         ];
         params.extend_from_slice(what);
-        parse_top_tags(&self.get.get(&params)?)
+        let body = self.get.get(&params)?;
+        let tags = parse_top_tags(&body)?;
+        if tags.is_empty()
+            && let Ok(mut trail) = self.trail.lock()
+        {
+            let asked: Vec<String> = what.iter().map(|(_, value)| format!("“{value}”")).collect();
+            let result = if is_not_found(&body) {
+                "Last.fm does not know it"
+            } else {
+                "Last.fm knows it, but nobody has tagged it"
+            };
+            trail.push(format!("{}: {result}", asked.join(" – ")));
+        }
+        Ok(tags)
     }
+}
+
+/// True when Last.fm's answer is its "not found" error rather than an empty list of tags.
+fn is_not_found(body: &str) -> bool {
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|json| json.get("error").and_then(Value::as_i64))
+        == Some(6)
 }
 
 /// Reads an answer to a `gettoptags` request. A song or album Last.fm does not know is not an
@@ -377,6 +411,11 @@ mod tests {
     fn a_song_last_fm_does_not_know_stops_trying_and_a_real_error_stops_at_once() {
         let client = picky(false);
         assert_eq!(client.track_tags("Nobody", "Nothing").unwrap(), []);
+        // What was tried is kept, so the log can say it.
+        let trail = client.take_trail();
+        assert_eq!(trail[0], "“Nobody” – “Nothing”: Last.fm does not know it");
+        assert!(trail.len() > 1, "other spellings were tried: {trail:?}");
+        assert_eq!(client.take_trail().len(), 0, "taking it empties it");
         assert!(
             client.get.asked.lock().unwrap().len() <= 8,
             "a limited number of tries"

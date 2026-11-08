@@ -65,9 +65,20 @@ fn watch_genres(app: &AppHandle, shared: &Arc<Shared>) {
             return;
         };
         let client = LastFm::new(HttpGet, key.value);
-        let ask = |subject: &Subject| match subject {
-            Subject::Album { artist, album } => client.album_tags(artist, album),
-            Subject::Track { artist, title } => client.track_tags(artist, title),
+        let ask = |subject: &Subject| {
+            let answer = match subject {
+                Subject::Album { artist, album } => client.album_tags(artist, album),
+                Subject::Track { artist, title } => client.track_tags(artist, title),
+            };
+            // When nothing came back, say what each spelling got, so it can be told whether
+            // Last.fm does not know the song or knows it without tags.
+            if matches!(&answer, Ok(tags) if tags.is_empty()) {
+                let tried = client.take_trail();
+                if !tried.is_empty() {
+                    shared.log(format!("Last.fm tried: {}", tried.join("; ")));
+                }
+            }
+            answer
         };
         // Last.fm asks for no more than about five requests a second.
         ops::update_genres(

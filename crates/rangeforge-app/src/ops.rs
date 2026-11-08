@@ -126,6 +126,11 @@ impl Shared {
             .flatten()
     }
 
+    /// Adds a line to the log panel from a background thread.
+    pub fn log(&self, line: String) {
+        self.lock().log(line);
+    }
+
     fn lock(&self) -> MutexGuard<'_, App> {
         // A thread that panicked while holding the lock leaves the state readable.
         self.app.lock().unwrap_or_else(PoisonError::into_inner)
