@@ -201,6 +201,14 @@
     return done > 0 ? `<td class="num status saved">${done}/${states.length} saved</td>` : '<td class="num status"></td>';
   }
 
+  // What an album heading's codec cell says: the format the files are read as, in brackets like
+  // a single file's row (the songs under it show what they will be written as). Files in
+  // different formats say so.
+  function sourceLabel(groups) {
+    const labels = [...new Set(groups.map((group) => group.codec_label))];
+    return labels.length === 1 ? labels[0] : '(mixed)';
+  }
+
   // An album heading and, unless folded away, the songs under it.
   function blockRowsHtml(state, block, collapsed) {
     const groups = block.groups.map((index) => state.groups[index]);
@@ -217,7 +225,7 @@
       `<td class="name"${where}><button type="button" class="fold" title="${folded ? 'Show' : 'Hide'} the songs">${folded ? '▸' : '▾'}</button>` +
       `<input type="checkbox" class="include" data-groups="${block.groups.join(',')}" data-state="${included}"${checked} title="Include every song of this album in the run">` +
       `${esc(name)} <span class="count">(${songs.tracks.length} songs)</span></td>` +
-      `<td class="codec">${esc(groups[0].output_codec || state.output.codec)}</td>` +
+      `<td class="codec">${esc(sourceLabel(groups))}</td>` +
       blockProgress(groups) +
       '<td class="num"></td><td class="num"></td><td class="num"></td><td class="tags"></td>' +
       '</tr>';

@@ -13,6 +13,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::normalize::{artist_spellings, spellings};
+
 /// Where Last.fm's API lives.
 pub const API_URL: &str = "https://ws.audioscrobbler.com/2.0/";
 
@@ -68,6 +70,8 @@ impl Get for HttpGet {
 pub struct LastFm<G> {
     get: G,
     api_key: String,
+    /// Waited between the tries at other spellings, to stay within Last.fm's limits.
+    pause: Duration,
 }
 
 // Not derived: that would print the key into any log or test failure that shows the client.
@@ -84,17 +88,68 @@ impl<G: Get> LastFm<G> {
         Self {
             get,
             api_key: api_key.into(),
+            pause: Duration::from_millis(250),
         }
+    }
+
+    /// How long to wait between tries at other spellings. Tests use none.
+    #[must_use]
+    pub fn with_pause(mut self, pause: Duration) -> Self {
+        self.pause = pause;
+        self
     }
 
     /// The tags listeners gave an album.
     pub fn album_tags(&self, artist: &str, album: &str) -> Result<Vec<RawTag>, LastFmError> {
-        self.ask("album.gettoptags", &[("artist", artist), ("album", album)])
+        self.ask_spellings("album.gettoptags", "album", artist, album)
     }
 
-    /// The tags listeners gave a song.
+    /// The tags listeners gave a song. Last.fm identifies a song by its artist and title alone;
+    /// the album is not part of the question.
     pub fn track_tags(&self, artist: &str, title: &str) -> Result<Vec<RawTag>, LastFmError> {
-        self.ask("track.gettoptags", &[("artist", artist), ("track", title)])
+        self.ask_spellings("track.gettoptags", "track", artist, title)
+    }
+
+    /// Asks as written first. Last.fm answers "no such song" (not an error, just no tags) when
+    /// the spelling differs from its own, such as a curly apostrophe in `D’yer Mak’er` or a
+    /// `(Remastered)` note, so on an empty answer other spellings are tried: the name with plain
+    /// punctuation and without notes, then the artist with "The" added or removed. A real
+    /// error stops at once.
+    fn ask_spellings(
+        &self,
+        method: &str,
+        name_key: &str,
+        artist: &str,
+        name: &str,
+    ) -> Result<Vec<RawTag>, LastFmError> {
+        let mut names = spellings(name);
+        let mut artists = artist_spellings(artist);
+        if names.is_empty() {
+            names.push(name.to_string());
+        }
+        if artists.is_empty() {
+            artists.push(artist.to_string());
+        }
+        let mut attempts: Vec<(&str, &str)> = Vec::new();
+        for name in &names {
+            attempts.push((&artists[0], name));
+        }
+        for other in artists.iter().skip(1) {
+            for name in names.iter().take(2) {
+                attempts.push((other, name));
+            }
+        }
+        attempts.truncate(8);
+        for (index, (artist, name)) in attempts.into_iter().enumerate() {
+            if index > 0 {
+                std::thread::sleep(self.pause);
+            }
+            let tags = self.ask(method, &[("artist", artist), (name_key, name)])?;
+            if !tags.is_empty() {
+                return Ok(tags);
+            }
+        }
+        Ok(Vec::new())
     }
 
     fn ask(&self, method: &str, what: &[(&str, &str)]) -> Result<Vec<RawTag>, LastFmError> {
@@ -246,6 +301,97 @@ mod tests {
             );
             Ok(self.answer.clone())
         }
+    }
+
+    /// Knows only one spelling of one song, as Last.fm does; anything else is "not found".
+    struct Picky {
+        knows: (&'static str, &'static str),
+        asked: Mutex<Vec<(String, String)>>,
+        bad_key: bool,
+    }
+
+    impl Get for Picky {
+        fn get(&self, params: &[(&str, &str)]) -> Result<String, LastFmError> {
+            let find = |name: &str| params.iter().find(|(k, _)| *k == name).map(|(_, v)| *v);
+            let (artist, track) = (find("artist").unwrap(), find("track").unwrap());
+            self.asked
+                .lock()
+                .unwrap()
+                .push((artist.to_string(), track.to_string()));
+            if self.bad_key {
+                return Err(LastFmError::InvalidKey);
+            }
+            Ok(if (artist, track) == self.knows {
+                HOUSES.to_string()
+            } else {
+                r#"{"error":6,"message":"Track not found"}"#.to_string()
+            })
+        }
+    }
+
+    fn picky(bad_key: bool) -> LastFm<Picky> {
+        LastFm::new(
+            Picky {
+                knows: ("Led Zeppelin", "D'yer Mak'er"),
+                asked: Mutex::new(Vec::new()),
+                bad_key,
+            },
+            "key",
+        )
+        .with_pause(Duration::ZERO)
+    }
+
+    #[test]
+    fn a_curly_apostrophe_or_a_missing_the_does_not_hide_a_songs_tags() {
+        // The file says D’yer Mak’er (typographic apostrophes); Last.fm spells it plainly.
+        let client = picky(false);
+        let tags = client
+            .track_tags("Led Zeppelin", "D\u{2019}yer Mak\u{2019}er")
+            .unwrap();
+        assert_eq!(tags.len(), 3);
+        let asked = client.get.asked.lock().unwrap();
+        assert_eq!(asked[0].1, "D\u{2019}yer Mak\u{2019}er", "as written first");
+        assert_eq!(
+            asked[1],
+            ("Led Zeppelin".to_string(), "D'yer Mak'er".to_string())
+        );
+        drop(asked);
+
+        // A version note and the wrong "The" are handled too.
+        let client = LastFm::new(
+            Picky {
+                knows: ("The Alan Parsons Project", "I Robot"),
+                asked: Mutex::new(Vec::new()),
+                bad_key: false,
+            },
+            "key",
+        )
+        .with_pause(Duration::ZERO);
+        let tags = client
+            .track_tags("Alan Parsons Project", "I Robot (Remastered 2007)")
+            .unwrap();
+        assert_eq!(tags.len(), 3);
+    }
+
+    #[test]
+    fn a_song_last_fm_does_not_know_stops_trying_and_a_real_error_stops_at_once() {
+        let client = picky(false);
+        assert_eq!(client.track_tags("Nobody", "Nothing").unwrap(), []);
+        assert!(
+            client.get.asked.lock().unwrap().len() <= 8,
+            "a limited number of tries"
+        );
+
+        let client = picky(true);
+        assert_eq!(
+            client.track_tags("Led Zeppelin", "D\u{2019}yer Mak\u{2019}er"),
+            Err(LastFmError::InvalidKey)
+        );
+        assert_eq!(
+            client.get.asked.lock().unwrap().len(),
+            1,
+            "no retry on a real error"
+        );
     }
 
     #[test]

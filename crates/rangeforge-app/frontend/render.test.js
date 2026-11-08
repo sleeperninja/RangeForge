@@ -191,6 +191,16 @@ test('files of one album gather under a heading, but a six-channel folder stays 
   assert.strictEqual((html.match(/class="group album"/g) || []).length, 2);
   assert.match(html, /The Alan Parsons Project – I Robot <span class="count">\(2 songs\)/);
   assert.match(html, /data-groups="0,2"/);
+  // The heading names the format the files are read as, not what they will be written as.
+  const heading = html.match(/<tr class="group album" data-groups="0,2".*?<td class="codec">([^<]*)<\/td>/)[1];
+  assert.strictEqual(heading, '(dsf)');
+  assert.strictEqual(
+    Render.tableBodyHtml({
+      ...state,
+      groups: [file('a', 'X', 'f'), file('b', 'X', 'f', { codec_label: '(flac)' })],
+    }).match(/<td class="codec">([^<]*)<\/td>/)[1],
+    '(mixed)',
+  );
   assert.match(html, /data-groups="3,4"/);
   // Under a heading the songs show but the files' own rows do not.
   assert.strictEqual((html.match(/class="group single"/g) || []).length, 3);

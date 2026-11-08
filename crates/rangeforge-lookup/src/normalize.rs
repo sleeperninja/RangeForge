@@ -84,6 +84,94 @@ pub fn title_keys(title: &str) -> Vec<String> {
     keys
 }
 
+/// Typographic punctuation as plain keyboard characters: `D’yer` becomes `D'yer`.
+fn straightened(text: &str) -> String {
+    text.chars()
+        .map(|c| match c {
+            '\u{2018}' | '\u{2019}' | '\u{02bc}' => '\'',
+            '\u{201c}' | '\u{201d}' => '"',
+            '\u{2013}' | '\u{2014}' => '-',
+            c => c,
+        })
+        .collect()
+}
+
+/// The spellings of a title or album worth asking an online service about, as written first:
+/// then with plain punctuation, without bracketed notes such as `(Remastered)`, and without a
+/// trailing `- 2007 Remaster`. Case is kept, because services show names as people write them.
+#[must_use]
+pub fn spellings(text: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    let plain = straightened(text);
+    let bare = without_brackets(&plain);
+    for variant in [
+        text.to_string(),
+        plain.clone(),
+        bare.clone(),
+        without_version_note(&plain),
+        without_version_note(&bare),
+    ] {
+        let variant = variant.split_whitespace().collect::<Vec<_>>().join(" ");
+        if !variant.is_empty() && !found.contains(&variant) {
+            found.push(variant);
+        }
+    }
+    found
+}
+
+/// The spellings of an artist worth asking about: as written, with plain punctuation, and with
+/// a leading "The" added or taken away (`Alan Parsons Project` and `The Alan Parsons Project`).
+#[must_use]
+pub fn artist_spellings(artist: &str) -> Vec<String> {
+    let mut found = spellings(artist);
+    let plain = straightened(artist).trim().to_string();
+    let toggled = match plain
+        .strip_prefix("The ")
+        .or_else(|| plain.strip_prefix("the "))
+    {
+        Some(rest) if !rest.is_empty() => rest.to_string(),
+        _ if !plain.is_empty() => format!("The {plain}"),
+        _ => String::new(),
+    };
+    if !toggled.is_empty() && !found.contains(&toggled) {
+        found.push(toggled);
+    }
+    found
+}
+
+#[cfg(test)]
+mod spelling_tests {
+    use super::*;
+
+    #[test]
+    fn titles_are_offered_as_written_then_plainer() {
+        assert_eq!(
+            spellings("D\u{2019}yer Mak\u{2019}er (Remastered 2014)"),
+            [
+                "D\u{2019}yer Mak\u{2019}er (Remastered 2014)",
+                "D'yer Mak'er (Remastered 2014)",
+                "D'yer Mak'er",
+            ]
+        );
+        assert_eq!(
+            spellings("Black Dog - 2007 Remaster"),
+            ["Black Dog - 2007 Remaster", "Black Dog"]
+        );
+        // A hyphen that is part of the title stays.
+        assert_eq!(spellings("Mother-in-Law"), ["Mother-in-Law"]);
+        assert_eq!(spellings("  ").len(), 0);
+    }
+
+    #[test]
+    fn artists_also_get_the_added_or_taken_away() {
+        assert_eq!(
+            artist_spellings("Alan Parsons Project"),
+            ["Alan Parsons Project", "The Alan Parsons Project"]
+        );
+        assert_eq!(artist_spellings("The Killers"), ["The Killers", "Killers"]);
+    }
+}
+
 /// Words that join a lead artist to a guest: `Beyoncé Featuring Jay-Z`.
 const GUEST_JOINERS: [&str; 6] = [
     " featuring ",
