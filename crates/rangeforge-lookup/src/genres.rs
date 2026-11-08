@@ -78,6 +78,10 @@ fn is_period(name: &str) -> bool {
 
 fn is_junk(name: &str) -> bool {
     JUNK.contains(&name)
+        // List-style tags: `albums you must hear before you die`, `best of 2000`.
+        || name.contains("must hear")
+        || name.starts_with("best of")
+        || name.starts_with("best album")
         || is_period(name)
         || name.contains("favorite")
         || name.contains("favourite")
@@ -127,15 +131,16 @@ pub struct Rules {
 }
 
 impl Rules {
-    /// For a whole album: the top three that are clearly used.
+    /// For a whole album: the top three that are used at all. Real genres on real albums turn
+    /// up at 5 and above (`dream pop` at 8), while list-style and year tags sit at 1 or 2.
     pub const ALBUM: Self = Self {
         limit: 3,
-        min_count: 25,
+        min_count: 5,
     };
-    /// For one song: only what stands out, and in addition to the album's.
+    /// For one song: what stands out, in addition to the album's. The same cut.
     pub const SONG: Self = Self {
         limit: 4,
-        min_count: 15,
+        min_count: 5,
     };
 }
 
@@ -227,14 +232,40 @@ mod tests {
     fn the_first_usable_tag_is_kept_even_when_unpopular() {
         let faint = [
             tag("seen live", 100),
-            tag("shoegaze", 6),
-            tag("noise pop", 5),
+            tag("shoegaze", 3),
+            tag("noise pop", 2),
         ];
         assert_eq!(
             pick(&faint, "Nobody", &[], Rules::ALBUM),
             ["Shoegaze"],
             "one genre beats none, but the second is below the cutoff"
         );
+    }
+
+    #[test]
+    fn real_genres_at_five_hits_or_more_count_and_list_style_tags_do_not() {
+        // The counts seen for Doves' Lost Souls.
+        let lost_souls = [
+            tag("indie", 100),
+            tag("dream pop", 8),
+            tag("british", 5),
+            tag("alternative", 4),
+            tag("00s", 2),
+            tag("albums you must hear before you die", 2),
+            tag("best of 2000", 1),
+        ];
+        assert_eq!(
+            pick(&lost_souls, "Doves", &[], Rules::ALBUM),
+            ["Indie", "Dream Pop"],
+            "British and the decade are never genres; 4 hits is below the cut"
+        );
+        // Popular enough, but still a list and not a genre.
+        let listy = [
+            tag("rock", 90),
+            tag("albums you must hear before you die", 40),
+            tag("best of 1999", 30),
+        ];
+        assert_eq!(pick(&listy, "A", &[], Rules::ALBUM), ["Rock"]);
     }
 
     #[test]
