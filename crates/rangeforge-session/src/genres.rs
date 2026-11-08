@@ -22,6 +22,11 @@ impl Answers {
         self.by_key.insert(subject.key(), tags);
     }
 
+    /// Like [`Answers::insert`], for a question already turned into its key.
+    pub fn insert_key(&mut self, key: &str, tags: Vec<RawTag>) {
+        self.by_key.insert(key.to_string(), tags);
+    }
+
     pub fn clear(&mut self) {
         self.by_key.clear();
     }
@@ -141,14 +146,11 @@ pub fn track_subject(identity: &Identity) -> Option<Subject> {
     })
 }
 
-/// What Last.fm would need to be asked about this song: its album and the song itself, as far as
-/// the identity knows them.
+/// What Last.fm needs to be asked about this song: its album, if the identity knows it. Songs
+/// are not asked: Last.fm's API has no song tags, so those are pasted in by hand.
 #[must_use]
 pub fn questions(identity: &Identity) -> Vec<Subject> {
-    album_subject(identity)
-        .into_iter()
-        .chain(track_subject(identity))
-        .collect()
+    album_subject(identity).into_iter().collect()
 }
 
 /// Splits a genre tag that holds several: `Rock, Hard Rock` or `Rock; Blues`.
@@ -349,13 +351,15 @@ mod tests {
     }
 
     #[test]
-    fn a_song_asks_about_its_album_and_itself_as_far_as_it_is_known() {
-        assert_eq!(questions(&identity()).len(), 2);
+    fn a_song_asks_about_its_album_only_and_only_when_it_is_known() {
+        let asked = questions(&identity());
+        assert_eq!(asked.len(), 1);
+        assert!(matches!(asked[0], Subject::Album { .. }));
         let no_album = Identity {
             album: None,
             ..identity()
         };
-        assert_eq!(questions(&no_album).len(), 1);
+        assert_eq!(questions(&no_album), Vec::<Subject>::new());
         let nothing = Identity::unknown(IdentitySource::FileName);
         assert_eq!(questions(&nothing), Vec::<Subject>::new());
     }

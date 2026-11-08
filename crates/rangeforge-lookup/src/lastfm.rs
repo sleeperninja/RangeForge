@@ -44,13 +44,6 @@ pub enum LastFmError {
 /// explains its errors in the body.
 pub trait Get: Send + Sync {
     fn get(&self, params: &[(&str, &str)]) -> Result<String, LastFmError>;
-
-    /// Fetches a public web page and returns its HTML, whatever the HTTP status.
-    fn page(&self, _url: &str) -> Result<String, LastFmError> {
-        Err(LastFmError::Network(
-            "web pages are not available".to_string(),
-        ))
-    }
 }
 
 /// The real thing: an HTTPS request.
@@ -70,19 +63,6 @@ impl Get for HttpGet {
             .send()
             .and_then(reqwest::blocking::Response::text)
             // `without_url`: the address holds the key.
-            .map_err(|error| LastFmError::Network(error.without_url().to_string()))
-    }
-
-    fn page(&self, url: &str) -> Result<String, LastFmError> {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .user_agent(concat!("RangeForge/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .map_err(|error| LastFmError::Network(error.without_url().to_string()))?;
-        client
-            .get(url)
-            .send()
-            .and_then(reqwest::blocking::Response::text)
             .map_err(|error| LastFmError::Network(error.without_url().to_string()))
     }
 }
@@ -136,26 +116,6 @@ impl<G: Get> LastFm<G> {
     pub fn album_tags(&self, artist: &str, album: &str) -> Result<Vec<RawTag>, LastFmError> {
         self.ask_spellings(artist, album, |artist, album| {
             self.ask("album.gettoptags", &[("artist", artist), ("album", album)])
-        })
-    }
-
-    /// The tags listeners gave a song. The API's `track.getTopTags` answers with nothing for
-    /// songs that do have tags on the site, so the song's public tags page is read instead:
-    /// `last.fm/music/<artist>/_/<song>/+tags`. The page lists tags most-used first but gives no
-    /// counts, so each gets a made-up popularity that falls with its place in the list.
-    pub fn track_tags(&self, artist: &str, title: &str) -> Result<Vec<RawTag>, LastFmError> {
-        self.ask_spellings(artist, title, |artist, title| {
-            let url = tags_page_url(artist, title);
-            let html = self.get.page(&url)?;
-            let tags = parse_tags_page(&html);
-            if tags.is_empty()
-                && let Ok(mut trail) = self.trail.lock()
-            {
-                trail.push(format!(
-                    "“{artist}” – “{title}”: the Last.fm page has no tags ({url})"
-                ));
-            }
-            Ok(tags)
         })
     }
 
@@ -227,13 +187,30 @@ impl<G: Get> LastFm<G> {
     }
 }
 
-/// Where a song's tags page lives. The album is not needed, so `_` stands in for it.
+/// Where a song's public tags page lives on Last.fm. The album is not needed, so `_` stands in
+/// for it. The names are used as written.
+#[must_use]
 pub fn tags_page_url(artist: &str, title: &str) -> String {
     format!(
         "https://www.last.fm/music/{}/_/{}/+tags",
         url_part(artist),
         url_part(title)
     )
+}
+
+/// The tags page to open for a song. Last.fm spells titles plainly, so a typographic apostrophe
+/// becomes a plain one and a version note (`Remastered 2009`) is left off. The page is for a
+/// person to read in a browser: Last.fm puts a bot check in front of it, so the program never
+/// fetches it.
+#[must_use]
+pub fn song_page_url(artist: &str, title: &str) -> String {
+    let title = spellings(title).pop().unwrap_or_else(|| title.to_string());
+    let names = spellings(artist);
+    let artist = names
+        .get(1)
+        .or_else(|| names.first())
+        .map_or(artist, String::as_str);
+    tags_page_url(artist, &title)
 }
 
 /// One piece of a Last.fm address: spaces are `+`, anything unusual is percent-encoded.
@@ -251,75 +228,6 @@ fn url_part(text: &str) -> String {
         }
     }
     out
-}
-
-/// Reads the tag names off a song's tags page: the text of each link in a heading inside a
-/// list (`ol > li > div > h3 > a`). Counts are not on the page, so they are made up from the
-/// order: 100 for the first, 5 fewer for each after, never below 10. The page's order is
-/// already most-used first, and the genre rules still choose which ones count.
-pub fn parse_tags_page(html: &str) -> Vec<RawTag> {
-    let lower = html.to_ascii_lowercase();
-    let mut names: Vec<String> = Vec::new();
-    let mut from = 0;
-    while let Some(start) = lower[from..].find("<ol") {
-        let start = from + start;
-        let end = lower[start..]
-            .find("</ol>")
-            .map_or(lower.len(), |end| start + end);
-        let mut at = start;
-        while let Some(h3) = lower[at..end].find("<h3") {
-            let h3 = at + h3;
-            let h3_end = lower[h3..end].find("</h3>").map_or(end, |e| h3 + e);
-            if let Some(a) = lower[h3..h3_end].find("<a")
-                && let Some(open) = lower[h3 + a..h3_end].find('>')
-            {
-                let text_start = h3 + a + open + 1;
-                let text_end = lower[text_start..h3_end]
-                    .find("</a>")
-                    .map_or(h3_end, |e| text_start + e);
-                let name = clean_text(&html[text_start..text_end]);
-                if !name.is_empty() && !names.contains(&name) {
-                    names.push(name);
-                }
-            }
-            at = h3_end;
-        }
-        from = end;
-    }
-    names
-        .into_iter()
-        .enumerate()
-        .map(|(rank, name)| {
-            let fall = u32::try_from(rank).unwrap_or(u32::MAX).saturating_mul(5);
-            RawTag {
-                name,
-                count: 100u32.saturating_sub(fall).max(10),
-            }
-        })
-        .collect()
-}
-
-/// Text from HTML: tags dropped, the usual entities decoded, spaces tidied.
-fn clean_text(html: &str) -> String {
-    let mut text = String::new();
-    let mut in_tag = false;
-    for c in html.chars() {
-        match c {
-            '<' => in_tag = true,
-            '>' if in_tag => in_tag = false,
-            _ if !in_tag => text.push(c),
-            _ => {}
-        }
-    }
-    let decoded = text
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&#x27;", "'")
-        .replace("&apos;", "'")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&amp;", "&");
-    decoded.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// True when Last.fm's answer is its "not found" error rather than an empty list of tags.
@@ -468,69 +376,6 @@ mod tests {
         }
     }
 
-    /// A song's tags page as the site serves it (trimmed): the tag list is `ol > li > div > h3 >
-    /// a`, and other headings and links around it are not tags.
-    const TAGS_PAGE: &str = r#"<html><body><h3><a href="/x">Not a tag</a></h3>
-<ol class="big-tags">
-<li class="big-tags-item"><div class="big-tags-item-inner"><h3 class="big-tags-item-name"><a href="/tag/hard+rock">hard rock</a></h3></div></li>
-<li class="big-tags-item"><div><h3><a href="/tag/rock"> rock </a></h3></div></li>
-<li class="big-tags-item"><div><h3><a href="/tag/reggae">reggae</a></h3></div></li>
-<li class="big-tags-item"><div><h3><a href="/tag/r">R&amp;B &#39;70s</a></h3></div></li>
-</ol><h3><a href="/y">Also not a tag</a></h3></body></html>"#;
-
-    /// Serves the tags page for one address only; any other is a page with no tags.
-    struct Picky {
-        knows: &'static str,
-        asked: Mutex<Vec<String>>,
-        down: bool,
-    }
-
-    impl Get for Picky {
-        fn get(&self, _: &[(&str, &str)]) -> Result<String, LastFmError> {
-            Ok(HOUSES.to_string())
-        }
-
-        fn page(&self, url: &str) -> Result<String, LastFmError> {
-            self.asked.lock().unwrap().push(url.to_string());
-            if self.down {
-                return Err(LastFmError::Network("refused".to_string()));
-            }
-            Ok(if url == self.knows {
-                TAGS_PAGE.to_string()
-            } else {
-                "<html><h3><a>Page not found</a></h3></html>".to_string()
-            })
-        }
-    }
-
-    fn picky(knows: &'static str, down: bool) -> LastFm<Picky> {
-        LastFm::new(
-            Picky {
-                knows,
-                asked: Mutex::new(Vec::new()),
-                down,
-            },
-            "key",
-        )
-        .with_pause(Duration::ZERO)
-    }
-
-    #[test]
-    fn a_tags_page_gives_its_tags_in_order() {
-        let tags = parse_tags_page(TAGS_PAGE);
-        let names: Vec<&str> = tags.iter().map(|tag| tag.name.as_str()).collect();
-        assert_eq!(names, ["hard rock", "rock", "reggae", "R&B '70s"]);
-        assert_eq!(tags[0].count, 100);
-        assert_eq!(tags[1].count, 95);
-        assert_eq!(parse_tags_page("<html>nothing here</html>"), []);
-        // Far down the list the made-up count stays above the cut.
-        let mut long = String::new();
-        for n in 0..40 {
-            let _ = write!(long, "<ol><li><div><h3><a>tag {n}</a></h3></div></li></ol>");
-        }
-        assert_eq!(parse_tags_page(&long).last().unwrap().count, 10);
-    }
-
     #[test]
     fn a_songs_address_uses_plus_for_spaces_and_an_underscore_for_the_album() {
         assert_eq!(
@@ -544,61 +389,18 @@ mod tests {
     }
 
     #[test]
-    fn a_curly_apostrophe_or_a_missing_the_does_not_hide_a_songs_tags() {
-        // The file says D’yer Mak’er (typographic apostrophes); Last.fm spells it plainly.
-        let client = picky(
-            "https://www.last.fm/music/Led+Zeppelin/_/D%27yer+Mak%27er/+tags",
-            false,
-        );
-        let tags = client
-            .track_tags("Led Zeppelin", "D\u{2019}yer Mak\u{2019}er")
-            .unwrap();
-        assert_eq!(tags.len(), 4);
-        let asked = client.get.asked.lock().unwrap();
-        assert!(
-            asked[0].contains("%E2%80%99"),
-            "as written first: {asked:?}"
-        );
-        assert!(asked[1].contains("D%27yer+Mak%27er"));
-        drop(asked);
-
-        // A version note and the wrong "The" are handled too.
-        let client = picky(
-            "https://www.last.fm/music/The+Alan+Parsons+Project/_/I+Robot/+tags",
-            false,
-        );
-        let tags = client
-            .track_tags("Alan Parsons Project", "I Robot (Remastered 2007)")
-            .unwrap();
-        assert_eq!(tags.len(), 4);
-    }
-
-    #[test]
-    fn a_song_without_a_tags_page_stops_trying_and_a_real_error_stops_at_once() {
-        let client = picky("https://nowhere/", false);
-        assert_eq!(client.track_tags("Nobody", "Nothing").unwrap(), []);
-        // What was tried is kept, so the log can say it.
-        let trail = client.take_trail();
-        assert!(
-            trail[0].starts_with("“Nobody” – “Nothing”: the Last.fm page has no tags"),
-            "{trail:?}"
-        );
-        assert!(trail.len() > 1, "other spellings were tried: {trail:?}");
-        assert_eq!(client.take_trail().len(), 0, "taking it empties it");
-        assert!(
-            client.get.asked.lock().unwrap().len() <= 8,
-            "a limited number of tries"
-        );
-
-        let client = picky("https://nowhere/", true);
-        assert!(matches!(
-            client.track_tags("Led Zeppelin", "D\u{2019}yer Mak\u{2019}er"),
-            Err(LastFmError::Network(_))
-        ));
+    fn the_page_to_open_uses_plain_punctuation_and_no_version_note() {
         assert_eq!(
-            client.get.asked.lock().unwrap().len(),
-            1,
-            "no retry on a real error"
+            song_page_url("Led Zeppelin", "D\u{2019}yer Mak\u{2019}er"),
+            "https://www.last.fm/music/Led+Zeppelin/_/D%27yer+Mak%27er/+tags"
+        );
+        assert_eq!(
+            song_page_url("The Killers", "Shot at the Night"),
+            "https://www.last.fm/music/The+Killers/_/Shot+at+the+Night/+tags"
+        );
+        assert_eq!(
+            song_page_url("Alan Parsons Project", "I Robot - Remastered 2007"),
+            "https://www.last.fm/music/Alan+Parsons+Project/_/I+Robot/+tags"
         );
     }
 

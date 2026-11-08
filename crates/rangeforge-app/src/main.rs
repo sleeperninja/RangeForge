@@ -10,6 +10,7 @@
 //! `rangeforge-session`, shared with the terminal view; [`ops`] turns them into plain functions
 //! and this file wraps those as commands for the page.
 
+mod browser;
 mod credentials;
 mod ops;
 
@@ -68,7 +69,9 @@ fn watch_genres(app: &AppHandle, shared: &Arc<Shared>) {
         let ask = |subject: &Subject| {
             let answer = match subject {
                 Subject::Album { artist, album } => client.album_tags(artist, album),
-                Subject::Track { artist, title } => client.track_tags(artist, title),
+                // Last.fm's API has no song tags, so songs are never asked: their tags are
+                // pasted in by hand. (Nothing hands a song out as a question.)
+                Subject::Track { .. } => Ok(Vec::new()),
             };
             // When nothing came back, say what each spelling got, so it can be told whether
             // Last.fm does not know the song or knows it without tags.
@@ -275,13 +278,51 @@ async fn clear_completed(state: Session<'_>) -> Result<Reply, String> {
 #[tauri::command]
 async fn get_lastfm_tags(
     targets: Vec<Pick>,
-    albums: bool,
     state: Session<'_>,
     app: AppHandle,
 ) -> Result<Reply, String> {
-    let reply = ops::request_lastfm(&state, &targets, albums);
+    let reply = ops::request_lastfm(&state, &targets);
     watch_genres(&app, state.inner());
     Ok(reply)
+}
+
+/// Opens the Last.fm tags page of each song named in the person's own browser, where they can
+/// read it and copy the list. The program never fetches those pages itself.
+#[tauri::command]
+async fn open_song_pages(targets: Vec<Pick>, state: Session<'_>) -> Result<Reply, String> {
+    let (urls, notice) = match ops::song_page_urls(&state, &targets) {
+        Ok(found) => found,
+        Err(problem) => return Ok(ops::notice(&state, Some(problem))),
+    };
+    let mut problem = notice;
+    for url in &urls {
+        if let Err(why) = browser::open(url) {
+            problem = Some(why);
+            break;
+        }
+    }
+    Ok(ops::notice(&state, problem))
+}
+
+/// The song tags pasted for a song before, so the paste box can show them for editing.
+#[tauri::command]
+async fn get_song_tags(
+    group: usize,
+    track: usize,
+    state: Session<'_>,
+) -> Result<Vec<String>, String> {
+    Ok(ops::pasted_song_tags(&state, group, track))
+}
+
+/// Keeps the song tags pasted for one song.
+#[tauri::command]
+async fn set_song_tags(
+    group: usize,
+    track: usize,
+    text: String,
+    state: Session<'_>,
+) -> Result<Reply, String> {
+    Ok(ops::set_song_tags(&state, group, track, &text))
 }
 
 #[tauri::command]
@@ -372,6 +413,7 @@ fn main() {
             settings: paths::settings_path(None),
             hot100: paths::hot100_path(),
             lastfm_cache: paths::lastfm_cache_path(),
+            song_tags: paths::song_tags_path(),
             cache: paths::default_cache_dir(),
         },
         Box::new(credentials::OsStore),
@@ -410,6 +452,9 @@ fn main() {
             clear_completed,
             remove_group,
             get_lastfm_tags,
+            open_song_pages,
+            get_song_tags,
+            set_song_tags,
             clear_lastfm_cache,
             add_tag,
             remove_tag,

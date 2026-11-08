@@ -15,7 +15,8 @@ use rangeforge_export::format::{BitDepth, Codec, Container, OutputFormat, Sample
 use rangeforge_export::pipeline::TrackPlan;
 use rangeforge_export::strategy::Strategy;
 use rangeforge_lookup::billboard::Hot100;
-use rangeforge_lookup::lastfm::RawTag;
+use rangeforge_lookup::lastfm::{self, RawTag};
+use rangeforge_lookup::songtags;
 use rangeforge_lookup::tagcache::Subject;
 
 use crate::appsettings::{MetadataSettings, SavedSettings};
@@ -354,6 +355,9 @@ pub struct App {
     /// Questions the user asked for by hand (right-click). Asked even while Last.fm lookups are
     /// switched off, and asked afresh rather than answered from the saved copy.
     requested: HashMap<String, Subject>,
+    /// Song tags the user pasted in, by question. They are the only source of song-level tags,
+    /// and they outlast "forget what Last.fm said".
+    pasted: HashMap<String, Vec<RawTag>>,
 }
 
 impl App {
@@ -385,6 +389,7 @@ impl App {
             answers: Answers::default(),
             asked: HashSet::new(),
             requested: HashMap::new(),
+            pasted: HashMap::new(),
         }
     }
 
@@ -630,10 +635,11 @@ impl App {
         self.requested.contains_key(&subject.key())
     }
 
-    /// Asks Last.fm, by hand, about the songs the targets name (`albums` false) or about their
-    /// albums (`albums` true). Works even while automatic lookups are off, but needs a key and
-    /// the main metadata switch. Songs asked about again are asked afresh.
-    pub fn request_lastfm(&mut self, targets: &[Pick], albums: bool) -> Result<(), String> {
+    /// Asks Last.fm, by hand, about the albums of the songs the targets name. Works even while
+    /// automatic lookups are off, but needs a key and the main metadata switch. Albums asked
+    /// about again are asked afresh. (Songs are not asked: Last.fm's API has no song tags, see
+    /// [`App::set_song_tags`].)
+    pub fn request_lastfm(&mut self, targets: &[Pick]) -> Result<(), String> {
         if !self.metadata.enabled {
             return Err("Metadata lookups are switched off. Turn them on in Settings.".to_string());
         }
@@ -642,27 +648,17 @@ impl App {
         }
         let mut subjects = Vec::new();
         for row in self.rows_for(targets)? {
-            let Some(identity) = row.identity.as_ref() else {
-                continue;
-            };
-            let subject = if albums {
-                genres::album_subject(identity)
-            } else {
-                genres::track_subject(identity)
-            };
-            if let Some(subject) = subject
+            if let Some(identity) = row.identity.as_ref()
+                && let Some(subject) = genres::album_subject(identity)
                 && !subjects.contains(&subject)
             {
                 subjects.push(subject);
             }
         }
         if subjects.is_empty() {
-            return Err(if albums {
-                "Last.fm needs an album's artist and name, and they are not known."
-            } else {
-                "Last.fm needs a song's artist and title, and they are not known."
-            }
-            .to_string());
+            return Err(
+                "Last.fm needs an album's artist and name, and they are not known.".to_string(),
+            );
         }
         for subject in subjects {
             let key = subject.key();
@@ -671,6 +667,79 @@ impl App {
             self.requested.insert(key, subject);
         }
         Ok(())
+    }
+
+    /// Keeps the song tags pasted for one song. `text` may separate tags with commas,
+    /// semicolons or line breaks; pasting nothing forgets the song's tags. Returns the song's
+    /// artist and title and the tags kept, in order, for the caller to save.
+    pub fn set_song_tags(
+        &mut self,
+        group: usize,
+        track: usize,
+        text: &str,
+    ) -> Result<(String, String, Vec<String>), String> {
+        let target = Pick {
+            group,
+            track: Some(track),
+        };
+        let subject = {
+            let rows = self.rows_for(&[target])?;
+            rows.first()
+                .and_then(|row| row.identity.as_ref())
+                .and_then(genres::track_subject)
+        }
+        .ok_or("Song tags need the song's artist and title, and they are not known.")?;
+        let Subject::Track { artist, title } = &subject else {
+            return Err("That is not a song.".to_string());
+        };
+        let names = songtags::split_pasted(text);
+        if names.is_empty() {
+            self.pasted.remove(&subject.key());
+            self.answers.remove(&subject);
+        } else {
+            let tags = songtags::ranked(&names);
+            self.pasted.insert(subject.key(), tags.clone());
+            self.answers.insert(&subject, tags);
+        }
+        Ok((artist.clone(), title.clone(), names))
+    }
+
+    /// The tags pasted for a song earlier, in the order they were pasted.
+    pub fn pasted_song_tags(&self, group: usize, track: usize) -> Vec<String> {
+        self.groups
+            .get(group)
+            .and_then(|g| g.tracks.get(track))
+            .and_then(|row| row.identity.as_ref())
+            .and_then(genres::track_subject)
+            .and_then(|subject| self.pasted.get(&subject.key()))
+            .map(|tags| tags.iter().map(|tag| tag.name.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    /// Takes back song tags saved earlier, at start-up.
+    pub fn restore_song_tags(&mut self, saved: Vec<(Subject, Vec<RawTag>)>) {
+        for (subject, tags) in saved {
+            self.pasted.insert(subject.key(), tags.clone());
+            self.answers.insert(&subject, tags);
+        }
+    }
+
+    /// The address of a song's Last.fm tags page, for the person to open in a browser.
+    pub fn song_page_url(&self, group: usize, track: usize) -> Result<String, String> {
+        let identity = self
+            .groups
+            .get(group)
+            .and_then(|g| g.tracks.get(track))
+            .ok_or("That song is not in the list.")?
+            .identity
+            .as_ref();
+        match identity.and_then(genres::track_subject) {
+            Some(Subject::Track { artist, title }) => Ok(lastfm::song_page_url(&artist, &title)),
+            _ => Err(
+                "Opening the page needs the song's artist and title, and they are not known."
+                    .to_string(),
+            ),
+        }
     }
 
     /// The identities worth asking Last.fm about. A single file waits until its tags have been
@@ -703,6 +772,10 @@ impl App {
     pub fn forget_lastfm_answers(&mut self) {
         self.answers.clear();
         self.asked.clear();
+        // Song tags the user pasted are theirs, not Last.fm's answers: they stay.
+        for (key, tags) in &self.pasted {
+            self.answers.insert_key(key, tags.clone());
+        }
     }
 
     /// How many albums and songs Last.fm has answered for.
@@ -2515,10 +2588,8 @@ mod tests {
             assert_eq!(&identity.title, title);
         }
 
-        // Both songs are asked about in one go, each once.
-        app.request_lastfm(&picked, false).unwrap();
-        assert_eq!(app.take_questions().len(), 2);
-        app.request_lastfm(&picked, true).unwrap();
+        // Both songs share one album, which is asked about once.
+        app.request_lastfm(&picked).unwrap();
         assert_eq!(app.take_questions().len(), 1, "they share one album");
     }
 
@@ -2577,7 +2648,7 @@ mod tests {
         // Last.fm is now asked about the typed names.
         assert!(genres::questions(&identity).iter().any(|s| matches!(
             s,
-            Subject::Track { artist, .. } if artist == "The Alan Parsons Project"
+            Subject::Album { artist, .. } if artist == "The Alan Parsons Project"
         )));
 
         // The album's names go to every song but leave artist and title alone.
@@ -2609,33 +2680,34 @@ mod tests {
         let mut app = ready_app();
         app.set_metadata_enabled(true);
         assert!(
-            app.request_lastfm(&[pick_song(0, 0)], false).is_err(),
+            app.request_lastfm(&[pick_song(0, 0)]).is_err(),
             "no key yet"
         );
 
         app.lastfm_key = KeySource::Saved;
         assert!(!app.wants_lastfm(), "automatic lookups stay off");
-        app.request_lastfm(&[pick_song(0, 0)], false).unwrap();
+        app.request_lastfm(&[pick_song(0, 0)]).unwrap();
         assert!(app.has_questions());
-        let song = app.take_questions();
-        assert_eq!(song.len(), 1, "only that song, nothing automatic");
-        assert!(app.was_requested(&song[0]));
-        app.apply_answer(&song[0], vec![raw("rock", 100)]);
-        assert!(!app.was_requested(&song[0]), "done once answered");
+        let album = app.take_questions();
+        assert_eq!(album.len(), 1, "only that album, nothing automatic");
+        assert!(matches!(album[0], Subject::Album { .. }));
+        assert!(app.was_requested(&album[0]));
+        app.apply_answer(&album[0], vec![raw("rock", 100)]);
+        assert!(!app.was_requested(&album[0]), "done once answered");
         assert!(!app.has_questions());
 
         // Asking again forgets the answer and asks again.
-        app.request_lastfm(&[pick_song(0, 0)], false).unwrap();
+        app.request_lastfm(&[pick_song(0, 0)]).unwrap();
         assert_eq!(app.take_questions().len(), 1);
 
-        // The album row asks about the album.
-        app.request_lastfm(&[pick_album(0)], true).unwrap();
+        // The album row asks about the album too.
+        app.request_lastfm(&[pick_album(0)]).unwrap();
         assert_eq!(app.take_questions().len(), 1);
-        assert!(app.request_lastfm(&[pick_album(99)], true).is_err());
+        assert!(app.request_lastfm(&[pick_album(99)]).is_err());
     }
 
     #[test]
-    fn last_fm_is_asked_about_each_album_and_song_once_and_only_when_wanted() {
+    fn last_fm_is_asked_about_each_album_once_and_only_when_wanted() {
         let mut app = ready_app();
         assert!(app.take_questions().is_empty(), "everything starts off");
         assert!(!app.has_questions());
@@ -2643,15 +2715,16 @@ mod tests {
         let mut app = lastfm_app();
         assert!(app.has_questions());
         let questions = app.take_questions();
-        // One album and two songs.
-        assert_eq!(questions.len(), 3);
+        // One album; its two songs are not asked about.
+        assert_eq!(questions.len(), 1);
+        assert!(matches!(questions[0], Subject::Album { .. }));
         assert!(app.take_questions().is_empty(), "handed out once");
         assert!(!app.has_questions());
 
         // Failed or abandoned questions can be handed out again.
         app.forget_asked();
         assert!(app.has_questions());
-        assert_eq!(app.take_questions().len(), 3);
+        assert_eq!(app.take_questions().len(), 1);
 
         // Answered ones are never asked again.
         app.forget_asked();
@@ -2659,7 +2732,7 @@ mod tests {
             app.apply_answer(subject, vec![raw("rock", 100)]);
         }
         assert!(!app.has_questions());
-        assert_eq!(app.answered(), 3);
+        assert_eq!(app.answered(), 1);
 
         // Switching Last.fm off, or losing the key, stops the questions.
         let mut off = ready_app();
@@ -2678,15 +2751,14 @@ mod tests {
             1973,
         )]))));
         for subject in app.take_questions() {
-            let tags = match &subject {
-                Subject::Album { .. } => vec![raw("classic rock", 100), raw("hard rock", 80)],
-                Subject::Track { title, .. } if title == "The Rain Song" => {
-                    vec![raw("ballad", 90), raw("classic rock", 80)]
-                }
-                Subject::Track { .. } => Vec::new(),
-            };
-            app.apply_answer(&subject, tags);
+            app.apply_answer(
+                &subject,
+                vec![raw("classic rock", 100), raw("hard rock", 80)],
+            );
         }
+        // Song tags are pasted from the Last.fm page. The album's own tags are not repeated.
+        app.set_song_tags(0, 0, "ballad; classic rock\nHard Rock")
+            .unwrap();
 
         let rain = &app.groups[0].tracks[0];
         let genres = app.song_genres(rain);
@@ -2714,6 +2786,85 @@ mod tests {
             spec.items[0].plans[1].tags.genre.as_deref(),
             Some("Classic Rock, Hard Rock")
         );
+    }
+
+    #[test]
+    fn pasted_song_tags_take_commas_semicolons_and_lines_and_are_written_with_commas() {
+        let mut app = lastfm_app();
+        for subject in app.take_questions() {
+            app.apply_answer(
+                &subject,
+                vec![raw("classic rock", 100), raw("hard rock", 80)],
+            );
+        }
+        let (artist, title, names) = app
+            .set_song_tags(0, 1, "reggae; Classic Rock,\n70s , led zeppelin")
+            .unwrap();
+        assert_eq!(
+            (artist.as_str(), title.as_str()),
+            ("Led Zeppelin", "No Quarter")
+        );
+        assert_eq!(names, ["reggae", "Classic Rock", "70s", "led zeppelin"]);
+
+        let quarter = &app.groups[0].tracks[1];
+        let genres = app.song_genres(quarter);
+        // The album's own tag is not repeated, and a decade or the artist's name is no genre.
+        assert_eq!(genres.album, ["Classic Rock", "Hard Rock"]);
+        assert_eq!(genres.song, ["Reggae"]);
+        assert_eq!(
+            app.genre_tag(quarter).as_deref(),
+            Some("Classic Rock, Hard Rock, Reggae")
+        );
+        assert_eq!(
+            app.pasted_song_tags(0, 1),
+            ["reggae", "Classic Rock", "70s", "led zeppelin"]
+        );
+        assert_eq!(
+            app.song_genres(&app.groups[0].tracks[0]).song,
+            Vec::<String>::new()
+        );
+
+        // Forgetting what Last.fm said does not forget what was pasted.
+        app.forget_lastfm_answers();
+        // (With the album's tags gone, "Classic Rock" is no longer the album's, so it counts.)
+        assert_eq!(
+            app.song_genres(&app.groups[0].tracks[1]).song,
+            ["Reggae", "Classic Rock"]
+        );
+        assert_eq!(
+            app.song_genres(&app.groups[0].tracks[1]).album,
+            Vec::<String>::new()
+        );
+
+        // Pasting nothing takes the song's tags away.
+        app.set_song_tags(0, 1, " ; , \n").unwrap();
+        assert_eq!(
+            app.song_genres(&app.groups[0].tracks[1]).song,
+            Vec::<String>::new()
+        );
+        assert_eq!(app.pasted_song_tags(0, 1), Vec::<String>::new());
+
+        assert!(app.set_song_tags(0, 99, "x").is_err(), "no such song");
+        assert!(app.set_song_tags(9, 0, "x").is_err(), "no such album");
+    }
+
+    #[test]
+    fn saved_song_tags_come_back_and_a_song_page_address_is_built() {
+        let mut app = lastfm_app();
+        let key = Subject::Track {
+            artist: "Led Zeppelin".to_string(),
+            title: "The Rain Song".to_string(),
+        };
+        app.restore_song_tags(vec![(key, songtags::ranked(&["ballad".to_string()]))]);
+        assert_eq!(app.song_genres(&app.groups[0].tracks[0]).song, ["Ballad"]);
+
+        assert_eq!(
+            app.song_page_url(0, 0).unwrap(),
+            "https://www.last.fm/music/Led+Zeppelin/_/The+Rain+Song/+tags"
+        );
+        assert!(app.song_page_url(0, 99).is_err());
+        app.groups[0].tracks[0].identity = None;
+        assert!(app.song_page_url(0, 0).is_err(), "nobody to look up");
     }
 
     #[test]

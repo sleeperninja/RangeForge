@@ -230,7 +230,11 @@
     } else if (item.action === 'edit_names') {
       askForNames(item.targets);
     } else if (item.action === 'lastfm') {
-      call('get_lastfm_tags', { targets: item.targets, albums: Boolean(item.albums) });
+      call('get_lastfm_tags', { targets: item.targets });
+    } else if (item.action === 'open_song_page') {
+      call('open_song_pages', { targets: item.targets });
+    } else if (item.action === 'paste_song_tags') {
+      askForSongTags(item.group, item.track);
     } else if (item.action === 'select_album') {
       const same = Render.sameAlbum(state, item.group, item.track);
       if (same.length === 0) {
@@ -390,6 +394,36 @@
     );
     dialog.showModal();
     $('tagText').focus();
+  }
+
+  // Asks for the tags copied from a song's Last.fm tags page. Commas, semicolons and line breaks
+  // all separate tags. What was pasted before is shown, so it can be corrected.
+  async function askForSongTags(group, track) {
+    const dialog = $('songTagsDialog');
+    const song = state.groups[group] && state.groups[group].tracks[track];
+    const identity = (song && song.identity) || {};
+    $('songTagsPrompt').textContent = `Tags for ${identity.title || 'this song'}${identity.artist ? ' by ' + identity.artist : ''}:`;
+    let before = [];
+    if (inTauri) {
+      try {
+        before = await tauri.core.invoke('get_song_tags', { group, track });
+      } catch (error) {
+        before = [];
+      }
+    }
+    $('songTagsText').value = before.join(', ');
+    dialog.returnValue = '';
+    dialog.addEventListener(
+      'close',
+      () => {
+        if (dialog.returnValue === 'save') {
+          call('set_song_tags', { group, track, text: $('songTagsText').value });
+        }
+      },
+      { once: true },
+    );
+    dialog.showModal();
+    $('songTagsText').focus();
   }
 
   // The value every song agrees on, or an empty string if they differ.

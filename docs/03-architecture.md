@@ -70,7 +70,7 @@ Third, an optional **delete the original**, off by default. It happens last, aft
 | Cache | Remembers measurements between sessions, per way of splitting a file | `serde_json`, `blake3`; one small JSON file per audio file in the app's cache folder |
 | Encoder | Writes ALAC, FLAC, WAV and AAC, one FFmpeg process per song, fed the already-decoded sound through a pipe | FFmpeg |
 | Tagger | Writes tags as the file is encoded. Reading and editing tags in the app comes later. | FFmpeg now; `lofty` later |
-| Lookups | Last.fm: album tags from its API; song tags read from the song's public tags page (**WIP, not yet confirmed live**, D-31; the API returns none for songs). Plus the Billboard Hot 100 history: a ~40 MB JSON file kept as a local copy and re-downloaded only when a newer version exists. Radio tags are then a local lookup. | `reqwest` |
+| Lookups | Last.fm: album tags from its API. Song tags are pasted in by the user from the song's public tags page, which the program only opens in the user's browser and never fetches (D-31; the API returns none for songs, and the page has a bot check). Pasted tags live in their own `song-tags.json`, apart from the cache. Plus the Billboard Hot 100 history: a ~40 MB JSON file kept as a local copy and re-downloaded only when a newer version exists. Radio tags are then a local lookup. | `reqwest` |
 | Settings | Presets and keys. Keys are stored encrypted. | JSON file plus the system keychain |
 | Readiness check | Answers "do the settings all agree, and has all the asked-for work finished?" The screen uses it to allow Auto Mode, and the app uses it to start an automatic run. | our own code, heavily tested |
 

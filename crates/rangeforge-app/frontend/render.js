@@ -293,8 +293,8 @@
       });
       items.push({ action: 'add_tag', label: `Add a tag to these ${n} songs…`, targets: picks });
       items.push({ action: 'edit_names', label: `Edit names of these ${n} songs…`, targets: picks });
-      items.push({ action: 'lastfm', label: `Get tags from Last.fm for these ${n} songs`, targets: picks, albums: false });
-      items.push({ action: 'lastfm', label: 'Get tags from Last.fm for their albums', targets: picks, albums: true });
+      items.push({ action: 'open_song_page', label: `Open song tags pages on Last.fm for these ${n} songs`, targets: picks });
+      items.push({ action: 'lastfm', label: 'Get tags from Last.fm for their albums', targets: picks });
       items.push(selectSame);
       return items;
     }
@@ -328,13 +328,13 @@
       targets: here,
     });
     if (song) {
-      items.push({ action: 'lastfm', label: 'Get tags from Last.fm for this song', targets: here, albums: false });
+      items.push({ action: 'open_song_page', label: 'Open song tags page on Last.fm', targets: here });
+      items.push({ action: 'paste_song_tags', label: 'Paste song tags…', group: groupIndex, track: trackIndex });
     }
     items.push({
       action: 'lastfm',
       label: 'Get tags from Last.fm for this album',
       targets: [{ group: groupIndex, track: null }],
-      albums: true,
     });
     if (song) {
       items.push(selectSame);
@@ -361,7 +361,7 @@
       },
       { action: 'add_tag', label: 'Add a tag to every song of this album…', targets },
       { action: 'edit_names', label: 'Edit album name and artist…', targets },
-      { action: 'lastfm', label: 'Get tags from Last.fm for this album', targets, albums: true },
+      { action: 'lastfm', label: 'Get tags from Last.fm for this album', targets },
       { action: 'remove_many', label: 'Remove this album from the list', groups: groupIndexes },
     ];
   }

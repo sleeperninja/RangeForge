@@ -67,7 +67,8 @@ test('the right-click menu depends on the row and what is switched on', () => {
       'Include every song of this album',
       'Add a tag to this song…',
       'Edit artist, title and album…',
-      'Get tags from Last.fm for this song',
+      'Open song tags page on Last.fm',
+      'Paste song tags…',
       'Get tags from Last.fm for this album',
       'Select every song with this album',
       'Remove from the list',
@@ -93,7 +94,16 @@ test('the right-click menu depends on the row and what is switched on', () => {
     targets: [{ group: 0, track: null }],
   });
   assert.deepStrictEqual(album[3].targets, [{ group: 0, track: null }]);
-  assert.strictEqual(album[3].albums, true);
+  assert.strictEqual(album[3].action, 'lastfm');
+
+  // Song tags are opened in the browser and pasted back in, on a song's own menu only.
+  assert.deepStrictEqual(song[4], {
+    action: 'open_song_page',
+    label: 'Open song tags page on Last.fm',
+    targets: [{ group: 1, track: 1 }],
+  });
+  assert.deepStrictEqual(song[5], { action: 'paste_song_tags', label: 'Paste song tags…', group: 1, track: 1 });
+  assert.ok(!album.some((item) => item.action === 'open_song_page' || item.action === 'paste_song_tags'));
 
   assert.deepStrictEqual(Render.menuItems(demo, 99, null), []);
   assert.match(Render.menuHtml(album), /data-item="4">Remove from the list/);
@@ -117,14 +127,15 @@ test('several picked songs get one menu that works on all of them', () => {
       'Leave out these 3 songs',
       'Add a tag to these 3 songs…',
       'Edit names of these 3 songs…',
-      'Get tags from Last.fm for these 3 songs',
+      'Open song tags pages on Last.fm for these 3 songs',
       'Get tags from Last.fm for their albums',
       'Select every song with this album',
     ],
   );
   assert.deepStrictEqual(menu[1].targets, picks);
-  assert.strictEqual(menu[3].albums, false);
-  assert.strictEqual(menu[4].albums, true);
+  assert.strictEqual(menu[3].action, 'open_song_page');
+  assert.deepStrictEqual(menu[3].targets, picks);
+  assert.strictEqual(menu[4].action, 'lastfm');
   // One picked song is just that song's own menu.
   assert.strictEqual(Render.menuItems(demo, 0, 1, [picks[1]])[0].action, 'toggle_track');
 });
@@ -230,7 +241,7 @@ test('an album heading works on every file under it', () => {
     { group: 0, track: null },
     { group: 1, track: null },
   ]);
-  assert.strictEqual(menu[3].albums, true);
+  assert.strictEqual(menu[3].action, 'lastfm');
   assert.deepStrictEqual(menu[4].groups, [0, 1]);
   assert.deepStrictEqual(Render.blockMenuItems(state, [9]), []);
 });

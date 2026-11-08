@@ -29,7 +29,7 @@ A blue tag marking songs that charted on the Billboard Hot 100.
 
 ## Which online services does it use?
 
-- **Last.fm:** album genre tags from its API, and song genre tags read from the song's public tags page (work in progress: the API gives no song tags, and the page route is not yet confirmed live; see D-31).
+- **Last.fm:** album genre tags from its API. Song genre tags are not available from the API, and the song's public tags page has a bot check, so the app opens that page in your browser and you paste the list back in (see D-31 and D-32).
 - **Billboard Hot 100 chart data:** decides the **Radio** tag. A public GitHub project keeps the whole Hot 100 history in one file, `all.json`, about 42 MB as of 2026-10-08.
 
 - The file: <https://github.com/mhollingshead/billboard-hot-100/blob/main/all.json>
