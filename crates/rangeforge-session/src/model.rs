@@ -698,6 +698,13 @@ impl App {
         self.asked.clear();
     }
 
+    /// Throws away what Last.fm has said so far, so every question can be asked again. Tags
+    /// already in files, and edits made by hand, are not touched.
+    pub fn forget_lastfm_answers(&mut self) {
+        self.answers.clear();
+        self.asked.clear();
+    }
+
     /// How many albums and songs Last.fm has answered for.
     pub fn answered(&self) -> usize {
         self.answers.len()

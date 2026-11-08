@@ -512,6 +512,12 @@
       $('lastfmKey').value = '';
       await call('set_lastfm_key', { key: '' });
     });
+    $('lastfmClear').addEventListener('click', async () => {
+      const reply = await call('clear_lastfm_cache');
+      if (reply && !reply.error) {
+        toast('Saved Last.fm answers cleared. Genres will be pulled fresh.');
+      }
+    });
     $('settingsButton').addEventListener('click', openSettings);
     $('settingsCancel').addEventListener('click', () => $('settingsDialog').close());
     $('settingsSave').addEventListener('click', saveSettings);

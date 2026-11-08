@@ -594,8 +594,37 @@ fn lookup_line(subject: &Subject, tags: &[RawTag]) -> String {
             "Last.fm has no tags for {what}. If the names look wrong, fix them in the file's tags."
         );
     }
-    let top: Vec<&str> = tags.iter().take(6).map(|tag| tag.name.as_str()).collect();
+    // Each tag with how popular it is (0 to 100), most popular first, so the cut-offs for what
+    // becomes a genre can be judged from real answers.
+    let mut sorted: Vec<&RawTag> = tags.iter().collect();
+    sorted.sort_by_key(|tag| std::cmp::Reverse(tag.count));
+    let top: Vec<String> = sorted
+        .iter()
+        .take(12)
+        .map(|tag| format!("{} ({})", tag.name, tag.count))
+        .collect();
     format!("Last.fm: {what} → {}", top.join(", "))
+}
+
+/// Forgets every answer Last.fm has given, in memory and on disk, so the next lookup asks
+/// again. Lookups that are switched on start again from the caller.
+pub fn clear_lastfm_cache(shared: &Shared) -> Reply {
+    let removed = match shared
+        .lastfm_cache_path
+        .as_deref()
+        .map(std::fs::remove_file)
+    {
+        Some(Err(error)) if error.kind() != std::io::ErrorKind::NotFound => Err(format!(
+            "Could not remove the saved Last.fm answers: {error}"
+        )),
+        _ => Ok(()),
+    };
+    with_app(shared, |app| {
+        removed?;
+        app.forget_lastfm_answers();
+        app.log("Cleared the saved Last.fm answers. Genres will be pulled fresh.");
+        Ok(())
+    })
 }
 
 /// Stops asking: says why in the log, and lets the unanswered questions be asked again later.

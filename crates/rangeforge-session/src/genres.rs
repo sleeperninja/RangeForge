@@ -22,6 +22,10 @@ impl Answers {
         self.by_key.insert(subject.key(), tags);
     }
 
+    pub fn clear(&mut self) {
+        self.by_key.clear();
+    }
+
     pub fn remove(&mut self, subject: &Subject) {
         self.by_key.remove(&subject.key());
     }

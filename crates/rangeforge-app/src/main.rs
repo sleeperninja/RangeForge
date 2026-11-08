@@ -250,6 +250,13 @@ async fn set_lastfm_key(key: String, state: Session<'_>, app: AppHandle) -> Resu
 }
 
 #[tauri::command]
+async fn clear_lastfm_cache(state: Session<'_>, app: AppHandle) -> Result<Reply, String> {
+    let reply = ops::clear_lastfm_cache(&state);
+    watch_genres(&app, state.inner());
+    Ok(reply)
+}
+
+#[tauri::command]
 async fn clear_completed(state: Session<'_>) -> Result<Reply, String> {
     Ok(ops::clear_completed(&state))
 }
@@ -392,6 +399,7 @@ fn main() {
             clear_completed,
             remove_group,
             get_lastfm_tags,
+            clear_lastfm_cache,
             add_tag,
             remove_tag,
             set_names,

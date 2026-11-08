@@ -134,8 +134,8 @@ impl Rules {
     };
     /// For one song: only what stands out, and in addition to the album's.
     pub const SONG: Self = Self {
-        limit: 2,
-        min_count: 40,
+        limit: 4,
+        min_count: 15,
     };
 }
 
@@ -249,8 +249,28 @@ mod tests {
         let album = vec!["Classic Rock".to_string(), "Hard Rock".to_string()];
         assert_eq!(
             pick(&song, "Led Zeppelin", &album, Rules::SONG),
-            ["Funk Rock", "Funk"]
+            ["Funk Rock", "Funk", "Reggae"]
         );
+    }
+
+    #[test]
+    fn a_rarer_but_distinct_song_tag_still_shows() {
+        // D'yer Mak'er: mostly rock, but listeners also call it reggae.
+        let song = [
+            tag("classic rock", 100),
+            tag("rock", 80),
+            tag("reggae", 22),
+            tag("hard rock", 60),
+            tag("led zeppelin", 50),
+            tag("70s", 40),
+            tag("seen live", 12),
+        ];
+        let album = vec![
+            "Classic Rock".to_string(),
+            "Rock".to_string(),
+            "Hard Rock".to_string(),
+        ];
+        assert_eq!(pick(&song, "Led Zeppelin", &album, Rules::SONG), ["Reggae"]);
     }
 
     #[test]
