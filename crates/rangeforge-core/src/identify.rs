@@ -108,11 +108,16 @@ impl Identity {
         };
 
         let mut identity = Self::unknown(IdentitySource::FileName);
-        let stem = tidy(stem);
+        // A name made by a machine, such as `00724352531929_001_Doves_Firesite_GBDGG0000013`,
+        // has underscores and no spaces. Its barcode and ISRC are not part of the song.
+        let machine_made = !stem.trim().contains(' ');
+        let stem = tidy(&strip_release_codes(stem));
         let (track, rest) = split_track(&stem);
         identity.track = track;
+        let mut artist_from_name = false;
         match rest.split_once(" - ") {
             Some((artist, title)) if !artist.trim().is_empty() && !title.trim().is_empty() => {
+                artist_from_name = true;
                 identity.artist = Some(artist.trim().to_string());
                 identity.title = Some(title.trim().to_string());
             }
@@ -128,13 +133,80 @@ impl Identity {
             if identity.artist.is_none() {
                 identity.artist = named.artist.or_else(|| {
                     folder(2)
-                        .map(|grandparent| tidy(&grandparent))
+                        .map(|grandparent| without_notes(&tidy(&grandparent)))
                         .filter(|name| is_artist_folder(name))
                 });
             }
         }
+
+        // Such a name runs the artist and the title together (`Doves_Firesite`), and only the
+        // folder tells where one ends. Take the artist off the front of the title.
+        if machine_made
+            && !artist_from_name
+            && let (Some(artist), Some(title)) = (&identity.artist, &identity.title)
+            && let Some(rest) = without_artist_prefix(title, artist)
+        {
+            identity.title = Some(rest);
+        }
         identity
     }
+}
+
+/// A name's barcode and ISRC, when it is an underscore-joined name that has them. The barcode
+/// (8 to 14 digits) leads and is followed by the track number; the ISRC (two letters, three
+/// letters or digits, seven digits) ends. Anything with a space is left alone.
+fn strip_release_codes(stem: &str) -> String {
+    let stem = stem.trim();
+    if stem.contains(' ') {
+        return stem.to_string();
+    }
+    let mut parts: Vec<&str> = stem.split('_').collect();
+    let barcode =
+        |part: &str| (8..=14).contains(&part.len()) && part.bytes().all(|b| b.is_ascii_digit());
+    let short_number =
+        |part: &str| (1..=3).contains(&part.len()) && part.bytes().all(|b| b.is_ascii_digit());
+    if parts.len() >= 3 && barcode(parts[0]) && short_number(parts[1]) {
+        parts.remove(0);
+    }
+    let isrc = |part: &str| {
+        let bytes = part.as_bytes();
+        bytes.len() == 12
+            && bytes[..2].iter().all(u8::is_ascii_uppercase)
+            && bytes[2..5]
+                .iter()
+                .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+            && bytes[5..].iter().all(u8::is_ascii_digit)
+    };
+    if parts.len() >= 2 && parts.last().is_some_and(|last| isrc(last)) {
+        parts.pop();
+    }
+    parts.join("_")
+}
+
+/// `text` without `(...)` and `[...]` notes at its end: `Doves (lossless downloads)` is `Doves`.
+/// Text that is nothing but a note is left as it is.
+fn without_notes(text: &str) -> String {
+    let mut text = text.trim().to_string();
+    while let Some(note) = trailing_note(&text) {
+        let shorter = text[..note.start].trim_end().to_string();
+        if shorter.is_empty() {
+            break;
+        }
+        text = shorter;
+    }
+    text
+}
+
+/// The title with the artist's name taken off its front (`Doves Firesite` by Doves is
+/// `Firesite`), or `None` if it does not start with the artist or would be left empty.
+fn without_artist_prefix(title: &str, artist: &str) -> Option<String> {
+    let head = title.get(..artist.len())?;
+    let rest = title.get(artist.len()..)?;
+    if !head.eq_ignore_ascii_case(artist) || !rest.starts_with(' ') {
+        return None;
+    }
+    let rest = rest.trim();
+    (!rest.is_empty()).then(|| rest.to_string())
 }
 
 /// Folder names that could be an artist.
@@ -367,6 +439,65 @@ mod tests {
             Some("Part 2"),
             "a name that already has spaces keeps its underscores"
         );
+    }
+
+    #[test]
+    fn a_vinyl_download_name_gives_track_title_and_the_folders_give_the_rest() {
+        let folder = "/audio/HiRes Backup/Doves (lossless downloads from vinyls)/2000 - Lost Souls";
+        for (file, track, title) in [
+            (
+                "00724352531929_001_Doves_Firesite_GBDGG0000013.wav",
+                1,
+                "Firesite",
+            ),
+            (
+                "00724352531929_002_Doves_Here_It_Comes_GBDGG0000014.wav",
+                2,
+                "Here It Comes",
+            ),
+            (
+                "00724352531929_009_Doves_The_Man_Who_Told_Everything_GBDGG0000021.wav",
+                9,
+                "The Man Who Told Everything",
+            ),
+            (
+                "00724352531929_012_Doves_A_House_GBDGG0000023.wav",
+                12,
+                "A House",
+            ),
+        ] {
+            let identity = guess(&format!("{folder}/{file}"));
+            assert_eq!(
+                fields(&identity),
+                (Some("Doves"), Some(title), Some("Lost Souls"), Some(track)),
+                "{file}"
+            );
+            assert_eq!(identity.date.as_deref(), Some("2000"), "{file}");
+            assert!(identity.can_look_up(), "{file}");
+        }
+    }
+
+    #[test]
+    fn release_codes_and_the_artist_prefix_only_go_from_machine_made_names() {
+        // A name with spaces is the person's own: nothing is stripped from it.
+        let spaced = guess("/m/Doves/Lost Souls/01 Doves Firesite.wav");
+        assert_eq!(spaced.title.as_deref(), Some("Doves Firesite"));
+        // A song named for the artist keeps its name.
+        let same = guess("/m/Doves/Lost Souls/00724352531929_003_Doves_Doves_GBDGG0000015.wav");
+        assert_eq!(same.title.as_deref(), Some("Doves"));
+        let alone = guess("/m/Doves/Lost Souls/01_Doves.wav");
+        assert_eq!(alone.title.as_deref(), Some("Doves"));
+        // Several words of artist, and an ISRC with no barcode before it.
+        let two =
+            guess("/m/Led Zeppelin (lossless)/IV/003_Led_Zeppelin_Black_Dog_GBAAA0000001.flac");
+        assert_eq!(two.artist.as_deref(), Some("Led Zeppelin"));
+        assert_eq!(two.title.as_deref(), Some("Black Dog"));
+        // Something that only looks like a code is left in: eleven characters is no ISRC.
+        let near = guess("/m/A/B/01_Song_GBDGG000001.flac");
+        assert_eq!(near.title.as_deref(), Some("Song GBDGG000001"));
+        // A folder that is nothing but a note is not turned into an empty artist.
+        assert_eq!(without_notes("(lossless)"), "(lossless)");
+        assert_eq!(without_notes("Doves [FLAC] (1999)"), "Doves");
     }
 
     #[test]
