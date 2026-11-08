@@ -122,16 +122,21 @@
     return on === group.tracks.length ? 'all' : 'some';
   }
 
-  function groupRowsHtml(group, outputCodec, groupIndex) {
-    const included = includedState(group);
-    const checked = included === 'all' ? ' checked' : '';
-    let html =
-      `<tr class="group ${esc(group.kind)}" data-group="${groupIndex}">` +
-      `<td class="name"><input type="checkbox" class="include" data-group="${groupIndex}" data-state="${included}"${checked} title="Include every song of this album in the run">${esc(group.name)}</td>` +
-      `<td class="codec">${esc(group.codec_label)}</td>` +
-      progressCell(group) +
-      '<td class="num"></td><td class="num"></td><td class="num"></td><td class="tags"></td>' +
-      '</tr>';
+  // `heading` is false for songs drawn under an album heading, which stands in for the
+  // per-file row.
+  function groupRowsHtml(group, outputCodec, groupIndex, heading = true) {
+    let html = '';
+    if (heading) {
+      const included = includedState(group);
+      const checked = included === 'all' ? ' checked' : '';
+      html =
+        `<tr class="group ${esc(group.kind)}" data-group="${groupIndex}">` +
+        `<td class="name"><input type="checkbox" class="include" data-group="${groupIndex}" data-state="${included}"${checked} title="Include every song of this album in the run">${esc(group.name)}</td>` +
+        `<td class="codec">${esc(group.codec_label)}</td>` +
+        progressCell(group) +
+        '<td class="num"></td><td class="num"></td><td class="num"></td><td class="tags"></td>' +
+        '</tr>';
+    }
     if (group.failure) {
       html += `<tr class="message error"><td colspan="7">! ${esc(group.failure)}</td></tr>`;
     }
@@ -144,9 +149,97 @@
     return html;
   }
 
-  function tableBodyHtml(state) {
-    return state.groups
-      .map((group, index) => groupRowsHtml(group, group.output_codec || state.output.codec, index))
+  // Which songs belong together under one album heading: single files, already scanned and
+  // identified, with the same album, artist and folder. The folder keeps a stereo and a
+  // six-channel copy of one album apart. `null` for anything that stands alone.
+  function albumKey(group) {
+    if (group.kind !== 'single' || group.measuring || group.tracks.length !== 1) {
+      return null;
+    }
+    const identity = group.tracks[0].identity;
+    if (!identity || !identity.album || !identity.album.trim()) {
+      return null;
+    }
+    const who = identity.album_artist || identity.artist || '';
+    return [identity.album, who, group.folder || ''].map((part) => part.trim().toLowerCase()).join('|');
+  }
+
+  // The rows of the table, in order: a lone group, or an album with its groups (every group in
+  // it holds one file). An album needs at least two files; each is placed where its first
+  // file was.
+  function blocksOf(state) {
+    const blocks = [];
+    const byKey = new Map();
+    state.groups.forEach((group, index) => {
+      const key = albumKey(group);
+      if (key === null) {
+        blocks.push({ key: null, groups: [index] });
+      } else if (byKey.has(key)) {
+        byKey.get(key).groups.push(index);
+      } else {
+        const block = { key, groups: [index] };
+        byKey.set(key, block);
+        blocks.push(block);
+      }
+    });
+    return blocks.map((block) => (block.key !== null && block.groups.length < 2 ? { key: null, groups: block.groups } : block));
+  }
+
+  // What the heading's progress cell says about all of the album's files.
+  function blockProgress(groups) {
+    const states = groups.map((group) => group.run_state || 'idle');
+    if (states.every((s) => s === 'saved')) {
+      return '<td class="num status saved">saved</td>';
+    }
+    if (states.includes('encoding')) {
+      return '<td class="num status encoding">encoding</td>';
+    }
+    if (states.includes('queued')) {
+      return '<td class="num status queued">queued</td>';
+    }
+    const done = states.filter((s) => s === 'saved').length;
+    return done > 0 ? `<td class="num status saved">${done}/${states.length} saved</td>` : '<td class="num status"></td>';
+  }
+
+  // An album heading and, unless folded away, the songs under it.
+  function blockRowsHtml(state, block, collapsed) {
+    const groups = block.groups.map((index) => state.groups[index]);
+    const identity = groups[0].tracks[0].identity;
+    const who = identity.album_artist || identity.artist;
+    const name = who ? `${who} – ${identity.album}` : identity.album;
+    const songs = { tracks: groups.flatMap((group) => group.tracks) };
+    const included = includedState(songs);
+    const checked = included === 'all' ? ' checked' : '';
+    const folded = collapsed.has(block.key);
+    const where = groups[0].folder ? ` title="${esc(groups[0].folder)}"` : '';
+    let html =
+      `<tr class="group album" data-groups="${block.groups.join(',')}" data-key="${esc(block.key)}">` +
+      `<td class="name"${where}><button type="button" class="fold" title="${folded ? 'Show' : 'Hide'} the songs">${folded ? '▸' : '▾'}</button>` +
+      `<input type="checkbox" class="include" data-groups="${block.groups.join(',')}" data-state="${included}"${checked} title="Include every song of this album in the run">` +
+      `${esc(name)} <span class="count">(${songs.tracks.length} songs)</span></td>` +
+      `<td class="codec">${esc(groups[0].output_codec || state.output.codec)}</td>` +
+      blockProgress(groups) +
+      '<td class="num"></td><td class="num"></td><td class="num"></td><td class="tags"></td>' +
+      '</tr>';
+    if (!folded) {
+      block.groups.forEach((index) => {
+        const group = state.groups[index];
+        html += groupRowsHtml(group, group.output_codec || state.output.codec, index, false);
+      });
+    }
+    return html;
+  }
+
+  function tableBodyHtml(state, collapsed = new Set()) {
+    return blocksOf(state)
+      .map((block) => {
+        if (block.key !== null) {
+          return blockRowsHtml(state, block, collapsed);
+        }
+        const index = block.groups[0];
+        const group = state.groups[index];
+        return groupRowsHtml(group, group.output_codec || state.output.codec, index);
+      })
       .join('');
   }
 
@@ -242,6 +335,29 @@
     return items;
   }
 
+  // The menu of an album heading: it works on every file gathered under it. A target with no
+  // song means every song of that file.
+  function blockMenuItems(state, groupIndexes) {
+    const groups = groupIndexes.map((index) => state.groups[index]).filter(Boolean);
+    if (groups.length === 0) {
+      return [];
+    }
+    const targets = groupIndexes.map((group) => ({ group, track: null }));
+    const everyOn = includedState({ tracks: groups.flatMap((group) => group.tracks) }) === 'all';
+    return [
+      {
+        action: 'include_many',
+        label: everyOn ? 'Leave out every song of this album' : 'Include every song of this album',
+        targets,
+        on: !everyOn,
+      },
+      { action: 'add_tag', label: 'Add a tag to every song of this album…', targets },
+      { action: 'edit_names', label: 'Edit album name and artist…', targets },
+      { action: 'lastfm', label: 'Get tags from Last.fm for this album', targets, albums: true },
+      { action: 'remove_many', label: 'Remove this album from the list', groups: groupIndexes },
+    ];
+  }
+
   function menuHtml(items) {
     return items
       .map((item, index) => `<button type="button" role="menuitem" data-item="${index}">${esc(item.label)}</button>`)
@@ -327,6 +443,8 @@
     includedState,
     menuItems,
     sameAlbum,
+    blocksOf,
+    blockMenuItems,
     menuHtml,
     variablesHtml,
     confirmText,

@@ -146,6 +146,85 @@ test('songs with the same album name are found across the whole list', () => {
   assert.deepStrictEqual(Render.sameAlbum(state, 9, 0), []);
 });
 
+// A single scanned file, as the table gets it.
+function file(name, album, folder, over = {}) {
+  return {
+    name,
+    kind: 'single',
+    folder,
+    measuring: false,
+    codec_label: '(dsf)',
+    output_codec: 'alac',
+    run_state: 'idle',
+    tracks: [
+      {
+        label: name,
+        included: true,
+        tags: [],
+        identity: album === null ? null : { artist: 'The Alan Parsons Project', album, source: 'tags' },
+      },
+    ],
+    ...over,
+  };
+}
+
+test('files of one album gather under a heading, but a six-channel folder stays apart', () => {
+  const state = {
+    output: { codec: 'alac' },
+    groups: [
+      file('01', 'I Robot', 'C:/m/I Robot/2ch'),
+      file('lone', 'Other', 'C:/m/Other'),
+      file('02', ' i robot ', 'C:/m/I Robot/2ch'),
+      file('01', 'I Robot', 'C:/m/I Robot/6ch'),
+      file('02', 'I Robot', 'C:/m/I Robot/6ch'),
+      file('noalbum', null, 'C:/m/x'),
+      file('new', 'I Robot', 'C:/m/I Robot/2ch', { measuring: true }),
+      { ...file('cue', 'I Robot', 'C:/m/I Robot/2ch'), kind: 'cue' },
+    ],
+  };
+  const shape = Render.blocksOf(state).map((b) => b.groups);
+  // The 2ch files together (the second pulled up beside the first), the 6ch ones together,
+  // and everything unfinished, unnamed, alone or from a CUE sheet left as it was.
+  assert.deepStrictEqual(shape, [[0, 2], [1], [3, 4], [5], [6], [7]]);
+
+  const html = Render.tableBodyHtml(state);
+  assert.strictEqual((html.match(/class="group album"/g) || []).length, 2);
+  assert.match(html, /The Alan Parsons Project – I Robot <span class="count">\(2 songs\)/);
+  assert.match(html, /data-groups="0,2"/);
+  assert.match(html, /data-groups="3,4"/);
+  // Under a heading the songs show but the files' own rows do not.
+  assert.strictEqual((html.match(/class="group single"/g) || []).length, 3);
+  assert.strictEqual((html.match(/class="group cue"/g) || []).length, 1);
+
+  // Folding an album hides its songs and keeps the heading.
+  const key = Render.blocksOf(state)[0].key;
+  const folded = Render.tableBodyHtml(state, new Set([key]));
+  assert.match(folded, /▸/);
+  assert.ok(folded.length < html.length);
+});
+
+test('an album heading works on every file under it', () => {
+  const state = { output: { codec: 'alac' }, groups: [file('a', 'X', 'f'), file('b', 'X', 'f')] };
+  const menu = Render.blockMenuItems(state, [0, 1]);
+  assert.deepStrictEqual(
+    menu.map((item) => item.label),
+    [
+      'Leave out every song of this album',
+      'Add a tag to every song of this album…',
+      'Edit album name and artist…',
+      'Get tags from Last.fm for this album',
+      'Remove this album from the list',
+    ],
+  );
+  assert.deepStrictEqual(menu[1].targets, [
+    { group: 0, track: null },
+    { group: 1, track: null },
+  ]);
+  assert.strictEqual(menu[3].albums, true);
+  assert.deepStrictEqual(menu[4].groups, [0, 1]);
+  assert.deepStrictEqual(Render.blockMenuItems(state, [9]), []);
+});
+
 test('the confirmation says what will happen', () => {
   assert.strictEqual(Render.confirmText({ conflict: 'number', delete_original: false }), '');
   assert.match(Render.confirmText({ conflict: 'overwrite', delete_original: false }), /overwritten/);

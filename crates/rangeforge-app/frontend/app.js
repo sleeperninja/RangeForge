@@ -36,6 +36,13 @@
     }
   }
 
+  // Album headings: which album is folded, and the files ("1,4,5") an album stands for.
+  const collapsed = new Set();
+  const blockIndexes = (text) => text.split(',').map(Number);
+  const blockTargets = (text) => blockIndexes(text).map((group) => ({ group, track: null }));
+  const blockKeys = (text) =>
+    blockIndexes(text).flatMap((group) => state.groups[group].tracks.map((_, t) => pickKey(group, t)));
+
   function setSelection(keys, newAnchor) {
     selection = new Set(keys);
     anchor = newAnchor === undefined ? null : newAnchor;
@@ -106,7 +113,7 @@
       return;
     }
     const s = state;
-    $('rows').innerHTML = Render.tableBodyHtml(s);
+    $('rows').innerHTML = Render.tableBodyHtml(s, collapsed);
     for (const box of document.querySelectorAll('input.include[data-state="some"]')) {
       box.indeterminate = true;
     }
@@ -232,6 +239,8 @@
         setSelection(same.map((p) => pickKey(p.group, p.track)), pickKey(same[0].group, same[0].track));
         toast(`${same.length} song${same.length === 1 ? '' : 's'} selected. Right-click one to work on them all.`);
       }
+    } else if (item.action === 'remove_many') {
+      removeMany(item.groups);
     } else if (item.action === 'remove') {
       call('remove_group', { group: item.group });
     }
@@ -343,6 +352,13 @@
     }
   }
 
+  // Takes several files off the list, last first so the numbers of the others stay right.
+  async function removeMany(groups) {
+    for (const group of [...groups].sort((a, b) => b - a)) {
+      await call('remove_group', { group });
+    }
+  }
+
   // The songs a list of targets stands for (a target with no song means the whole album).
   function songsOf(targets) {
     return targets.flatMap((t) => {
@@ -408,7 +424,9 @@
         if (dialog.returnValue === 'save') {
           call('set_names', {
             targets,
-            onlyFilled: several,
+            // Several songs, or several files under one album heading: an empty field leaves
+            // what each has rather than wiping it.
+            onlyFilled: several || (whole && targets.length > 1),
             names: {
               artist: $('namesArtist').value,
               title: $('namesTitle').value,
@@ -533,9 +551,44 @@
       if (!box) {
         return;
       }
+      if (box.dataset.groups !== undefined) {
+        // An album heading: every file under it.
+        includeMany(blockTargets(box.dataset.groups), box.checked);
+        return;
+      }
       const args = { group: Number(box.dataset.group), on: box.checked };
       args.track = box.dataset.track === undefined ? null : Number(box.dataset.track);
       call('set_included', args);
+    });
+
+    // An album heading's ▾ folds its songs away, and a click on it picks all of them.
+    $('rows').addEventListener('click', (e) => {
+      const row = e.target.closest('tr[data-groups]');
+      if (!row || !state) {
+        return;
+      }
+      if (e.target.closest('button.fold')) {
+        const key = row.dataset.key;
+        if (collapsed.has(key)) {
+          collapsed.delete(key);
+        } else {
+          collapsed.add(key);
+        }
+        draw();
+        return;
+      }
+      if (e.target.closest('input, button')) {
+        return;
+      }
+      const keys = blockKeys(row.dataset.groups);
+      if (e.ctrlKey || e.metaKey) {
+        const all = keys.every((k) => selection.has(k));
+        const next = new Set(selection);
+        keys.forEach((k) => (all ? next.delete(k) : next.add(k)));
+        setSelection(next, keys[0]);
+      } else {
+        setSelection(keys, keys[0]);
+      }
     });
 
     // The × on a tag takes it off that song.
@@ -582,6 +635,13 @@
     // Right-click a row for actions on it. On one of several picked songs, they work on all of
     // them; on any other row, that row is picked first.
     $('rows').addEventListener('contextmenu', (e) => {
+      const heading = e.target.closest('tr[data-groups]');
+      if (heading && state) {
+        e.preventDefault();
+        setSelection(blockKeys(heading.dataset.groups));
+        openMenu(e.clientX, e.clientY, Render.blockMenuItems(state, blockIndexes(heading.dataset.groups)));
+        return;
+      }
       const row = e.target.closest('tr[data-group]');
       if (!row || !state) {
         return;

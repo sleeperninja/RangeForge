@@ -78,6 +78,9 @@ pub struct GroupView {
     /// The codec this group's songs will be written in. Differs from the main Output Format
     /// for DSD files when the DSD Format setting names a codec of its own.
     pub output_codec: String,
+    /// The folder the audio file is in. Songs only gather under one album heading if they share
+    /// it, so a stereo and a six-channel folder of the same album stay apart.
+    pub folder: String,
     /// `cue` or `single`.
     pub kind: &'static str,
     pub measuring: bool,
@@ -332,7 +335,7 @@ fn track_view(app: &App, track: &TrackRow) -> TrackView {
     }
 }
 
-fn group_view(app: &App, group: &Group) -> GroupView {
+fn group_view(app: &App, index: usize, group: &Group) -> GroupView {
     let (run_text, run_state, run_failure) = match &group.run {
         RunState::Idle => (String::new(), "idle", None),
         RunState::Queued => ("queued".to_string(), "queued", None),
@@ -354,6 +357,13 @@ fn group_view(app: &App, group: &Group) -> GroupView {
             .codec
             .name()
             .to_string(),
+        folder: app
+            .jobs
+            .iter()
+            .find(|job| job.group == index)
+            .and_then(|job| job.audio.parent())
+            .map(|folder| folder.display().to_string())
+            .unwrap_or_default(),
         kind: match group.kind {
             Kind::CueAlbum => "cue",
             Kind::SingleFile => "single",
@@ -473,7 +483,8 @@ impl App {
             groups: self
                 .groups
                 .iter()
-                .map(|group| group_view(self, group))
+                .enumerate()
+                .map(|(index, group)| group_view(self, index, group))
                 .collect(),
             volume: VolumeView {
                 target_lufs: self.settings.target_lufs,
