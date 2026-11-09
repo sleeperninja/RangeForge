@@ -1,5 +1,6 @@
 //! `rangeforge run`: measure, plan each track's gain, and write the finished files.
 
+use rangeforge_core::mix::MixPlan;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -141,8 +142,8 @@ fn run_job(
         bail!("{message}");
     }
     let (measured, _) = match &job.cue_file {
-        Some(file) => measure_split(&job.audio, &file.segments(), cache)?,
-        None => measure_whole(&job.audio, cache)?,
+        Some(file) => measure_split(&job.audio, &file.segments(), MixPlan::default(), cache)?,
+        None => measure_whole(&job.audio, MixPlan::default(), cache)?,
     };
     let planned = plan_tracks(job, &measured.tracks, settings.target());
     // A single file is named from its own tags, or failing that its file name.
@@ -157,6 +158,7 @@ fn run_job(
         strategy: strategy.clone(),
         directory: source_dir.clone(),
         copy_source_tags: job.cue_file.is_none(),
+        mix: rangeforge_core::mix::MixPlan::default(),
     };
     let destinations = preview(&write_options, &plans)?;
     let folder = strategy.directory(&source_dir);

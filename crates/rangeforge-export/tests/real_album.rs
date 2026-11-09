@@ -18,6 +18,7 @@ use rangeforge_audio::AudioError;
 use rangeforge_audio::decode::for_each_block;
 use rangeforge_audio::measure::measure_segments;
 use rangeforge_core::cue;
+use rangeforge_core::mix::MixPlan;
 use rangeforge_core::planner::{Target, plan_gain};
 use rangeforge_export::ffmpeg::Ffmpeg;
 use rangeforge_export::format::{BitDepth, Codec, OutputFormat};
@@ -96,6 +97,7 @@ fn export_album(out_dir: &Path, gain_for: impl Fn(usize) -> f64) -> Vec<PathBuf>
         },
         directory: dir.clone(),
         copy_source_tags: false,
+        mix: rangeforge_core::mix::MixPlan::default(),
     };
     export_file(
         &ffmpeg,
@@ -134,7 +136,12 @@ fn every_track_lands_on_the_target_or_the_peak_ceiling() {
     let sheet =
         cue::parse(&fs::read_to_string(dir.join("Houses of the Holy.cue")).unwrap()).unwrap();
     let segments = sheet.files[0].segments();
-    let measured = measure_segments(&dir.join("Houses of the Holy.flac"), &segments).unwrap();
+    let measured = measure_segments(
+        &dir.join("Houses of the Holy.flac"),
+        &segments,
+        MixPlan::default(),
+    )
+    .unwrap();
 
     // A target loud enough that some quiet tracks must be held back by the peak ceiling.
     let target = Target {
@@ -159,7 +166,7 @@ fn every_track_lands_on_the_target_or_the_peak_ceiling() {
     let written = export_album(out.path(), |index| plans[index].gain_db);
 
     for (index, path) in written.iter().enumerate() {
-        let after = rangeforge_audio::measure::measure_whole_file(path)
+        let after = rangeforge_audio::measure::measure_whole_file(path, MixPlan::default())
             .unwrap()
             .tracks[0];
         let plan = &plans[index];

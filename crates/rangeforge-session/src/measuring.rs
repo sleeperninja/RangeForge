@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use rangeforge_audio::cache::{Cache, Source};
 use rangeforge_audio::measure::{self, Measured};
 use rangeforge_core::cue::{self, CueSheet, Segment};
+use rangeforge_core::mix::MixPlan;
 
 /// Reads and parses a CUE sheet.
 pub fn read_sheet(path: &Path) -> Result<CueSheet> {
@@ -24,29 +25,34 @@ pub(crate) fn prepare(audio: &Path) {
     }
 }
 
-/// Measures a whole file as one track.
-pub fn measure_whole(audio: &Path, cache: Option<&Cache>) -> Result<(Measured, Source)> {
+/// Measures a whole file as one track, with its channels mixed as `mix` says first.
+pub fn measure_whole(
+    audio: &Path,
+    mix: MixPlan,
+    cache: Option<&Cache>,
+) -> Result<(Measured, Source)> {
     prepare(audio);
     Ok(match cache {
-        Some(cache) => cache.measure_whole_file(audio)?,
+        Some(cache) => cache.measure_whole_file(audio, mix)?,
         None => (
-            measure::measure_whole_file(audio)?,
+            measure::measure_whole_file(audio, mix)?,
             Source::Decoded { save_error: None },
         ),
     })
 }
 
-/// Measures each CUE segment of a file.
+/// Measures each CUE segment of a file, with its channels mixed as `mix` says first.
 pub fn measure_split(
     audio: &Path,
     segments: &[Segment<'_>],
+    mix: MixPlan,
     cache: Option<&Cache>,
 ) -> Result<(Measured, Source)> {
     prepare(audio);
     Ok(match cache {
-        Some(cache) => cache.measure_segments(audio, segments)?,
+        Some(cache) => cache.measure_segments(audio, segments, mix)?,
         None => (
-            measure::measure_segments(audio, segments)?,
+            measure::measure_segments(audio, segments, mix)?,
             Source::Decoded { save_error: None },
         ),
     })

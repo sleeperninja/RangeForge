@@ -13,6 +13,7 @@ use rangeforge_audio::AudioError;
 use rangeforge_audio::decode::{StreamInfo, for_each_block};
 use rangeforge_audio::measure::measure_whole_file;
 use rangeforge_core::cue;
+use rangeforge_core::mix::{Channels, Downmix, MINUS_3_DB, MixPlan};
 use rangeforge_export::ExportError;
 use rangeforge_export::ffmpeg::Ffmpeg;
 use rangeforge_export::format::{BitDepth, Codec, Container, OutputFormat, SampleRate};
@@ -77,7 +78,7 @@ fn decode_all(path: &Path) -> (StreamInfo, Vec<f32>) {
 }
 
 fn loudness(path: &Path) -> f64 {
-    measure_whole_file(path).unwrap().tracks[0].integrated_lufs
+    measure_whole_file(path, MixPlan::default()).unwrap().tracks[0].integrated_lufs
 }
 
 fn file_names(dir: &Path) -> Vec<String> {
@@ -104,6 +105,7 @@ fn options(codec: Codec, strategy: Strategy, directory: &Path) -> Options {
         strategy,
         directory: directory.to_path_buf(),
         copy_source_tags: false,
+        mix: rangeforge_core::mix::MixPlan::default(),
     }
 }
 
@@ -169,12 +171,16 @@ fn every_lossless_codec_is_bit_exact_at_zero_gain() {
 fn a_gain_moves_loudness_and_peak_by_exactly_that_much() {
     let Some(ffmpeg) = ffmpeg() else { return };
     let (dir, input) = with_source("in.wav", 4, 200);
-    let before = measure_whole_file(&input).unwrap().tracks[0];
+    let before = measure_whole_file(&input, MixPlan::default())
+        .unwrap()
+        .tracks[0];
 
     for gain in [-6.0, -2.5, 3.0] {
         let opts = options(Codec::Alac, serialize(), dir.path());
         let written = export_whole(&ffmpeg, &input, plan(gain, "out.m4a"), &opts).unwrap();
-        let after = measure_whole_file(&written[0].path).unwrap().tracks[0];
+        let after = measure_whole_file(&written[0].path, MixPlan::default())
+            .unwrap()
+            .tracks[0];
 
         let loudness_change = after.integrated_lufs - before.integrated_lufs;
         let peak_change = after.true_peak_dbtp - before.true_peak_dbtp;
@@ -600,6 +606,7 @@ fn every_codec_can_be_written_at_a_new_rate_in_either_container() {
                 strategy: serialize(),
                 directory: dir.path().to_path_buf(),
                 copy_source_tags: false,
+                mix: rangeforge_core::mix::MixPlan::default(),
             };
             let written = export_whole(&ffmpeg, &input, plan(0.0, &name), &opts).unwrap();
 
@@ -630,6 +637,7 @@ fn the_original_rate_is_left_alone_and_asking_for_the_same_rate_changes_nothing(
             strategy: serialize(),
             directory: dir.path().to_path_buf(),
             copy_source_tags: false,
+            mix: rangeforge_core::mix::MixPlan::default(),
         };
         let name = format!("kept-{}.flac", rate.name());
         let written = export_whole(&ffmpeg, &input, plan(0.0, &name), &opts).unwrap();
@@ -651,6 +659,7 @@ fn matroska_files_carry_their_tags() {
         strategy: serialize(),
         directory: dir.path().to_path_buf(),
         copy_source_tags: false,
+        mix: rangeforge_core::mix::MixPlan::default(),
     };
     let tags = Tags {
         title: Some("The Rain Song".to_string()),
@@ -838,7 +847,7 @@ fn dsd_is_measured_at_a_fixed_rate_with_every_channel() {
     for channels in [2, 6] {
         let input = dir.path().join(format!("tone{channels}.dsf"));
         write_dsf(&input, channels);
-        let measured = measure_whole_file(&input).unwrap();
+        let measured = measure_whole_file(&input, MixPlan::default()).unwrap();
         assert_eq!(measured.sample_rate, 88_200);
         assert_eq!(measured.channels, channels as usize);
         let seconds = measured.duration_seconds();
@@ -866,6 +875,7 @@ fn dsd_is_written_at_the_asked_rate_and_depth() {
                 strategy: serialize(),
                 directory: dir.path().to_path_buf(),
                 copy_source_tags: false,
+                mix: rangeforge_core::mix::MixPlan::default(),
             };
             let name = format!(
                 "out-{}-{}.{}",
@@ -881,7 +891,10 @@ fn dsd_is_written_at_the_asked_rate_and_depth() {
             );
             // A tone that was written is not silence, and the gain took it down 3 dB.
             let written_lufs = loudness(&written[0].path);
-            let source_lufs = measure_whole_file(&input).unwrap().tracks[0].integrated_lufs;
+            let source_lufs = measure_whole_file(&input, MixPlan::default())
+                .unwrap()
+                .tracks[0]
+                .integrated_lufs;
             assert!(
                 (written_lufs - (source_lufs - 3.0)).abs() < 0.3,
                 "{name}: {written_lufs} against {source_lufs}"
@@ -950,4 +963,210 @@ fn the_tags_of_a_dsd_file_are_read() {
     let bare = dir.path().join("bare.dsf");
     write_dsf(&bare, 2);
     assert!(rangeforge_audio::tags::read_tags(&bare).unwrap().is_empty());
+}
+
+// ---- mixing channels while exporting ----
+
+const MASK_51: u32 = 0x3F; // front left and right, centre, LFE, back left and right
+
+/// A 16-bit WAVE file with an explicit channel mask, which is how more than two channels are
+/// stored. `sample(channel, frame)` gives each sample from -1.0 to 1.0.
+fn write_surround_wav(
+    path: &Path,
+    channels: u16,
+    mask: u32,
+    frames: usize,
+    sample: impl Fn(usize, usize) -> f32,
+) {
+    let rate: u32 = 44_100;
+    let mut data = Vec::new();
+    for frame in 0..frames {
+        for channel in 0..usize::from(channels) {
+            #[allow(clippy::cast_possible_truncation)]
+            let value = (sample(channel, frame).clamp(-1.0, 1.0) * 32767.0).round() as i16;
+            data.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let align = channels * 2;
+    let mut fmt = Vec::new();
+    fmt.extend_from_slice(&0xFFFE_u16.to_le_bytes());
+    fmt.extend_from_slice(&channels.to_le_bytes());
+    fmt.extend_from_slice(&rate.to_le_bytes());
+    fmt.extend_from_slice(&(rate * u32::from(align)).to_le_bytes());
+    fmt.extend_from_slice(&align.to_le_bytes());
+    fmt.extend_from_slice(&16_u16.to_le_bytes());
+    fmt.extend_from_slice(&22_u16.to_le_bytes());
+    fmt.extend_from_slice(&16_u16.to_le_bytes());
+    fmt.extend_from_slice(&mask.to_le_bytes());
+    fmt.extend_from_slice(&[
+        1, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71,
+    ]);
+    let mut file = Vec::new();
+    file.extend_from_slice(b"RIFF");
+    file.extend_from_slice(
+        &(4 + 8 + u32::try_from(fmt.len()).unwrap() + 8 + u32::try_from(data.len()).unwrap())
+            .to_le_bytes(),
+    );
+    file.extend_from_slice(b"WAVEfmt ");
+    file.extend_from_slice(&u32::try_from(fmt.len()).unwrap().to_le_bytes());
+    file.extend_from_slice(&fmt);
+    file.extend_from_slice(b"data");
+    file.extend_from_slice(&u32::try_from(data.len()).unwrap().to_le_bytes());
+    file.extend_from_slice(&data);
+    fs::write(path, file).unwrap();
+}
+
+/// A different tone in each channel of a 5.1 file, 3 seconds long.
+fn surround_source(dir: &Path) -> PathBuf {
+    let path = dir.join("surround.wav");
+    let hertz = [300.0_f32, 400.0, 500.0, 60.0, 700.0, 800.0];
+    write_surround_wav(&path, 6, MASK_51, 44_100 * 3, |channel, frame| {
+        #[allow(clippy::cast_precision_loss)]
+        let t = frame as f32 / 44_100.0;
+        0.25 * (std::f32::consts::TAU * hertz[channel] * t).sin()
+    });
+    path
+}
+
+fn mixed_options(codec: Codec, bits: BitDepth, channels: Channels, dir: &Path) -> Options {
+    let mut opts = options(codec, serialize(), dir);
+    opts.format = OutputFormat::new(codec, bits);
+    opts.mix = MixPlan {
+        channels,
+        style: Downmix::Standard,
+    };
+    opts
+}
+
+#[test]
+fn a_5_1_file_is_written_as_stereo_and_the_gain_comes_after_the_mix() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let dir = tempdir().unwrap();
+    let input = surround_source(dir.path());
+    let (_, source) = decode_all(&input);
+    let opts = mixed_options(
+        Codec::Flac,
+        BitDepth::TwentyFour,
+        Channels::Stereo,
+        dir.path(),
+    );
+
+    // 6.0206 dB down is exactly half, applied to the mixed sound.
+    let written = export_whole(&ffmpeg, &input, plan(-6.0206, "stereo.flac"), &opts).unwrap();
+    let (info, out) = decode_all(&written[0].path);
+    assert_eq!((info.channels, info.sample_rate), (2, 44_100));
+    assert_eq!(out.len(), 44_100 * 3 * 2);
+    for frame in (0..44_100 * 3).step_by(7) {
+        let s = |channel: usize| source[frame * 6 + channel];
+        let left = 0.5 * (s(0) + MINUS_3_DB * s(2) + MINUS_3_DB * s(4));
+        let right = 0.5 * (s(1) + MINUS_3_DB * s(2) + MINUS_3_DB * s(5));
+        assert!((out[frame * 2] - left).abs() < 2e-4, "left, frame {frame}");
+        assert!(
+            (out[frame * 2 + 1] - right).abs() < 2e-4,
+            "right, frame {frame}"
+        );
+    }
+}
+
+#[test]
+fn what_is_written_measures_as_the_table_said_it_would() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let dir = tempdir().unwrap();
+    let input = surround_source(dir.path());
+    let mix = MixPlan {
+        channels: Channels::Stereo,
+        style: Downmix::Standard,
+    };
+    // What the program shows before the run: loudness and peak of the mixed sound.
+    let shown = measure_whole_file(&input, mix).unwrap().tracks[0];
+    // The same sound after being written at 0 dB, measured as the plain file it now is.
+    let opts = mixed_options(
+        Codec::Flac,
+        BitDepth::TwentyFour,
+        Channels::Stereo,
+        dir.path(),
+    );
+    let written = export_whole(&ffmpeg, &input, plan(0.0, "stereo.flac"), &opts).unwrap();
+    let after = measure_whole_file(&written[0].path, MixPlan::default())
+        .unwrap()
+        .tracks[0];
+    assert!(
+        (shown.integrated_lufs - after.integrated_lufs).abs() < 0.01,
+        "{shown:?} {after:?}"
+    );
+    assert!(
+        (shown.true_peak_dbtp - after.true_peak_dbtp).abs() < 0.05,
+        "{shown:?} {after:?}"
+    );
+}
+
+#[test]
+fn quad_is_written_with_the_centre_folded_in_and_alac_refuses_it_cleanly() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let dir = tempdir().unwrap();
+    let input = surround_source(dir.path());
+    let (_, source) = decode_all(&input);
+
+    let opts = mixed_options(
+        Codec::Flac,
+        BitDepth::TwentyFour,
+        Channels::Quad,
+        dir.path(),
+    );
+    let written = export_whole(&ffmpeg, &input, plan(0.0, "quad.flac"), &opts).unwrap();
+    let (info, quad) = decode_all(&written[0].path);
+    assert_eq!(info.channels, 4);
+    for frame in (0..44_100 * 3).step_by(11) {
+        let s = |channel: usize| source[frame * 6 + channel];
+        let at = |channel: usize| quad[frame * 4 + channel];
+        assert!(
+            (at(0) - (s(0) + MINUS_3_DB * s(2))).abs() < 2e-4,
+            "front left"
+        );
+        assert!(
+            (at(1) - (s(1) + MINUS_3_DB * s(2))).abs() < 2e-4,
+            "front right"
+        );
+        assert!((at(2) - s(4)).abs() < 2e-4, "back left");
+        assert!((at(3) - s(5)).abs() < 2e-4, "back right");
+    }
+
+    // ALAC cannot hold quad: a plain error, and nothing left behind.
+    let before = file_names(dir.path());
+    let alac = mixed_options(Codec::Alac, BitDepth::Source, Channels::Quad, dir.path());
+    let refused = export_whole(&ffmpeg, &input, plan(0.0, "quad.m4a"), &alac);
+    assert!(
+        matches!(refused, Err(ExportError::QuadNeedsAnotherCodec { .. })),
+        "{refused:?}"
+    );
+    assert_eq!(file_names(dir.path()), before, "no half-written file");
+}
+
+#[test]
+fn a_stereo_file_asked_for_stereo_stays_bit_exact_and_mono_is_the_average() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let (dir, input) = with_source("in.wav", 2, 200);
+    let (_, original) = decode_all(&input);
+
+    let same = mixed_options(Codec::Wav, BitDepth::Source, Channels::Stereo, dir.path());
+    let written = export_whole(&ffmpeg, &input, plan(0.0, "same.wav"), &same).unwrap();
+    assert_eq!(
+        decode_all(&written[0].path).1,
+        original,
+        "nothing to mix, nothing changed"
+    );
+
+    let mono = mixed_options(
+        Codec::Flac,
+        BitDepth::TwentyFour,
+        Channels::Mono,
+        dir.path(),
+    );
+    let written = export_whole(&ffmpeg, &input, plan(0.0, "mono.flac"), &mono).unwrap();
+    let (info, out) = decode_all(&written[0].path);
+    assert_eq!(info.channels, 1);
+    for frame in (0..original.len() / 2).step_by(13) {
+        let average = f32::midpoint(original[frame * 2], original[frame * 2 + 1]);
+        assert!((out[frame] - average).abs() < 2e-4, "frame {frame}");
+    }
 }

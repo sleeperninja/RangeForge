@@ -25,6 +25,10 @@ pub struct EncodeSpec<'a> {
     pub tags: &'a Tags,
     /// Copy this file's tags first (for single files), then apply `tags` over them.
     pub metadata_from: Option<&'a Path>,
+    /// The name of the channel layout to give FFmpeg for the raw input, such as `quad`, when the
+    /// count alone would be taken for another layout (four channels are taken for 4.0, which has
+    /// a centre and not two backs). `None` leaves it to the count.
+    pub channel_layout: Option<&'static str>,
 }
 
 /// The volume change as a multiplier. 0 dB is exactly 1.0, which leaves samples untouched.
@@ -50,6 +54,10 @@ pub fn build_args(spec: &EncodeSpec<'_>) -> Vec<OsString> {
     push(&spec.info.sample_rate.to_string());
     push("-ac");
     push(&spec.info.channels.to_string());
+    if let Some(layout) = spec.channel_layout {
+        push("-channel_layout");
+        push(layout);
+    }
     for fixed in ["-i", "pipe:0"] {
         push(fixed);
     }
@@ -71,10 +79,11 @@ pub fn build_args(spec: &EncodeSpec<'_>) -> Vec<OsString> {
     // and, when going down to 16 bits, dither on the way.
     let mut resampler: Vec<String> = Vec::new();
     resampler.extend(spec.format.resample_options(spec.info.sample_rate));
-    if spec
-        .format
-        .needs_dither(spec.info.bits_per_sample, spec.gain_db)
-    {
+    if spec.format.needs_dither(
+        spec.info.bits_per_sample,
+        spec.gain_db,
+        spec.info.mixed || resampler.iter().any(|option| option.starts_with("osr=")),
+    ) {
         resampler.push(format!(
             "osf={}:dither_method=triangular",
             spec.format.sample_format(bits)
@@ -239,12 +248,14 @@ mod tests {
                 sample_rate: 44_100,
                 channels: 2,
                 bits_per_sample: bits,
+                mixed: false,
             },
             format,
             gain_db,
             output,
             tags,
             metadata_from,
+            channel_layout: None,
         }
     }
 
@@ -371,6 +382,64 @@ mod tests {
         let alac_44 =
             OutputFormat::new(Codec::Alac, BitDepth::Source).with_sample_rate(SampleRate::Hz44100);
         assert_eq!(filter(alac_44, 0.0, Some(24)), None);
+    }
+
+    #[test]
+    fn a_16_bit_file_at_0_db_is_dithered_when_the_signal_was_converted() {
+        let tags = Tags::default();
+        let output = Path::new("out.part");
+        let alac = OutputFormat::new(Codec::Alac, BitDepth::Source);
+        let filter = |format: OutputFormat, mixed: bool| {
+            let mut spec = spec(format, 0.0, Some(16), &tags, output, None);
+            spec.info.mixed = mixed;
+            let args = strings(&build_args(&spec));
+            args.iter()
+                .position(|a| a == "-af")
+                .map(|at| args[at + 1].clone())
+        };
+        // Untouched: nothing to dither, so the file stays bit for bit what it was.
+        assert_eq!(filter(alac, false), None);
+        // The channels were mixed: every sample is a new value, so it is dithered.
+        assert_eq!(
+            filter(alac, true).as_deref(),
+            Some("aresample=osf=s16p:dither_method=triangular")
+        );
+        // A new sample rate on a 16-bit file at 0 dB: the same.
+        let at_48 = alac.with_sample_rate(SampleRate::Hz48000);
+        let resampled = filter(at_48, false).unwrap();
+        assert!(resampled.starts_with("aresample=osr=48000:"), "{resampled}");
+        assert!(
+            resampled.ends_with("osf=s16p:dither_method=triangular"),
+            "{resampled}"
+        );
+        // 24-bit output is never dithered, mixed or not.
+        let wide = OutputFormat::new(Codec::Flac, BitDepth::TwentyFour);
+        assert_eq!(filter(wide, true), None);
+    }
+
+    #[test]
+    fn quad_is_named_to_ffmpeg_and_other_layouts_are_left_to_the_count() {
+        let tags = Tags::default();
+        let output = Path::new("out.part");
+        let format = OutputFormat::new(Codec::Flac, BitDepth::Source);
+        let input = |channels: usize, layout: Option<&'static str>| {
+            let mut spec = spec(format, 0.0, Some(24), &tags, output, None);
+            spec.info.channels = channels;
+            spec.channel_layout = layout;
+            let args = strings(&build_args(&spec));
+            let at = args.iter().position(|a| a == "-ac").unwrap();
+            // The input options as far as the input file.
+            args[at..args.iter().position(|a| a == "-i").unwrap()].to_vec()
+        };
+        // The layout goes right after the channel count, before the input.
+        assert_eq!(
+            input(4, Some("quad")),
+            ["-ac", "4", "-channel_layout", "quad"]
+        );
+        // Without one, FFmpeg takes it from the count: four would be 4.0 and six 5.1.
+        assert_eq!(input(4, None), ["-ac", "4"]);
+        assert_eq!(input(6, None), ["-ac", "6"]);
+        assert_eq!(input(2, None), ["-ac", "2"]);
     }
 
     #[test]

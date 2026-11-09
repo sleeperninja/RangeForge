@@ -26,6 +26,13 @@ impl Codec {
         }
     }
 
+    /// Whether this codec can hold audio in the quad layout (front left and right, back left and
+    /// right). ALAC cannot: FFmpeg turns it into five channels with a silent centre, so the
+    /// program refuses it and the other codecs are offered instead (decision D-35).
+    pub fn can_write_quad(self) -> bool {
+        self != Self::Alac
+    }
+
     /// The codec with this short name, ignoring case.
     pub fn from_name(text: &str) -> Option<Self> {
         Self::ALL
@@ -290,15 +297,15 @@ impl OutputFormat {
 
     /// True when the samples should be dithered on their way down to 16 bits.
     ///
-    /// Applying a gain to 16-bit audio, or reducing 24-bit audio to 16, produces values that
-    /// fall between 16-bit steps. Rounding them plainly adds a faint harmonic distortion;
+    /// Applying a gain to 16-bit audio, reducing 24-bit audio to 16, or converting the signal (a new
+    /// sample rate, or a mix of the channels) produces values that fall between 16-bit steps. Rounding them plainly adds a faint harmonic distortion;
     /// triangular dither trades that for a steady noise floor about 96 dB down. An untouched
     /// 16-bit sample at 0 dB is already exact, and is left alone so it stays bit for bit
     /// identical.
-    pub fn needs_dither(self, source_bits: Option<u32>, gain_db: f64) -> bool {
+    pub fn needs_dither(self, source_bits: Option<u32>, gain_db: f64, converted: bool) -> bool {
         let bits = self.resolved_bits(source_bits);
         let reduced = source_bits.is_none_or(|source| source > 16);
-        self.codec.is_lossless() && bits == 16 && (gain_db.abs() > 1e-6 || reduced)
+        self.codec.is_lossless() && bits == 16 && (gain_db.abs() > 1e-6 || reduced || converted)
     }
 
     /// The FFmpeg arguments that choose the encoder and sample format.
@@ -459,22 +466,39 @@ mod tests {
     }
 
     #[test]
+    fn dither_also_follows_a_converted_signal_and_alac_cannot_hold_quad() {
+        // 16 bits at 0 dB is left alone, until the signal is converted (a new rate or a mix).
+        assert!(!alac().needs_dither(Some(16), 0.0, false));
+        assert!(alac().needs_dither(Some(16), 0.0, true));
+        // 24-bit output and lossy codecs are never dithered, converted or not.
+        assert!(!alac().needs_dither(Some(24), 0.0, true));
+        assert!(!OutputFormat::new(Codec::Aac, BitDepth::Source).needs_dither(Some(16), 0.0, true));
+        // Quad: every codec but ALAC (FFmpeg makes it five channels with a silent centre).
+        assert!(!Codec::Alac.can_write_quad());
+        for codec in [Codec::Flac, Codec::Wav, Codec::Aac] {
+            assert!(codec.can_write_quad(), "{codec:?}");
+        }
+    }
+
+    #[test]
     fn dither_only_where_it_helps() {
         // 16 to 16 at 0 dB is exact: no dither, so the result is bit for bit identical.
-        assert!(!alac().needs_dither(Some(16), 0.0));
+        assert!(!alac().needs_dither(Some(16), 0.0, false));
         // Any gain on 16-bit audio lands between steps.
-        assert!(alac().needs_dither(Some(16), -3.2));
+        assert!(alac().needs_dither(Some(16), -3.2, false));
         // Asking for 16 bits from a 24-bit source reduces precision, even at 0 dB.
         let down_to_16 = OutputFormat::new(Codec::Alac, BitDepth::Sixteen);
-        assert!(down_to_16.needs_dither(Some(24), 0.0));
+        assert!(down_to_16.needs_dither(Some(24), 0.0, false));
         // Keeping the source's 24 bits needs no dither: the noise floor is far below
         // anything audible, with or without a gain.
-        assert!(!alac().needs_dither(Some(24), 0.0));
-        assert!(!alac().needs_dither(Some(24), -3.2));
+        assert!(!alac().needs_dither(Some(24), 0.0, false));
+        assert!(!alac().needs_dither(Some(24), -3.2, false));
         // Lossy output does its own thing.
-        assert!(!OutputFormat::new(Codec::Aac, BitDepth::Source).needs_dither(Some(16), -3.0));
+        assert!(
+            !OutputFormat::new(Codec::Aac, BitDepth::Source).needs_dither(Some(16), -3.0, false)
+        );
         // A lossy source decoded to 16 bits is a reduction.
-        assert!(alac().needs_dither(None, 0.0));
+        assert!(alac().needs_dither(None, 0.0, false));
     }
 
     #[test]

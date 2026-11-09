@@ -14,6 +14,7 @@ use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use rangeforge_core::cue::Segment;
+use rangeforge_core::mix::MixPlan;
 use rangeforge_core::planner::Measurement;
 use serde::{Deserialize, Serialize};
 
@@ -48,21 +49,28 @@ impl Cache {
         Self { dir: dir.into() }
     }
 
-    /// Measures a whole file as one track, using the cache when possible.
-    pub fn measure_whole_file(&self, path: &Path) -> Result<(Measured, Source), AudioError> {
-        self.through_cache(path, "whole".to_string(), || {
-            measure::measure_whole_file(path)
+    /// Measures a whole file as one track, using the cache when possible. A measurement of the
+    /// file with its channels mixed (see `mix`) is kept apart from the unmixed one.
+    pub fn measure_whole_file(
+        &self,
+        path: &Path,
+        mix: MixPlan,
+    ) -> Result<(Measured, Source), AudioError> {
+        self.through_cache(path, keyed("whole".to_string(), mix), || {
+            measure::measure_whole_file(path, mix)
         })
     }
 
-    /// Measures each CUE segment of a file, using the cache when possible.
+    /// Measures each CUE segment of a file, using the cache when possible. Each way of mixing
+    /// the channels has its own saved results.
     pub fn measure_segments(
         &self,
         path: &Path,
         segments: &[Segment<'_>],
+        mix: MixPlan,
     ) -> Result<(Measured, Source), AudioError> {
-        self.through_cache(path, spans_key(segments), || {
-            measure::measure_segments(path, segments)
+        self.through_cache(path, keyed(spans_key(segments), mix), || {
+            measure::measure_segments(path, segments, mix)
         })
     }
 
@@ -90,6 +98,15 @@ impl Cache {
             .err()
             .map(|error| error.to_string());
         Ok((measured, Source::Decoded { save_error }))
+    }
+}
+
+/// Adds the way the channels are mixed to a result's key. A plan that leaves the audio alone adds
+/// nothing, so results saved before channels could be mixed are still found.
+fn keyed(base: String, mix: MixPlan) -> String {
+    match mix.key() {
+        key if key.is_empty() => base,
+        key => format!("{base}|mix={key}"),
     }
 }
 
@@ -272,9 +289,9 @@ mod tests {
         write_wav(&file, 3, 200);
         let cache = Cache::new(store.path());
 
-        let (first, source) = cache.measure_whole_file(&file).unwrap();
+        let (first, source) = cache.measure_whole_file(&file, MixPlan::default()).unwrap();
         assert_eq!(source, Source::Decoded { save_error: None });
-        let (second, source) = cache.measure_whole_file(&file).unwrap();
+        let (second, source) = cache.measure_whole_file(&file, MixPlan::default()).unwrap();
         assert_eq!(source, Source::Cache);
         assert_eq!(first, second);
         assert_eq!(entry_files(store.path()), 1);
@@ -288,9 +305,9 @@ mod tests {
         let cache = Cache::new(store.path());
 
         write_wav(&file, 3, 100);
-        let (quiet, _) = cache.measure_whole_file(&file).unwrap();
+        let (quiet, _) = cache.measure_whole_file(&file, MixPlan::default()).unwrap();
         write_wav(&file, 3, 200);
-        let (loud, source) = cache.measure_whole_file(&file).unwrap();
+        let (loud, source) = cache.measure_whole_file(&file, MixPlan::default()).unwrap();
 
         assert_eq!(source, Source::Decoded { save_error: None });
         assert!(loud.tracks[0].integrated_lufs > quiet.tracks[0].integrated_lufs + 3.0);
@@ -305,9 +322,13 @@ mod tests {
         write_wav(&original, 3, 200);
         let cache = Cache::new(store.path());
 
-        let (first, _) = cache.measure_whole_file(&original).unwrap();
+        let (first, _) = cache
+            .measure_whole_file(&original, MixPlan::default())
+            .unwrap();
         fs::rename(&original, &renamed).unwrap();
-        let (second, source) = cache.measure_whole_file(&renamed).unwrap();
+        let (second, source) = cache
+            .measure_whole_file(&renamed, MixPlan::default())
+            .unwrap();
 
         assert_eq!(source, Source::Cache);
         assert_eq!(first, second);
@@ -332,16 +353,22 @@ mod tests {
         let one = one.files[0].segments();
         let other = other.files[0].segments();
 
-        let (split, source) = cache.measure_segments(&file, &one).unwrap();
+        let (split, source) = cache
+            .measure_segments(&file, &one, MixPlan::default())
+            .unwrap();
         assert!(matches!(source, Source::Decoded { .. }));
         assert_eq!(split.tracks.len(), 2);
-        let (_, source) = cache.measure_segments(&file, &one).unwrap();
+        let (_, source) = cache
+            .measure_segments(&file, &one, MixPlan::default())
+            .unwrap();
         assert_eq!(source, Source::Cache);
 
         // A different split and the whole file are both misses, but share one entry file.
-        let (_, source) = cache.measure_segments(&file, &other).unwrap();
+        let (_, source) = cache
+            .measure_segments(&file, &other, MixPlan::default())
+            .unwrap();
         assert!(matches!(source, Source::Decoded { .. }));
-        let (_, source) = cache.measure_whole_file(&file).unwrap();
+        let (_, source) = cache.measure_whole_file(&file, MixPlan::default()).unwrap();
         assert!(matches!(source, Source::Decoded { .. }));
         assert_eq!(entry_files(store.path()), 1);
     }
@@ -353,13 +380,13 @@ mod tests {
         let file = audio.path().join("a.wav");
         write_wav(&file, 3, 200);
         let cache = Cache::new(store.path());
-        cache.measure_whole_file(&file).unwrap();
+        cache.measure_whole_file(&file, MixPlan::default()).unwrap();
 
         let (size, digest) = fingerprint(&file).unwrap();
         let entry_path = store.path().join(format!("{digest}.json"));
 
         fs::write(&entry_path, b"{ this is not json").unwrap();
-        let (_, source) = cache.measure_whole_file(&file).unwrap();
+        let (_, source) = cache.measure_whole_file(&file, MixPlan::default()).unwrap();
         assert!(matches!(source, Source::Decoded { .. }));
         assert!(load(&entry_path, size).is_some(), "the entry was healed");
 
@@ -369,7 +396,7 @@ mod tests {
             results: BTreeMap::new(),
         };
         fs::write(&entry_path, serde_json::to_vec(&stale).unwrap()).unwrap();
-        let (_, source) = cache.measure_whole_file(&file).unwrap();
+        let (_, source) = cache.measure_whole_file(&file, MixPlan::default()).unwrap();
         assert!(matches!(source, Source::Decoded { .. }));
     }
 
@@ -381,8 +408,8 @@ mod tests {
         write_wav(&file, 3, 0);
         let cache = Cache::new(store.path());
 
-        let (first, _) = cache.measure_whole_file(&file).unwrap();
-        let (second, source) = cache.measure_whole_file(&file).unwrap();
+        let (first, _) = cache.measure_whole_file(&file, MixPlan::default()).unwrap();
+        let (second, source) = cache.measure_whole_file(&file, MixPlan::default()).unwrap();
         assert_eq!(source, Source::Cache);
         assert!(first.tracks[0].integrated_lufs.is_infinite());
         assert_eq!(first, second);
@@ -399,7 +426,7 @@ mod tests {
         fs::write(&blocker, b"not a directory").unwrap();
         let cache = Cache::new(&blocker);
 
-        let (measured, source) = cache.measure_whole_file(&file).unwrap();
+        let (measured, source) = cache.measure_whole_file(&file, MixPlan::default()).unwrap();
         assert_eq!(measured.tracks.len(), 1);
         assert!(matches!(
             source,

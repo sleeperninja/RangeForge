@@ -1720,6 +1720,7 @@ mod tests {
             audio: PathBuf::from("music/album/album.flac"),
             cue_file: Some(sheet.files[0].clone()),
             sheet: Some(sheet),
+            mix: rangeforge_core::mix::MixPlan::default(),
         };
         group.status = Status::Done(Origin::Decoded);
         let mut app = App::new(vec![group], vec![job], Vec::new(), Settings::default());

@@ -32,6 +32,10 @@ pub enum ExportError {
     NoFreeName(PathBuf),
     #[error("{} already exists, so it was not overwritten", .0.display())]
     DestinationExists(PathBuf),
+    #[error(
+        "{codec} cannot hold quad (four-channel) audio: FFmpeg would make it five channels with a silent centre. Write it as FLAC, WAV or AAC, or choose stereo"
+    )]
+    QuadNeedsAnotherCodec { codec: &'static str },
     #[error("{expected} track(s) were planned but the file layout has {found}")]
     TrackCountMismatch { expected: usize, found: usize },
 }

@@ -47,6 +47,7 @@ fn write_item(
         directory: item.directory.clone(),
         // A single file carries its own tags. A CUE image's tags describe the whole album.
         copy_source_tags: item.job.cue_file.is_none(),
+        mix: rangeforge_core::mix::MixPlan::default(),
     };
     let segments = item.job.cue_file.as_ref().map(CueFile::segments);
     export_file(
@@ -143,6 +144,7 @@ mod tests {
                 audio,
                 cue_file: None,
                 sheet: None,
+                mix: rangeforge_core::mix::MixPlan::default(),
             },
             plans: vec![TrackPlan {
                 gain_db: -3.0,

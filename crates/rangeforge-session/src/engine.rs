@@ -67,8 +67,8 @@ fn work(queue: &Mutex<Receiver<Job>>, outcomes: &Sender<MeasureOutcome>, cache: 
 
 fn measure(job: &Job, cache: Option<&Cache>) -> Result<(Vec<Measurement>, Origin), String> {
     let measured = match &job.cue_file {
-        Some(file) => measure_split(&job.audio, &file.segments(), cache),
-        None => measure_whole(&job.audio, cache),
+        Some(file) => measure_split(&job.audio, &file.segments(), job.mix, cache),
+        None => measure_whole(&job.audio, job.mix, cache),
     };
     let (measured, source) = measured.map_err(|error| format!("{error:#}"))?;
     let origin = match source {

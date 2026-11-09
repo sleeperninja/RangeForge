@@ -9,10 +9,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rangeforge_audio::decode::{StreamInfo, for_each_block_at};
+use rangeforge_audio::decode::{StreamInfo, for_each_block_mixed};
 use rangeforge_audio::measure::spans_for;
 use rangeforge_audio::span::{Event, Span, Splitter};
 use rangeforge_core::cue::Segment;
+use rangeforge_core::mix::{Channels, MixPlan};
 
 use crate::ExportError;
 use crate::encode::{EncodeSpec, Encoder};
@@ -43,6 +44,9 @@ pub struct Options {
     /// Copy the source file's own tags first. Right for single files, which carry their own
     /// tags; wrong for a CUE image, whose tags describe the whole album.
     pub copy_source_tags: bool,
+    /// How the channels are mixed before the gain is applied and the audio is encoded. The
+    /// measurement the gains came from was made on the same mix.
+    pub mix: MixPlan,
 }
 
 /// One finished output file.
@@ -102,6 +106,7 @@ pub fn export_file(
         on_progress: &mut *on_progress,
         splitter: None,
         info: None,
+        layout: None,
         encoder: None,
         current_temp: None,
         staged: Vec::new(),
@@ -115,10 +120,11 @@ pub fn export_file(
         .sample_rate
         .hz()
         .unwrap_or(rangeforge_audio::dsd::ANALYSIS_RATE);
-    let encoded = for_each_block_at::<ExportError, _>(input, decode_rate, |info, samples| {
-        run.feed(info, samples)
-    })
-    .and_then(|_| run.finish_stream());
+    let encoded =
+        for_each_block_mixed::<ExportError, _>(input, decode_rate, options.mix, |info, samples| {
+            run.feed(info, samples)
+        })
+        .and_then(|_| run.finish_stream());
     if let Err(error) = encoded {
         run.discard_staged();
         return Err(error);
@@ -172,6 +178,8 @@ struct Run<'a> {
     on_progress: &'a mut dyn FnMut(&Progress),
     splitter: Option<Splitter>,
     info: Option<StreamInfo>,
+    /// The channel layout to name to FFmpeg, when the count alone would be misread (quad).
+    layout: Option<&'static str>,
     encoder: Option<Encoder>,
     current_temp: Option<PathBuf>,
     staged: Vec<Staged>,
@@ -187,6 +195,16 @@ impl Run<'_> {
                     end: None,
                 }],
             };
+            // Four channels asked for as quad are named as quad. Without that FFmpeg takes them
+            // for 4.0 (a centre and a back centre), and ALAC cannot hold them at all.
+            if self.options.mix.channels == Channels::Quad && info.channels == 4 {
+                if !self.options.format.codec.can_write_quad() {
+                    return Err(ExportError::QuadNeedsAnotherCodec {
+                        codec: self.options.format.codec.name(),
+                    });
+                }
+                self.layout = Some("quad");
+            }
             self.splitter = Some(Splitter::new(spans, info.channels));
             self.info = Some(*info);
         }
@@ -246,6 +264,7 @@ impl Run<'_> {
             output: &temp,
             tags: &plan.tags,
             metadata_from: self.options.copy_source_tags.then_some(self.input),
+            channel_layout: self.layout,
         };
         self.encoder = Some(Encoder::start(self.ffmpeg, index, &spec)?);
         self.current_temp = Some(temp);

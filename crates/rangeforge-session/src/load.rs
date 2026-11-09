@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use rangeforge_core::cue::{CueFile, CueSheet};
 use rangeforge_core::identify::Identity;
+use rangeforge_core::mix::MixPlan;
 
 use crate::measuring::read_sheet;
 use crate::model::{Group, Kind, RunState, Status, TrackRow};
@@ -24,6 +25,9 @@ pub struct Job {
     pub cue_file: Option<CueFile>,
     /// The whole CUE sheet, which holds the album-level details used for tags.
     pub sheet: Option<CueSheet>,
+    /// How the channels are mixed before measuring and before writing. Measuring and writing read
+    /// the same value, so the table and the written files cannot disagree.
+    pub mix: MixPlan,
 }
 
 /// What loading produced.
@@ -283,6 +287,7 @@ fn add_cue(cue_path: &Path, loaded: &mut Loaded) {
                 audio,
                 cue_file: Some(file.clone()),
                 sheet: Some(sheet.clone()),
+                mix: rangeforge_core::mix::MixPlan::default(),
             });
         } else {
             let message = format!("audio file not found: {}", file.name);
@@ -305,6 +310,7 @@ fn add_single(path: &Path, loaded: &mut Loaded) {
         audio: path.to_path_buf(),
         cue_file: None,
         sheet: None,
+        mix: rangeforge_core::mix::MixPlan::default(),
     });
     loaded.groups.push(Group {
         name: name.clone(),

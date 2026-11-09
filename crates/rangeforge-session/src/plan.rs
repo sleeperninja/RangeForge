@@ -152,6 +152,7 @@ mod tests {
             audio: PathBuf::from("music/album/in.flac"),
             cue_file: Some(sheet.files[0].clone()),
             sheet: Some(sheet),
+            mix: rangeforge_core::mix::MixPlan::default(),
         }
     }
 
@@ -161,6 +162,7 @@ mod tests {
             audio: PathBuf::from("music/14 - Shot at the Night.flac"),
             cue_file: None,
             sheet: None,
+            mix: rangeforge_core::mix::MixPlan::default(),
         }
     }
 

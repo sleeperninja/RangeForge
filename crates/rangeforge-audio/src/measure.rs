@@ -4,10 +4,12 @@ use std::path::Path;
 
 use ebur128::{EbuR128, Mode};
 use rangeforge_core::cue::Segment;
+use rangeforge_core::mix::MixPlan;
 use rangeforge_core::planner::Measurement;
 
 use crate::AudioError;
-use crate::decode::{StreamInfo, for_each_block};
+use crate::decode::{StreamInfo, for_each_block_mixed};
+use crate::dsd;
 use crate::span::{Event, Span, Splitter};
 
 /// What a pass over a file produced.
@@ -16,6 +18,7 @@ pub struct Measured {
     /// One entry per requested track, in order.
     pub tracks: Vec<Measurement>,
     pub sample_rate: u32,
+    /// The channels that were measured: after any mix, so the file's own count when none.
     pub channels: usize,
     /// Every sample frame decoded, including audio outside any track.
     pub total_sample_frames: u64,
@@ -31,9 +34,10 @@ impl Measured {
     }
 }
 
-/// Measures a whole file as one track.
-pub fn measure_whole_file(path: &Path) -> Result<Measured, AudioError> {
-    run(path, |_| {
+/// Measures a whole file as one track, with its channels mixed as `mix` says first. Loudness and
+/// peak are those of the mixed sound, which is what would be written.
+pub fn measure_whole_file(path: &Path, mix: MixPlan) -> Result<Measured, AudioError> {
+    run(path, mix, |_| {
         vec![Span {
             start: 0,
             end: None,
@@ -41,10 +45,14 @@ pub fn measure_whole_file(path: &Path) -> Result<Measured, AudioError> {
     })
 }
 
-/// Measures each CUE segment of one audio file. The segments' last track runs to the end of
-/// the file.
-pub fn measure_segments(path: &Path, segments: &[Segment<'_>]) -> Result<Measured, AudioError> {
-    run(path, |rate| spans_for(segments, rate))
+/// Measures each CUE segment of one audio file, with its channels mixed as `mix` says first.
+/// The segments' last track runs to the end of the file.
+pub fn measure_segments(
+    path: &Path,
+    segments: &[Segment<'_>],
+    mix: MixPlan,
+) -> Result<Measured, AudioError> {
+    run(path, mix, |rate| spans_for(segments, rate))
 }
 
 /// Converts CUE segments to sample ranges at `sample_rate`.
@@ -58,20 +66,29 @@ pub fn spans_for(segments: &[Segment<'_>], sample_rate: u32) -> Vec<Span> {
         .collect()
 }
 
-fn run(path: &Path, spans_for_rate: impl FnOnce(u32) -> Vec<Span>) -> Result<Measured, AudioError> {
+fn run(
+    path: &Path,
+    mix: MixPlan,
+    spans_for_rate: impl FnOnce(u32) -> Vec<Span>,
+) -> Result<Measured, AudioError> {
     let mut spans_for_rate = Some(spans_for_rate);
     let mut meters: Option<Meters> = None;
 
-    let info = for_each_block(path, |info: &StreamInfo, samples: &[f32]| {
-        if meters.is_none() {
-            let make_spans = spans_for_rate.take().ok_or(AudioError::NoAudioStream)?;
-            meters = Some(Meters::new(info, make_spans(info.sample_rate)));
-        }
-        match meters.as_mut() {
-            Some(active) => active.feed(samples),
-            None => Ok(()),
-        }
-    })?;
+    let info = for_each_block_mixed(
+        path,
+        dsd::ANALYSIS_RATE,
+        mix,
+        |info: &StreamInfo, samples: &[f32]| {
+            if meters.is_none() {
+                let make_spans = spans_for_rate.take().ok_or(AudioError::NoAudioStream)?;
+                meters = Some(Meters::new(info, make_spans(info.sample_rate)));
+            }
+            match meters.as_mut() {
+                Some(active) => active.feed(samples),
+                None => Ok(()),
+            }
+        },
+    )?;
 
     let meters = meters.ok_or(AudioError::NoAudioStream)?;
     let (tracks, total_sample_frames) = meters.finish()?;

@@ -17,6 +17,7 @@ use std::path::PathBuf;
 
 use rangeforge_audio::measure::{measure_segments, measure_whole_file};
 use rangeforge_core::cue;
+use rangeforge_core::mix::MixPlan;
 use rangeforge_core::planner::Measurement;
 
 fn album_dir() -> PathBuf {
@@ -62,9 +63,13 @@ fn measure_album(dir: &std::path::Path) -> Vec<Measurement> {
     let sheet =
         cue::parse(&fs::read_to_string(dir.join("Houses of the Holy.cue")).unwrap()).unwrap();
     let segments = sheet.files[0].segments();
-    measure_segments(&dir.join("Houses of the Holy.flac"), &segments)
-        .unwrap()
-        .tracks
+    measure_segments(
+        &dir.join("Houses of the Holy.flac"),
+        &segments,
+        MixPlan::default(),
+    )
+    .unwrap()
+    .tracks
 }
 
 #[test]
@@ -75,9 +80,12 @@ fn tracks_cut_from_the_flac_match_the_separate_alac_files() {
     assert_eq!(album.len(), 8);
 
     for number in [3_usize, 6, 7, 8] {
-        let separate = measure_whole_file(&track_file(&dir, &format!("{number:02}")))
-            .unwrap()
-            .tracks[0];
+        let separate = measure_whole_file(
+            &track_file(&dir, &format!("{number:02}")),
+            MixPlan::default(),
+        )
+        .unwrap()
+        .tracks[0];
         let cut = album[number - 1];
         let label = format!("track {number}");
         assert_close(

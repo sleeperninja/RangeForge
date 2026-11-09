@@ -160,6 +160,7 @@ where
         sample_rate: rate,
         channels: header.channels,
         bits_per_sample: None,
+        mixed: false,
     };
 
     let mut command = ffmpeg_command()?;

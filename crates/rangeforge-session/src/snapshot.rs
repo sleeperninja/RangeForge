@@ -791,6 +791,7 @@ FILE \"in.flac\" WAVE
             audio: PathBuf::from("music/in.flac"),
             cue_file: Some(file),
             sheet: Some(sheet),
+            mix: rangeforge_core::mix::MixPlan::default(),
         };
         let mut app = App::new(vec![group], vec![job], Vec::new(), Settings::default());
         let names = |app: &App| -> Vec<Option<String>> {

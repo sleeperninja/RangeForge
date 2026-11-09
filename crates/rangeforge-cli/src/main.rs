@@ -8,6 +8,7 @@ mod run;
 mod support;
 mod ui;
 
+use rangeforge_core::mix::MixPlan;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -184,12 +185,15 @@ fn show_measurements(audio: &Path, cue_path: Option<&Path>, cache: Option<&Cache
                 )
             })
             .collect();
-        (labels, measure_split(audio, &segments, cache)?)
+        (
+            labels,
+            measure_split(audio, &segments, MixPlan::default(), cache)?,
+        )
     } else {
         let name = audio
             .file_name()
             .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-        (vec![name], measure_whole(audio, cache)?)
+        (vec![name], measure_whole(audio, MixPlan::default(), cache)?)
     };
     let elapsed = started.elapsed().as_secs_f64();
 
