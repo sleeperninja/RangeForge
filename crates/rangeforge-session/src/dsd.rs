@@ -67,7 +67,13 @@ impl DsdFormat {
     /// The format a DSD source is written in.
     #[must_use]
     pub fn resolve(&self, main: OutputFormat) -> OutputFormat {
-        let codec = self.codec.unwrap_or(main.codec);
+        // A main format of 32-bit float WAV is kept for DSD files too, so the peaks it exists
+        // to keep are kept for them as well.
+        let codec = if main.bit_depth == BitDepth::Float32 {
+            main.codec
+        } else {
+            self.codec.unwrap_or(main.codec)
+        };
         let bit_depth = match main.bit_depth {
             BitDepth::Source => self.bit_depth,
             named if named.fits(codec) => named,

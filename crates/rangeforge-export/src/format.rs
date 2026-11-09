@@ -471,6 +471,12 @@ impl OutputFormat {
         ))
     }
 
+    /// True when the file can hold sound above full scale, so there is nothing to protect:
+    /// 32-bit float WAV (decision D-41).
+    pub fn keeps_overs(self) -> bool {
+        self.codec == Codec::Wav && self.bit_depth == BitDepth::Float32
+    }
+
     /// The bit depth actually written (16 or 24), given what the source reports. A source with
     /// no fixed precision, such as MP3, becomes 16.
     pub fn resolved_bits(self, source_bits: Option<u32>) -> u32 {

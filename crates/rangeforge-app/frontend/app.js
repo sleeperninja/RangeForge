@@ -169,9 +169,12 @@
     $('confirmFirst').checked = s.strategy.confirm_first;
 
     setValue($('target'), s.volume.target_lufs.toFixed(1));
-    $('peakProtection').checked = s.volume.peak_protection;
-    setValue($('ceiling'), s.volume.ceiling_dbtp.toFixed(1));
-    $('ceiling').disabled = !s.volume.peak_protection;
+    // 32-bit float needs no protection: the box shows unticked and dimmed, with the setting kept.
+    const protects = s.volume.protection_applies;
+    $('peakProtection').checked = protects && s.volume.peak_protection;
+    $('peakProtection').disabled = !protects;
+    setValue($('ceiling'), protects ? s.volume.ceiling_dbtp.toFixed(1) : '');
+    $('ceiling').disabled = !protects || !s.volume.peak_protection;
 
     $('presetList').innerHTML = Render.presetListHtml(s.presets);
     $('savePreset').disabled = !s.presets.can_save;

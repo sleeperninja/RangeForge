@@ -147,7 +147,11 @@ fn run_job(
         Some(file) => measure_split(&job.audio, &file.segments(), plan.mix, cache)?,
         None => measure_whole(&job.audio, plan.mix, cache)?,
     };
-    let planned = plan_tracks(job, &measured.tracks, settings.target());
+    let planned = plan_tracks(
+        job,
+        &measured.tracks,
+        settings.target_for(format.keeps_overs()),
+    );
     // A single file is named from its own tags, or failing that its file name.
     let identities = if job.cue_file.is_none() {
         vec![Some(identify_file(&job.audio))]

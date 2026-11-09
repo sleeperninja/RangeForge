@@ -42,7 +42,7 @@
       "tracks": []
     }
   ],
-  "volume": {"target_lufs": -22.0, "peak_protection": true, "ceiling_dbtp": -0.6},
+  "volume": {"target_lufs": -22.0, "peak_protection": true, "ceiling_dbtp": -0.6, "protection_applies": true},
   "output": {"codec": "alac", "container": "native", "sample_rate": "original", "bit_depth": "source", "channels": "original", "downmix": "standard", "bitrate": "256", "flac_level": 5, "extension": "m4a"},
   "strategy": {
     "place": "next", "subfolder": "_forged", "folder": "",

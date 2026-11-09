@@ -94,9 +94,16 @@ impl Settings {
 
     /// What the planner needs.
     pub fn target(&self) -> Target {
+        self.target_for(false)
+    }
+
+    /// The same, for an output that can hold sound above full scale (`keeps_overs`): there the
+    /// ceiling does not apply, and the setting itself is left as it was.
+    pub fn target_for(&self, keeps_overs: bool) -> Target {
         Target {
             loudness_lufs: self.target_lufs,
-            peak_ceiling_dbtp: self.peak_protection.then_some(self.peak_ceiling_dbtp),
+            peak_ceiling_dbtp: (self.peak_protection && !keeps_overs)
+                .then_some(self.peak_ceiling_dbtp),
         }
     }
 
@@ -967,9 +974,12 @@ impl App {
 
     /// The volume change for a song under the current settings, once it is measured.
     pub fn plan(&self, track: &TrackRow) -> Option<Result<GainPlan, PlanError>> {
-        track
-            .measurement
-            .map(|measurement| planner::plan_gain(measurement, self.settings.target()))
+        track.measurement.map(|measurement| {
+            planner::plan_gain(
+                measurement,
+                self.settings.target_for(self.output.format().keeps_overs()),
+            )
+        })
     }
 
     /// True if peak protection reduced the gain of any song.
@@ -1184,7 +1194,11 @@ impl App {
             if !group.tracks.iter().any(|track| track.included) {
                 continue;
             }
-            let planned = plan_tracks(job, &measurements, self.settings.target());
+            let keeps_overs = self
+                .dsd
+                .format_for(self.output.format(), &job.audio)
+                .keeps_overs();
+            let planned = plan_tracks(job, &measurements, self.settings.target_for(keeps_overs));
             let identities: Vec<Option<Identity>> = group
                 .tracks
                 .iter()

@@ -113,6 +113,9 @@ pub struct VolumeView {
     pub target_lufs: f64,
     pub peak_protection: bool,
     pub ceiling_dbtp: f64,
+    /// False when the chosen output can hold sound above full scale (32-bit float WAV): the
+    /// protection does not apply, and the window shows it unticked and dimmed.
+    pub protection_applies: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -565,6 +568,7 @@ impl App {
                 target_lufs: self.settings.target_lufs,
                 peak_protection: self.settings.peak_protection,
                 ceiling_dbtp: self.settings.peak_ceiling_dbtp,
+                protection_applies: !self.output.format().keeps_overs(),
             },
             output: OutputView {
                 codec: self.output.codec.name().to_string(),
@@ -957,6 +961,27 @@ FILE \"in.flac\" WAVE
         assert_eq!(snapshot.strategy.problem, None);
         assert!(!snapshot.strategy.needs_confirmation);
         assert_eq!(snapshot.log, ["Added x"]);
+    }
+
+    #[test]
+    fn thirty_two_bit_float_needs_no_peak_protection_and_the_setting_comes_back() {
+        let mut app = sample_app();
+        app.set_codec(Codec::Wav).unwrap();
+        assert!(app.snapshot().volume.protection_applies);
+        app.set_bit_depth(BitDepth::Float32).unwrap();
+        let view = app.snapshot().volume;
+        assert!(!view.protection_applies);
+        assert!(view.peak_protection, "the setting itself is not touched");
+        // The planner has no ceiling for the float file, and has one again afterwards.
+        let target = |app: &App| {
+            app.settings
+                .target_for(app.output.format().keeps_overs())
+                .peak_ceiling_dbtp
+        };
+        assert_eq!(target(&app), None);
+        app.set_bit_depth(BitDepth::TwentyFour).unwrap();
+        assert!(app.snapshot().volume.protection_applies);
+        assert_eq!(target(&app), Some(-0.6));
     }
 
     #[test]
