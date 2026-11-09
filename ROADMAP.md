@@ -1,6 +1,6 @@
 # RangeForge Roadmap
 
-*The friendly version: what works, what's next, and what we've decided not to do. Updated 9 Nov 2026, at version 0.6.2.*
+*The friendly version: what works, what's next, and what we've decided not to do. Updated 9 Nov 2026, at version 0.6.5.*
 
 How it decides things, in plain words, is in [HOW-IT-WORKS.md](HOW-IT-WORKS.md). The detailed phase list, with the technical wording, lives in [docs/05-roadmap.md](docs/05-roadmap.md) and the reasons behind every decision are in [docs/04-decisions.md](docs/04-decisions.md). This page is the one to read over coffee.
 
