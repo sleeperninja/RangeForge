@@ -81,16 +81,17 @@ pub fn resolve_audio(cue_dir: &Path, name: &str) -> Option<PathBuf> {
 const MAX_DEPTH: usize = 4;
 
 /// The folder this program's own output goes in, unless the user named another. It is never
-/// searched, so output that was already written is not added again.
+/// searched, so output that was already written is not added again. A subfolder the user chose
+/// for the output is skipped the same way (see [`load_from`]).
 const OUTPUT_FOLDER: &str = "RangeForge";
 
 /// Replaces folders with what they contain: their CUE sheets, or if there are none, their
 /// audio files, and the same for the folders inside them.
-fn expand(inputs: &[PathBuf], log: &mut Vec<String>) -> Vec<PathBuf> {
+fn expand(inputs: &[PathBuf], skip: &[String], log: &mut Vec<String>) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     for input in inputs {
         if input.is_dir() {
-            collect_folder(input, 0, log, &mut paths);
+            collect_folder(input, 0, skip, log, &mut paths);
         } else {
             paths.push(input.clone());
         }
@@ -100,7 +101,13 @@ fn expand(inputs: &[PathBuf], log: &mut Vec<String>) -> Vec<PathBuf> {
 
 /// Adds what is in one folder, then goes into its subfolders (in name order) up to the depth
 /// limit. Subfolders that are links are not followed, so a loop cannot trap the search.
-fn collect_folder(dir: &Path, depth: usize, log: &mut Vec<String>, paths: &mut Vec<PathBuf>) {
+fn collect_folder(
+    dir: &Path,
+    depth: usize,
+    skip: &[String],
+    log: &mut Vec<String>,
+    paths: &mut Vec<PathBuf>,
+) {
     let mut entries: Vec<(PathBuf, bool)> = match fs::read_dir(dir) {
         Ok(entries) => entries
             .filter_map(Result::ok)
@@ -131,10 +138,13 @@ fn collect_folder(dir: &Path, depth: usize, log: &mut Vec<String>, paths: &mut V
     }
     for (path, _) in entries.iter().filter(|(_, is_folder)| *is_folder) {
         let name = file_name(path);
-        if name.starts_with('.') || name.eq_ignore_ascii_case(OUTPUT_FOLDER) {
+        if name.starts_with('.')
+            || name.eq_ignore_ascii_case(OUTPUT_FOLDER)
+            || skip.iter().any(|other| name.eq_ignore_ascii_case(other))
+        {
             continue;
         }
-        collect_folder(path, depth + 1, log, paths);
+        collect_folder(path, depth + 1, skip, log, paths);
     }
 }
 
@@ -183,16 +193,18 @@ fn with_cues_found(paths: Vec<PathBuf>) -> Vec<PathBuf> {
 /// Loads everything named in `inputs`. Problems become log lines or failed rows, never
 /// errors, so one bad path does not stop the rest.
 pub fn load(inputs: &[PathBuf]) -> Loaded {
-    load_from(inputs, 0)
+    load_from(inputs, 0, &[])
 }
 
-/// Like [`load`], for adding to a list that already holds `first_group` groups.
-pub fn load_from(inputs: &[PathBuf], first_group: usize) -> Loaded {
+/// Like [`load`], for adding to a list that already holds `first_group` groups. Folders named
+/// in `skip` (any capitalisation) are not searched, besides the usual `RangeForge`: pass the
+/// subfolder the user saves output into, so what was already written is not added again.
+pub fn load_from(inputs: &[PathBuf], first_group: usize, skip: &[String]) -> Loaded {
     let mut loaded = Loaded {
         first_group,
         ..Loaded::default()
     };
-    let paths = with_cues_found(expand(inputs, &mut loaded.log));
+    let paths = with_cues_found(expand(inputs, skip, &mut loaded.log));
     for path in paths {
         if is_cue(&path) {
             add_cue(&path, &mut loaded);
@@ -451,6 +463,34 @@ mod tests {
     }
 
     #[test]
+    fn a_subfolder_the_user_chose_for_output_is_not_searched_either() {
+        let dir = tempdir().unwrap();
+        nested(dir.path(), "2005 - Some Cities/01 - Some Cities.flac");
+        nested(
+            dir.path(),
+            "2005 - Some Cities/_rangeforged/Doves-Some Cities.m4a",
+        );
+        nested(dir.path(), "2005 - Some Cities/RangeForge/old.m4a");
+        let root = vec![dir.path().to_path_buf()];
+
+        // Without being told, only the default output folder is left out.
+        let names = |loaded: &Loaded| -> Vec<String> {
+            loaded.groups.iter().map(|g| g.name.clone()).collect()
+        };
+        let plain = load_from(&root, 0, &[]);
+        assert_eq!(
+            names(&plain),
+            ["01 - Some Cities.flac", "Doves-Some Cities.m4a"]
+        );
+
+        // Told the chosen name, in any capitalisation, it is left out as well.
+        for chosen in ["_rangeforged", "_RangeForged"] {
+            let loaded = load_from(&root, 0, &[chosen.to_string()]);
+            assert_eq!(names(&loaded), ["01 - Some Cities.flac"], "{chosen}");
+        }
+    }
+
+    #[test]
     fn a_folder_uses_its_cue_sheets_and_otherwise_its_audio() {
         let with_cue = tempdir().unwrap();
         touch(with_cue.path(), "album.cue", CUE);
@@ -535,7 +575,7 @@ mod tests {
         let song = touch(dir.path(), "song.flac", "");
 
         // The list already holds three groups, so these become groups 3 and 4.
-        let loaded = load_from(&[cue, song], 3);
+        let loaded = load_from(&[cue, song], 3, &[]);
         let indexes: Vec<usize> = loaded.jobs.iter().map(|job| job.group).collect();
         assert_eq!(indexes, [3, 4]);
         assert_eq!(

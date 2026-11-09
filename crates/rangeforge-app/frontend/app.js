@@ -90,6 +90,23 @@
     }
   }
 
+  // Sends what is typed in a box shortly after the typing pauses, as well as when the box is
+  // left (`leaving` is true then), so closing the window with the cursor still in the box does
+  // not lose what was typed.
+  function onEdited(input, send) {
+    let timer = null;
+    const run = (leaving) => {
+      clearTimeout(timer);
+      timer = null;
+      send(input.value, leaving);
+    };
+    input.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => run(false), 300);
+    });
+    input.addEventListener('change', () => run(true));
+  }
+
   // Sets a field unless the user is typing in it, so a refresh never fights the keyboard.
   function setValue(input, value) {
     const text = String(value);
@@ -458,8 +475,20 @@
       $('logPanel').classList.toggle('hidden', !e.target.checked);
     });
 
-    $('target').addEventListener('change', (e) => call('set_target', { value: Number(e.target.value) }));
-    $('ceiling').addEventListener('change', (e) => call('set_ceiling', { value: Number(e.target.value) }));
+    // A number box is sent when typing pauses, and when the box is left. An empty or half-typed
+    // value ("-") is not sent while typing, and on leaving it the box is put back to the
+    // program's value.
+    const numberBox = (id, command) =>
+      onEdited($(id), (text, leaving) => {
+        const value = Number(text);
+        if (text.trim() !== '' && Number.isFinite(value)) {
+          call(command, { value });
+        } else if (leaving) {
+          call('get_state');
+        }
+      });
+    numberBox('target', 'set_target');
+    numberBox('ceiling', 'set_ceiling');
     $('peakProtection').addEventListener('change', (e) => call('set_peak_protection', { on: e.target.checked }));
     $('codec').addEventListener('change', (e) => call('set_codec', { id: e.target.value }));
     $('bitDepth').addEventListener('change', (e) => call('set_bit_depth', { id: e.target.value }));
@@ -501,9 +530,9 @@
       ['oldSuffix', 'set_conflict', 'set_conflict_text', 'rename_existing'],
     ];
     for (const [id, choose, set, choice] of textFields) {
-      $(id).addEventListener('change', async (e) => {
+      onEdited($(id), async (text) => {
         await call(choose, { id: choice });
-        await call(set, { text: e.target.value });
+        await call(set, { text });
       });
     }
     $('deleteOriginal').addEventListener('change', (e) => call('set_delete_original', { on: e.target.checked }));

@@ -1,5 +1,6 @@
 //! Settings that are not presets, kept in a small JSON file (`settings.json`): the file name
-//! patterns and which outside lookups are switched on.
+//! patterns, which outside lookups are switched on, the File Strategy, and what the main
+//! screen was last set to (Output Format and Volume), so the program opens as it was left.
 //!
 //! API keys are not kept here. They live in the operating system's credential store (see
 //! [`crate::secrets`]), so this file can be copied or shared without leaking one.
@@ -15,8 +16,9 @@ use serde::{Deserialize, Serialize};
 
 use rangeforge_export::format::{BitDepth, Codec, Container, SampleRate};
 
-use crate::controls::StrategySettings;
+use crate::controls::{OutputSettings, StrategySettings};
 use crate::dsd::DsdFormat;
+use crate::model::Settings;
 use crate::naming::NameSettings;
 use crate::snapshot::{conflict_from_id, conflict_id, place_from_id, place_id};
 
@@ -35,7 +37,7 @@ pub struct MetadataSettings {
 }
 
 /// Everything this file keeps.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SavedSettings {
     pub naming: NameSettings,
     pub metadata: MetadataSettings,
@@ -46,6 +48,10 @@ pub struct SavedSettings {
     pub confirm_destructive: bool,
     /// What DSD files are written as.
     pub dsd: DsdFormat,
+    /// The Output Format panel as it was last left: codec, container, sample rate, bit depth.
+    pub output: OutputSettings,
+    /// The Volume Adjustment panel as it was last left: target, peak protection, ceiling.
+    pub volume: Settings,
 }
 
 impl Default for SavedSettings {
@@ -56,6 +62,8 @@ impl Default for SavedSettings {
             strategy: StrategySettings::default(),
             confirm_destructive: true,
             dsd: DsdFormat::default(),
+            output: OutputSettings::default(),
+            volume: Settings::default(),
         }
     }
 }
@@ -178,6 +186,94 @@ impl StoredDsd {
     }
 }
 
+/// The Output Format panel as written in the file.
+#[derive(Debug, Serialize, Deserialize)]
+struct StoredOutput {
+    codec: String,
+    container: String,
+    sample_rate: String,
+    bit_depth: String,
+}
+
+impl StoredOutput {
+    fn from(output: OutputSettings) -> Self {
+        Self {
+            codec: output.codec.name().to_string(),
+            container: output.container.name().to_string(),
+            sample_rate: output.sample_rate.name().to_string(),
+            bit_depth: output.bit_depth.name().to_string(),
+        }
+    }
+
+    /// The panel, with a plain-words note for anything not understood. Each value that is not
+    /// understood falls back to the default for that one setting, and a sample rate the codec
+    /// cannot write goes back to the original's.
+    fn into_output(self, notes: &mut Vec<String>) -> OutputSettings {
+        let defaults = OutputSettings::default();
+        let mut note = |what: &str, text: &str| {
+            notes.push(format!(
+                "Unknown saved output {what} {text:?}; using the default"
+            ));
+        };
+        let codec = Codec::from_name(&self.codec).unwrap_or_else(|| {
+            note("codec", &self.codec);
+            defaults.codec
+        });
+        let container = Container::from_name(&self.container).unwrap_or_else(|| {
+            note("container", &self.container);
+            defaults.container
+        });
+        let sample_rate = SampleRate::from_name(&self.sample_rate).unwrap_or_else(|| {
+            note("sample rate", &self.sample_rate);
+            defaults.sample_rate
+        });
+        let bit_depth = BitDepth::from_name(&self.bit_depth).unwrap_or_else(|| {
+            note("bit depth", &self.bit_depth);
+            defaults.bit_depth
+        });
+        let mut output = OutputSettings {
+            codec,
+            bit_depth,
+            container,
+            sample_rate,
+        };
+        if output.fit_to_codec() {
+            notes.push(format!(
+                "The saved sample rate cannot be written as {}, so it is back to original",
+                codec.name()
+            ));
+        }
+        output
+    }
+}
+
+/// The Volume Adjustment panel as written in the file.
+#[derive(Debug, Serialize, Deserialize)]
+struct StoredVolume {
+    target_lufs: f64,
+    peak_protection: bool,
+    peak_ceiling_dbtp: f64,
+}
+
+impl StoredVolume {
+    fn from(volume: Settings) -> Self {
+        Self {
+            target_lufs: volume.target_lufs,
+            peak_protection: volume.peak_protection,
+            peak_ceiling_dbtp: volume.peak_ceiling_dbtp,
+        }
+    }
+
+    /// The panel, with numbers kept inside their allowed ranges.
+    fn into_volume(self) -> Settings {
+        Settings::new(
+            self.target_lufs,
+            self.peak_protection,
+            self.peak_ceiling_dbtp,
+        )
+    }
+}
+
 fn yes() -> bool {
     true
 }
@@ -197,6 +293,10 @@ struct Stored {
     confirm_destructive: bool,
     #[serde(default)]
     dsd_format: Option<StoredDsd>,
+    #[serde(default)]
+    output_format: Option<StoredOutput>,
+    #[serde(default)]
+    volume: Option<StoredVolume>,
 }
 
 /// What loading found.
@@ -242,6 +342,12 @@ pub fn load(path: &Path) -> Loaded {
                 dsd: stored
                     .dsd_format
                     .map_or_else(DsdFormat::default, |d| d.into_dsd(&mut notes)),
+                output: stored
+                    .output_format
+                    .map_or_else(OutputSettings::default, |o| o.into_output(&mut notes)),
+                volume: stored
+                    .volume
+                    .map_or_else(Settings::default, StoredVolume::into_volume),
             };
             // Patterns that no longer make sense fall back to the defaults, with a note.
             match settings.naming.templates() {
@@ -296,6 +402,8 @@ pub fn save(path: &Path, settings: &SavedSettings) -> Result<()> {
         file_strategy: Some(StoredStrategy::from(&settings.strategy)),
         confirm_destructive: settings.confirm_destructive,
         dsd_format: Some(StoredDsd::from(settings.dsd)),
+        output_format: Some(StoredOutput::from(settings.output)),
+        volume: Some(StoredVolume::from(settings.volume)),
     };
     let json = serde_json::to_vec_pretty(&stored).context("writing settings")?;
     let temporary = path.with_extension("json.tmp");
@@ -335,7 +443,82 @@ mod tests {
                 sample_rate: SampleRate::Hz176400,
                 bit_depth: BitDepth::Sixteen,
             },
+            output: OutputSettings {
+                codec: Codec::Flac,
+                bit_depth: BitDepth::TwentyFour,
+                container: Container::Mka,
+                sample_rate: SampleRate::Hz96000,
+            },
+            volume: Settings::new(-18.5, false, -1.2),
         }
+    }
+
+    #[test]
+    fn the_output_format_and_the_volume_are_kept() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        save(&path, &custom()).unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.settings.output, custom().output);
+        assert_eq!(loaded.settings.volume, custom().volume);
+        assert_eq!(loaded.notes, Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_file_without_them_opens_on_the_defaults_for_both() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        fs::write(
+            &path,
+            br#"{"version": 1, "album_name": "{title}", "single_name": "{name}"}"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.settings.output, OutputSettings::default());
+        assert_eq!(loaded.settings.volume, Settings::default());
+        assert_eq!(loaded.notes, Vec::<String>::new());
+    }
+
+    #[test]
+    fn output_values_not_understood_or_not_possible_fall_back_one_by_one() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        // An unknown codec; a container and bit depth that are fine; AAC cannot write 192 kHz.
+        fs::write(
+            &path,
+            br#"{"version": 1, "album_name": "{title}", "single_name": "{name}",
+                "output_format": {"codec": "banana", "container": "mka", "sample_rate": "192000", "bit_depth": "24"},
+                "volume": {"target_lufs": -300.0, "peak_protection": true, "peak_ceiling_dbtp": 50.0}}"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(
+            loaded.settings.output.codec,
+            OutputSettings::default().codec
+        );
+        assert_eq!(loaded.settings.output.container, Container::Mka);
+        assert_eq!(loaded.settings.output.bit_depth, BitDepth::TwentyFour);
+        assert_eq!(loaded.settings.output.sample_rate, SampleRate::Hz192000);
+        assert_eq!(loaded.notes.len(), 1, "{:?}", loaded.notes);
+        // Numbers out of range are brought inside it, not refused.
+        assert_eq!(loaded.settings.volume, Settings::new(-300.0, true, 50.0));
+        assert!(loaded.settings.volume.target_lufs > -300.0);
+        assert!(loaded.settings.volume.peak_ceiling_dbtp < 50.0);
+
+        fs::write(
+            &path,
+            br#"{"version": 1, "album_name": "{title}", "single_name": "{name}",
+                "output_format": {"codec": "aac", "container": "native", "sample_rate": "192000", "bit_depth": "16"}}"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.settings.output.codec, Codec::Aac);
+        assert_eq!(loaded.settings.output.sample_rate, SampleRate::Original);
+        assert!(
+            loaded.notes[0].contains("back to original"),
+            "{:?}",
+            loaded.notes
+        );
     }
 
     #[test]

@@ -396,6 +396,8 @@ impl App {
             strategy: self.strategy.clone(),
             confirm_destructive: self.confirm_destructive,
             dsd: self.dsd,
+            output: self.output,
+            volume: self.settings,
         }
     }
 
@@ -406,6 +408,8 @@ impl App {
         self.confirm_destructive = saved.confirm_destructive;
         self.dsd = saved.dsd;
         self.metadata = saved.metadata;
+        self.output = saved.output;
+        self.settings = saved.volume;
         self.saved_baseline = self.saved_settings();
     }
 
@@ -1269,7 +1273,15 @@ impl App {
     /// Adds files, CUE sheets or folders to the list and returns the measuring jobs for them.
     /// The caller starts those jobs.
     pub fn add_paths(&mut self, paths: &[PathBuf]) -> Vec<Job> {
-        let loaded = load_from(paths, self.groups.len());
+        // Output already written into the chosen subfolder is not searched, so dropping an
+        // album again does not add its own output.
+        let skip: Vec<String> = match self.strategy.where_kind {
+            WhereKind::Subfolder if !self.strategy.subfolder.trim().is_empty() => {
+                vec![self.strategy.subfolder.trim().to_string()]
+            }
+            _ => Vec::new(),
+        };
+        let loaded = load_from(paths, self.groups.len(), &skip);
         self.groups.extend(loaded.groups);
         self.jobs.extend(loaded.jobs.iter().cloned());
         self.log.extend(loaded.log);
@@ -2357,6 +2369,34 @@ mod tests {
         app.add_paths(&[cue]);
 
         assert_eq!(app.groups[0].tracks[1].radio.map(|hit| hit.peak), Some(1));
+    }
+
+    #[test]
+    fn dropping_an_album_again_skips_the_subfolder_the_output_goes_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let album = dir.path().join("Doves").join("2005 - Some Cities");
+        std::fs::create_dir_all(album.join("_rangeforged")).unwrap();
+        std::fs::write(album.join("01 - Some Cities.flac"), b"").unwrap();
+        std::fs::write(
+            album.join("_rangeforged").join("Doves-Some Cities.m4a"),
+            b"",
+        )
+        .unwrap();
+        let names = |app: &App| -> Vec<String> {
+            app.groups.iter().map(|group| group.name.clone()).collect()
+        };
+
+        // Output going into the subfolder `_rangeforged`: it is not added again.
+        let mut app = app_with(Vec::new());
+        app.set_where(WhereKind::Subfolder);
+        app.set_where_text("_rangeforged".to_string());
+        app.add_paths(std::slice::from_ref(&album));
+        assert_eq!(names(&app), ["01 - Some Cities.flac"]);
+
+        // Output next to the originals has no such folder, so every folder is searched.
+        let mut app = app_with(Vec::new());
+        app.add_paths(std::slice::from_ref(&album));
+        assert_eq!(names(&app).len(), 2);
     }
 
     #[test]

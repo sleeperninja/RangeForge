@@ -1640,6 +1640,45 @@ mod tests {
     }
 
     #[test]
+    fn the_output_format_and_the_volume_are_as_they_were_left_after_a_restart() {
+        let dir = tempdir().unwrap();
+        let shared = shared_with_presets(dir.path());
+        set_codec(&shared, "flac");
+        set_bit_depth(&shared, "24");
+        set_container(&shared, "mka");
+        assert_eq!(set_sample_rate(&shared, "96000").error, None);
+        set_target(&shared, -18.5);
+        set_ceiling(&shared, -1.2);
+        set_peak_protection(&shared, false);
+
+        let again = shared_with_presets(dir.path());
+        let snapshot = state(&again).state;
+        assert_eq!(snapshot.output.codec, "flac");
+        assert_eq!(snapshot.output.bit_depth, "24");
+        assert_eq!(snapshot.output.container, "mka");
+        assert_eq!(snapshot.output.sample_rate, "96000");
+        assert!((snapshot.volume.target_lufs - -18.5).abs() < 1e-9);
+        assert!((snapshot.volume.ceiling_dbtp - -1.2).abs() < 1e-9);
+        assert!(!snapshot.volume.peak_protection);
+        assert_eq!(snapshot.presets.selected, None, "no preset looks like this");
+
+        // Settings that match a preset find it again, as the highlighted one.
+        set_container(&shared, "native");
+        set_sample_rate(&shared, "original");
+        set_bit_depth(&shared, "16");
+        set_target(&shared, -22.0);
+        set_ceiling(&shared, -0.6);
+        set_peak_protection(&shared, true);
+        let again = shared_with_presets(dir.path());
+        let snapshot = state(&again).state;
+        let selected = snapshot
+            .presets
+            .selected
+            .expect("CD Quality is highlighted");
+        assert_eq!(snapshot.presets.names[selected], "CD Quality");
+    }
+
+    #[test]
     fn dsd_has_no_original_rate_or_source_depth_and_unknown_names_are_refused() {
         let dir = tempdir().unwrap();
         let shared = shared_with_presets(dir.path());

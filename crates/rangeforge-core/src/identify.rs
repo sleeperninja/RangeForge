@@ -109,9 +109,17 @@ impl Identity {
 
         let mut identity = Self::unknown(IdentitySource::FileName);
         // A name made by a machine, such as `00724352531929_001_Doves_Firesite_GBDGG0000013`,
-        // has underscores and no spaces. Its barcode and ISRC are not part of the song.
-        let machine_made = !stem.trim().contains(' ');
-        let stem = tidy(&strip_release_codes(stem));
+        // has underscores and no spaces, or (when a store keeps the title's own spaces, as in
+        // `..._001_Doves_Some Cities_GBDGG0400080`) at least a barcode or an ISRC. Those codes
+        // are not part of the song, and what is left is separated by underscores.
+        let (without_codes, found_codes) = strip_release_codes(stem);
+        let machine_made = found_codes || !stem.trim().contains(' ');
+        let fields = if found_codes {
+            without_codes.replace('_', " ")
+        } else {
+            without_codes
+        };
+        let stem = tidy(&fields);
         let (track, rest) = split_track(&stem);
         identity.track = track;
         let mut artist_from_name = false;
@@ -152,21 +160,21 @@ impl Identity {
     }
 }
 
-/// A name's barcode and ISRC, when it is an underscore-joined name that has them. The barcode
-/// (8 to 14 digits) leads and is followed by the track number; the ISRC (two letters, three
-/// letters or digits, seven digits) ends. Anything with a space is left alone.
-fn strip_release_codes(stem: &str) -> String {
+/// A name's barcode and ISRC, when it is an underscore-joined name that has them, and whether
+/// either was found. The barcode (8 to 14 digits) leads and is followed by the track number;
+/// the ISRC (two letters, three letters or digits, seven digits) ends. The fields in between
+/// may hold spaces: some stores keep the title's own.
+fn strip_release_codes(stem: &str) -> (String, bool) {
     let stem = stem.trim();
-    if stem.contains(' ') {
-        return stem.to_string();
-    }
     let mut parts: Vec<&str> = stem.split('_').collect();
+    let mut found = false;
     let barcode =
         |part: &str| (8..=14).contains(&part.len()) && part.bytes().all(|b| b.is_ascii_digit());
     let short_number =
         |part: &str| (1..=3).contains(&part.len()) && part.bytes().all(|b| b.is_ascii_digit());
     if parts.len() >= 3 && barcode(parts[0]) && short_number(parts[1]) {
         parts.remove(0);
+        found = true;
     }
     let isrc = |part: &str| {
         let bytes = part.as_bytes();
@@ -179,8 +187,9 @@ fn strip_release_codes(stem: &str) -> String {
     };
     if parts.len() >= 2 && parts.last().is_some_and(|last| isrc(last)) {
         parts.pop();
+        found = true;
     }
-    parts.join("_")
+    (parts.join("_"), found)
 }
 
 /// `text` without `(...)` and `[...]` notes at its end: `Doves (lossless downloads)` is `Doves`.
@@ -475,6 +484,49 @@ mod tests {
             assert_eq!(identity.date.as_deref(), Some("2000"), "{file}");
             assert!(identity.can_look_up(), "{file}");
         }
+    }
+
+    #[test]
+    fn a_store_that_keeps_the_titles_own_spaces_is_read_too() {
+        // Underscores between the fields, real spaces inside the title.
+        let folder = "/audio/Doves (lossless downloads from vinyls)/2005 - Some Cities";
+        for (file, track, title) in [
+            (
+                "00724387460928_001_Doves_Some Cities_GBDGG0400080.m4a",
+                1,
+                "Some Cities",
+            ),
+            (
+                "00724387460928_002_Doves_Black And White Town_GBDGG0400054.m4a",
+                2,
+                "Black And White Town",
+            ),
+            (
+                "00724387460928_006_Doves_Walk In Fire_GBDGG0400081.m4a",
+                6,
+                "Walk In Fire",
+            ),
+            (
+                "00724387460928_010_Doves_Sky Starts Falling_GBDGG0400060.m4a",
+                10,
+                "Sky Starts Falling",
+            ),
+        ] {
+            let identity = guess(&format!("{folder}/{file}"));
+            assert_eq!(
+                fields(&identity),
+                (Some("Doves"), Some(title), Some("Some Cities"), Some(track)),
+                "{file}"
+            );
+            assert_eq!(identity.date.as_deref(), Some("2005"), "{file}");
+        }
+        // The files that were tagged by name parse as before.
+        let plain = guess(&format!("{folder}/04 - Snowden.m4a"));
+        assert_eq!(plain.title.as_deref(), Some("Snowden"));
+        assert_eq!(plain.track, Some(4));
+        // A name with spaces and no codes is the person's own and is left whole.
+        let own = guess(&format!("{folder}/Doves_Some Cities.m4a"));
+        assert_eq!(own.title.as_deref(), Some("Doves_Some Cities"));
     }
 
     #[test]
