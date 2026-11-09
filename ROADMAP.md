@@ -20,6 +20,7 @@ RangeForge does its main job today. Drop in an album or a pile of files, and it 
 - **Names from patterns,** for CUE tracks and for single files (`{artist}-{album}_{track:02}-{title}` and friends).
 - **Tags:** read from the file, the CUE sheet, or guessed from the file and folder names (including the long vinyl-download names, like the Doves ones). Edit names and tags by hand, for one song, several, or a whole album.
 - **Name many songs at once** by lining them up with the album's track list, from Last.fm or pasted from a store page. It makes a first guess, shows how each song was paired, and lets you change any row before anything happens.
+- **Rows show the name each song will be written as,** with the original file name on hover, and a guess in italics, so you can see the result before pressing Run.
 - **Genres:** from the album's Last.fm tags, plus a blue **Radio** tag for songs that charted on the Billboard Hot 100.
 - **The window remembers** your File Strategy, Output Format, Volume settings and file name patterns between sessions.
 
@@ -34,13 +35,13 @@ These are the things on the plate, roughly in the order they make sense.
    - change codec, sample rate, target and the subfolder name, close mid-edit, reopen, and check everything came back
    - drop the Some Cities folder: clean titles and track numbers, and dropping the album again shouldn't add its `_rangeforged` output
    - right-click an album → **Match songs to a track list…**: Last.fm's list, then a pasted one, and changing a row by hand
-2. **Show each song's output name in its row.** Once the names are right, the list could show the file each song will be written as (without the extension), with the original name on hover, so you can see the result before pressing Run. A small marker would show names that are only a guess from the file name.
-3. **Rename from the tags, as a File Strategy choice.** Today the single-file naming pattern lives in Settings and applies to every run. The idea is a visible choice next to the others: **Keep the original name** or **Rename from the tags**.
+   - the rows' new names: italic for a guess, the original name on hover
+2. **Rename from the tags, as a File Strategy choice.** Today the single-file naming pattern lives in Settings and applies to every run. The idea is a visible choice next to the others: **Keep the original name** or **Rename from the tags**.
    *To decide:* should it refuse (or at least warn) when a name is only a guess from the file name, so it never produces worse names than the originals? It also needs a check that two new files can't pick the same name in one run.
-4. **Channels control.** Choose how many channels the output has: original, stereo downmix, mono, maybe left-only or right-only for a broken rip.
+3. **Channels control.** Choose how many channels the output has: original, stereo downmix, mono, maybe left-only or right-only for a broken rip.
    *To decide first:* mixing 5.1 down to stereo changes more than a gain, which our "gain only" rule (D-12) doesn't cover. It needs its own decision, the way resampling got one.
-5. **Check the downsampling.** The sample rate and bit depth choices exist (44.1 to 192 kHz), but nobody has checked the quality yet: how it resamples, and that dropping 24-bit to 16-bit is dithered cleanly. A listening-free test (nulls and loudness checks) would settle it.
-6. **Remember hand edits between sessions.** Names and tags you edit are kept only until you close the program. They could be saved against the file.
+4. **Check the downsampling.** The sample rate and bit depth choices exist (44.1 to 192 kHz), but nobody has checked the quality yet: how it resamples, and that dropping 24-bit to 16-bit is dithered cleanly. A listening-free test (nulls and loudness checks) would settle it.
+5. **Remember hand edits between sessions.** Names and tags you edit are kept only until you close the program. They could be saved against the file.
 
 ---
 

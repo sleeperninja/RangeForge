@@ -323,3 +323,26 @@ test('the selected preset shows when it has been modified', () => {
   const html = Render.presetListHtml({ ...demo.presets, modified: true });
   assert.match(html, /iTunes Lossless <em>modified<\/em>/);
 });
+
+test('a renamed song shows its new name, with the original on hover and a guess in italics', () => {
+  const song = (extra) => ({ label: 'raw_name_001', included: true, saved: false, tags: [], identity: null, ...extra });
+  // Nothing to change: the row says what it always did.
+  const plain = Render.trackRowHtml(song({}), 'alac', 0, 0);
+  assert.match(plain, /<\/span>raw_name_001<\/td>/);
+  assert.doesNotMatch(plain, /class="guess"/);
+
+  // A new name replaces the label, and the original is on hover.
+  const renamed = Render.trackRowHtml(song({ output_name: 'Doves-Some Cities_01-Some Cities' }), 'alac', 0, 0);
+  assert.match(renamed, /<\/span>Doves-Some Cities_01-Some Cities<\/td>/);
+  assert.match(renamed, /title="Will be saved as: Doves-Some Cities_01-Some Cities\nOriginal: raw_name_001"/);
+  assert.doesNotMatch(renamed, /class="guess"/);
+
+  // A name that rests on a guess is italic and says so.
+  const guessed = Render.trackRowHtml(song({ output_name: 'X', output_guessed: true }), 'alac', 0, 0);
+  assert.match(guessed, /<span class="guess">X<\/span>/);
+  assert.match(guessed, /made from a guess at the names/);
+
+  // Names are escaped.
+  const risky = Render.trackRowHtml(song({ output_name: 'A <b> & "C"' }), 'alac', 0, 0);
+  assert.doesNotMatch(risky, /<b>/);
+});

@@ -14,6 +14,7 @@ use rangeforge_core::planner::{self, GainPlan, Measurement, PlanError, Target};
 use rangeforge_export::format::{BitDepth, Codec, Container, OutputFormat, SampleRate};
 use rangeforge_export::pipeline::TrackPlan;
 use rangeforge_export::strategy::Strategy;
+use rangeforge_export::template::NameValues;
 use rangeforge_lookup::billboard::Hot100;
 use rangeforge_lookup::lastfm::{self, ListedTrack, RawTag};
 use rangeforge_lookup::tagcache::Subject;
@@ -496,6 +497,25 @@ impl App {
             None => SongGenres::default(),
         };
         found.with_edits(&track.edits)
+    }
+
+    /// What a single file will be written as, without its extension, when the file name pattern
+    /// makes it something other than the file's own name. `None` for a song cut from a CUE
+    /// sheet (its label already is its name), and when the pattern leaves the name as it is.
+    /// This is the name the run will use: the same pattern and the same identity.
+    pub fn output_stem(&self, group: &Group, track: &TrackRow) -> Option<String> {
+        if !matches!(group.kind, Kind::SingleFile) {
+            return None;
+        }
+        let names = self.naming.templates().ok()?;
+        let values = match &track.identity {
+            Some(identity) => NameValues::from_identity(identity, &track.label),
+            None => NameValues {
+                name: Some(track.label.clone()),
+                ..NameValues::default()
+            },
+        };
+        Some(names.single.render(&values)).filter(|stem| !stem.is_empty() && *stem != track.label)
     }
 
     /// Whether the song carries the Radio tag: it charted, and nobody took the tag away.

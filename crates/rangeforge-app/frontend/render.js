@@ -55,6 +55,26 @@
 
   // What to say when the pointer rests on a song: who it is taken to be, and how that was
   // worked out. A guess from the file name is called one, since it can be wrong.
+  // What a song's row says: the name it will be written as (without the extension) when the file
+  // name pattern changes it, otherwise its own name. A name resting on a guess is in italics.
+  function nameHtml(track) {
+    if (!track.output_name) {
+      return esc(track.label);
+    }
+    const text = esc(track.output_name);
+    return track.output_guessed ? `<span class="guess">${text}</span>` : text;
+  }
+
+  // The hover text: where the new name comes from and the original name, then who the song is.
+  function nameTitle(track) {
+    const who = identityTitle(track.identity);
+    if (!track.output_name) {
+      return who;
+    }
+    const guess = track.output_guessed ? ' (made from a guess at the names)' : '';
+    return [`Will be saved as: ${track.output_name}${guess}`, `Original: ${track.label}`, who].filter(Boolean).join('\n');
+  }
+
   function identityTitle(identity) {
     if (!identity || (!identity.artist && !identity.title)) {
       return '';
@@ -90,8 +110,8 @@
     const checked = track.included ? ' checked' : '';
     return (
       `<tr class="${cls}" data-group="${groupIndex}" data-track="${trackIndex}">` +
-      `<td class="name" title="${esc(identityTitle(track.identity))}"><input type="checkbox" class="include" data-group="${groupIndex}" data-track="${trackIndex}"${checked} title="Include this song in the run">` +
-      `<span class="mark">${mark}</span>${esc(track.label)}</td>` +
+      `<td class="name" title="${esc(nameTitle(track))}"><input type="checkbox" class="include" data-group="${groupIndex}" data-track="${trackIndex}"${checked} title="Include this song in the run">` +
+      `<span class="mark">${mark}</span>${nameHtml(track)}</td>` +
       `<td class="codec">${esc(outputCodec)}</td>` +
       `<td class="num">${fixed(track.loudness_lufs, 2)}</td>` +
       `<td class="num">${fixed(track.true_peak_dbtp, 2)}</td>` +

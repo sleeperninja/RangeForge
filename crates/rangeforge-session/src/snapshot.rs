@@ -45,6 +45,12 @@ pub struct TrackView {
     pub tags: Vec<TagChip>,
     /// Who the song is, and how that was found out.
     pub identity: Option<IdentityView>,
+    /// What a single file will be written as, without its extension, when the file name
+    /// pattern makes that something other than its own name.
+    pub output_name: Option<String>,
+    /// That name rests on a guess from the file's name and folders, not on its tags or on
+    /// names typed in by the user.
+    pub output_guessed: bool,
 }
 
 /// Who a song is, for the window to show on hover.
@@ -303,14 +309,22 @@ fn chips(app: &App, track: &TrackRow) -> Vec<TagChip> {
     chips
 }
 
-fn track_view(app: &App, track: &TrackRow) -> TrackView {
+fn track_view(app: &App, group: &Group, track: &TrackRow) -> TrackView {
     let (adjust_db, limited, unadjustable) = match app.plan(track) {
         Some(Ok(plan)) => (finite(plan.gain_db), plan.limited_by_peak, false),
         Some(Err(_)) => (None, false, true),
         None => (None, false, false),
     };
+    let output_name = app.output_stem(group, track);
+    let output_guessed = output_name.is_some()
+        && track
+            .identity
+            .as_ref()
+            .is_some_and(|identity| identity.source == IdentitySource::FileName);
     TrackView {
         label: track.label.clone(),
+        output_name,
+        output_guessed,
         loudness_lufs: track.measurement.and_then(|m| finite(m.integrated_lufs)),
         true_peak_dbtp: track.measurement.and_then(|m| finite(m.true_peak_dbtp)),
         range_lu: track.measurement.and_then(|m| finite(m.loudness_range_lu)),
@@ -379,7 +393,7 @@ fn group_view(app: &App, index: usize, group: &Group) -> GroupView {
         tracks: group
             .tracks
             .iter()
-            .map(|track| track_view(app, track))
+            .map(|track| track_view(app, group, track))
             .collect(),
     }
 }
@@ -654,6 +668,74 @@ mod tests {
         assert!(!pending.unadjustable);
         // Everything must survive being turned into JSON.
         serde_json::to_string(&snapshot).unwrap();
+    }
+
+    #[test]
+    fn a_single_file_shows_the_name_the_pattern_will_give_it() {
+        use rangeforge_core::identify::Identity;
+        use std::path::Path;
+
+        let path = Path::new(
+            "/audio/Doves (lossless downloads from vinyls)/2005 - Some Cities/00724387460928_001_Doves_Some Cities_GBDGG0400080.m4a",
+        );
+        let label = "00724387460928_001_Doves_Some Cities_GBDGG0400080";
+        let single = Group {
+            name: format!("{label}.m4a"),
+            kind: Kind::SingleFile,
+            source_extension: "m4a".to_string(),
+            tracks: vec![TrackRow {
+                identity: Some(Identity::guess_from_path(path)),
+                ..track(label, Some(measured(-20.0, -3.0, 8.0)))
+            }],
+            status: Status::Done(Origin::Decoded),
+            run: RunState::Idle,
+        };
+        let mut app = App::new(vec![single], Vec::new(), Vec::new(), Settings::default());
+        let name = |app: &App| app.snapshot().groups[0].tracks[0].clone();
+
+        // The usual pattern keeps the file's own name, so there is nothing to show.
+        assert_eq!(name(&app).output_name, None);
+        assert!(!name(&app).output_guessed);
+
+        // A pattern from the tags shows the name the run will write, and says it is a guess
+        // while it rests on the file name.
+        app.set_naming(
+            "{track:02} - {title}",
+            "{artist}-{album}_{track:02}-{title}",
+        )
+        .unwrap();
+        let shown = name(&app);
+        assert_eq!(
+            shown.output_name.as_deref(),
+            Some("Doves-Some Cities_01-Some Cities")
+        );
+        assert!(shown.output_guessed);
+        assert_eq!(shown.label, label, "the original name is still known");
+
+        // Names typed in by hand are no guess.
+        let typed = crate::model::Names {
+            title: "Some Cities".to_string(),
+            artist: "Doves".to_string(),
+            album: "Some Cities".to_string(),
+            // Typing in something new is what makes it the user's own name; typing in what was
+            // already guessed changes nothing.
+            album_artist: "Doves".to_string(),
+        };
+        app.set_names(
+            &[crate::model::Pick {
+                group: 0,
+                track: Some(0),
+            }],
+            &typed,
+            true,
+        )
+        .unwrap();
+        assert!(!name(&app).output_guessed);
+        assert!(name(&app).output_name.is_some());
+
+        // A song cut from a CUE sheet keeps its label.
+        let cue = sample_app().snapshot();
+        assert!(cue.groups[0].tracks.iter().all(|t| t.output_name.is_none()));
     }
 
     #[test]

@@ -253,6 +253,7 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
 .count { opacity: 0.6; font-weight: normal; }
 tr.track.selected td { background: rgba(23, 105, 214, 0.16); }
 .chip.mine { color: #2e7d32; border-color: #2e7d32; }
+.name .guess { font-style: italic; }
 .chip-x { margin: 0 0 0 4px; padding: 0; border: 0; background: none; color: inherit; font-size: 12px; line-height: 1; opacity: 0.55; cursor: pointer; }
 .chip-x:hover { opacity: 1; }
 @media (prefers-color-scheme: dark) {
