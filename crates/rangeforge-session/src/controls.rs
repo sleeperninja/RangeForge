@@ -101,6 +101,10 @@ impl OutputSettings {
     /// Puts back to "original" any setting the codec cannot do, such as 192 kHz AAC. Returns
     /// true if something had to change.
     pub fn fit_to_codec(&mut self) -> bool {
+        // 32-bit float is WAV's alone.
+        if !self.bit_depth.fits(self.codec) {
+            self.bit_depth = BitDepth::Source;
+        }
         // A bitrate the codec does not offer becomes its usual one (320 for MP3).
         if !self.codec.is_lossless() && !self.codec.bitrates().contains(&self.bitrate) {
             self.bitrate = self.codec.default_bitrate();

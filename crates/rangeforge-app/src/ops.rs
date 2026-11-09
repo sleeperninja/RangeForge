@@ -242,8 +242,7 @@ pub fn set_flac_level(shared: &Shared, id: &str) -> Reply {
 pub fn set_bit_depth(shared: &Shared, id: &str) -> Reply {
     with_app(shared, |app| {
         let depth = BitDepth::from_name(id).ok_or_else(|| format!("Unknown bit depth {id:?}"))?;
-        app.set_bit_depth(depth);
-        Ok(())
+        app.set_bit_depth(depth)
     })
 }
 

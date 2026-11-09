@@ -38,6 +38,7 @@ These are the things on the plate, roughly in the order they make sense.
    - right-click an album or any song → **Album & track names…**: fix the album's names, get Last.fm's track list and then a pasted one, and change a row by hand; on a CUE album, check the written names and that the track numbers stay
    - the rows' new names: italic for a guess, the original name on hover
    - **Channels** and **Downmix** on a real 5.1 album: the table's loudness and peak change, the written files are stereo, and quad is refused for ALAC
+   - the new formats: **MP3**, **Opus** and the **Bitrate** and **Compression** pickers, controls dimming with an empty box when they do nothing, and **32-bit float** appearing for WAV only
 2. **Rename from the tags, as a File Strategy choice.** Today the single-file naming pattern lives in Settings and applies to every run. The idea is a visible choice next to the others: **Keep the original name** or **Rename from the tags**.
    *To decide:* should it refuse (or at least warn) when a name is only a guess from the file name, so it never produces worse names than the originals? It also needs a check that two new files can't pick the same name in one run.
 3. **Downsampling: checked, mostly good (D-37).** On real hi-res music (the Pink Floyd 24/96 six-channel files, and the DSD I Robot) the resampling is already clean: inaudibly close to a very-high-precision reference, no extra peaks, loudness exactly on target at every rate. A SoX-based resampler would give a steeper edge and make the DSD stage about three times faster, at a gain no one can hear. *To decide:* whether that is worth the bundling work. The small dither fix is in.
@@ -51,6 +52,8 @@ These are the things on the plate, roughly in the order they make sense.
 - **`--json` output and a simple HTML report** from the terminal tool.
 - **Multichannel loudness** (4 to 8 channels), FLAC for Plex, and DSD/MLP input, aimed at the 206 GB surround collection.
 - **Use each song's length when lining songs up with a track list.** Last.fm gives the length of most tracks, which would be a good check for bonus tracks and odd editions. The measurements need to carry the length first.
+- **A "will clip" mark** on songs that a whole-number format (16/24-bit, FLAC, ALAC) would clip when Peak Protection is off, so it never happens silently. 32-bit float WAV keeps those peaks (D-41).
+- **An opt-in limiter** for the songs peak protection holds below the target (D-36). Designed, not built.
 - **Say on a file's row when it cannot be mixed** (more than six channels, or already fewer): it is written as it is, with no note yet.
 - **A CPU limit** in Settings, so a big batch doesn't take over the machine.
 - **Signing the installers.** Right now Windows says the publisher is unknown, and the Mac needs the right-click → Open dance. Also the first real run of the installer build on GitHub (the docs say it hasn't run yet).

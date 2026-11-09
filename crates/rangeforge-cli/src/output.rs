@@ -41,6 +41,9 @@ enum BitDepthArg {
     Sixteen,
     #[value(name = "24")]
     TwentyFour,
+    /// 32-bit floating point (WAV only): peaks above 0 dB are kept
+    #[value(name = "32f")]
+    Float32,
 }
 
 impl From<BitDepthArg> for BitDepth {
@@ -49,6 +52,7 @@ impl From<BitDepthArg> for BitDepth {
             BitDepthArg::Source => Self::Source,
             BitDepthArg::Sixteen => Self::Sixteen,
             BitDepthArg::TwentyFour => Self::TwentyFour,
+            BitDepthArg::Float32 => Self::Float32,
         }
     }
 }
@@ -255,6 +259,12 @@ impl OutputArgs {
                     )
                 });
             }
+        }
+        if !settings.bit_depth.fits(settings.codec) {
+            return Some(format!(
+                "{} cannot be written as 32-bit float: use wav, or another --bit-depth",
+                settings.codec.name()
+            ));
         }
         let hz = settings.sample_rate.hz()?;
         (!settings.codec.supports_rate(hz)).then(|| {

@@ -44,6 +44,16 @@ I checked this on real music, not only on test tones (D-37): on the Pink Floyd 2
 
 AAC, MP3 and Opus have a **Bitrate** picker. For MP3 it includes LAME's variable-rate steps (V0 best, V4 smallest) placed where their average rate falls among the steady ones, with 320 kbps second best and V0 on top; nothing below 128 kbps is offered. Opus is variable-rate already, so its numbers are targets, and it is always written at 48 kHz, which is the only rate it has. MP3 stops at 48 kHz and AAC at 96 kHz. Lossy files are never dithered, and the one gain is still applied before the encoder. FLAC has a **Compression** level, 0 (largest) to 8 (smallest), 5 to begin with; it changes the size and the time, never the sound. Controls that do nothing for the chosen combination are dimmed and left in place.
 
+### Peaks above 0 dB (built, D-41)
+
+With Peak Protection on, nothing is ever pushed past the ceiling, so this question does not come up. With it **off**, a gain can carry the loudest moments past full scale (0 dB). What happens to them depends on the file, and it was measured, not assumed: a tone at +4 dB was written in every format and read back.
+
+- **16-bit and 24-bit WAV, FLAC and ALAC: clipped.** These store whole numbers, and the largest whole number is full scale. Anything above it is flattened to 0 dB, and that is permanent.
+- **32-bit float WAV: kept exactly.** Floating-point samples have no ceiling at 0 dB, so the peak read back at +4.0 dB, as written. This is the only format where the whole waveform survives. Lower the volume later, in any editor that reads float, and the peaks are still there, which is what makes it useful for soundtrack assets and anything that will be mixed again. It is WAV's alone: FLAC and ALAC are whole-number formats by design. Choose it with **Bit Depth: 32-bit float** (the choice only appears for WAV).
+- **MP3, AAC and Opus: the file holds them, but nobody can promise the player does.** These encoders take floating-point sound, so nothing is clipped on the way in, and the files read back with peaks of +3.7 dB (MP3), +4.1 dB (AAC) and +4.2 dB (Opus). That is a fact about the file and not a feature to rely on. The format has already thrown away a large share of the original data, so keeping a few peaks above 0 dB preserves very little that was not already gone, and the encoder adds a little overshoot of its own. What is heard depends on what the player does next: one that decodes to floating point and applies its volume control before output plays them; one that decodes to 16-bit whole numbers clips them flat. There is no way to know which is in use. So with protection off, a lossy file may or may not clip when played, and the safe assumption is that it will.
+
+In short: if peaks above 0 dB matter, write 32-bit float WAV. For anything else, leave Peak Protection on.
+
 ### Bit depth and dither (built)
 
 Going to 16 bits means rounding, and plain rounding adds a faint distortion that follows the music. Triangular dither replaces it with a steady, very quiet noise instead. So the program dithers whenever it has changed the signal and is writing 16 bits: a gain, a drop from 24 bits, a new sample rate, or a channel mix. A file left untouched at 0 dB is never dithered, so it stays bit-exact. 24-bit output needs no dither (D-15).

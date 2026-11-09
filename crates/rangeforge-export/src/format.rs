@@ -349,11 +349,19 @@ pub enum BitDepth {
     Source,
     Sixteen,
     TwentyFour,
+    /// 32-bit floating point, WAV only. Whole-number samples stop at full scale; floating
+    /// point does not, so peaks above 0 dB are kept (decision D-41).
+    Float32,
 }
 
 impl BitDepth {
     /// Every choice, in the order a picker shows them.
-    pub const ALL: [Self; 3] = [Self::Source, Self::Sixteen, Self::TwentyFour];
+    pub const ALL: [Self; 4] = [Self::Source, Self::Sixteen, Self::TwentyFour, Self::Float32];
+
+    /// Whether `codec` can be written at this depth. Only WAV can be written as 32-bit float.
+    pub fn fits(self, codec: Codec) -> bool {
+        self != Self::Float32 || codec == Codec::Wav
+    }
 
     /// The name used in saved settings and on the command line: `source`, `16` or `24`.
     pub fn name(self) -> &'static str {
@@ -361,6 +369,7 @@ impl BitDepth {
             Self::Source => "source",
             Self::Sixteen => "16",
             Self::TwentyFour => "24",
+            Self::Float32 => "32f",
         }
     }
 
@@ -370,6 +379,7 @@ impl BitDepth {
             Self::Source => "source",
             Self::Sixteen => "16-bit",
             Self::TwentyFour => "24-bit",
+            Self::Float32 => "32-bit float",
         }
     }
 
@@ -467,6 +477,8 @@ impl OutputFormat {
         match self.bit_depth {
             BitDepth::Sixteen => 16,
             BitDepth::TwentyFour => 24,
+            BitDepth::Float32 if self.codec == Codec::Wav => 32,
+            BitDepth::Float32 => 24,
             BitDepth::Source => match source_bits {
                 Some(bits) if bits > 16 => 24,
                 _ => 16,
@@ -515,6 +527,7 @@ impl OutputFormat {
                 args.push(self.flac_level.min(8).to_string());
                 args
             }
+            Codec::Wav if bits > 24 => strings(&["-c:a", "pcm_f32le"]),
             Codec::Wav => strings(&["-c:a", if wide { "pcm_s24le" } else { "pcm_s16le" }]),
             Codec::Aac => self.lossy_args("aac"),
             Codec::Mp3 => self.lossy_args("libmp3lame"),
@@ -549,6 +562,7 @@ impl OutputFormat {
             (Codec::Alac, false) => "s16p",
             (Codec::Alac, true) => "s32p",
             (Codec::Flac | Codec::Wav, false) => "s16",
+            (Codec::Wav, true) if bits > 24 => "flt",
             (Codec::Flac | Codec::Wav, true) => "s32",
             (Codec::Aac | Codec::Mp3, _) => "fltp",
             (Codec::Opus, _) => "flt",
@@ -642,6 +656,34 @@ mod tests {
             None,
             "original means leave it"
         );
+    }
+
+    #[test]
+    fn wav_can_be_32_bit_float_and_nothing_else_can() {
+        let wav = OutputFormat::new(Codec::Wav, BitDepth::Float32);
+        assert_eq!(wav.resolved_bits(Some(16)), 32);
+        assert_eq!(wav.encoder_args(32), ["-c:a", "pcm_f32le"]);
+        assert_eq!(wav.sample_format(32), "flt");
+        assert!(
+            !wav.needs_dither(Some(16), -3.0, true),
+            "float is never dithered"
+        );
+        for codec in [
+            Codec::Alac,
+            Codec::Flac,
+            Codec::Aac,
+            Codec::Mp3,
+            Codec::Opus,
+        ] {
+            assert!(!BitDepth::Float32.fits(codec), "{codec:?}");
+            assert_eq!(
+                OutputFormat::new(codec, BitDepth::Float32).resolved_bits(None),
+                24
+            );
+        }
+        assert!(BitDepth::Float32.fits(Codec::Wav) && BitDepth::Sixteen.fits(Codec::Flac));
+        assert_eq!(BitDepth::from_name("32f"), Some(BitDepth::Float32));
+        assert_eq!(BitDepth::Float32.label(), "32-bit float");
     }
 
     #[test]

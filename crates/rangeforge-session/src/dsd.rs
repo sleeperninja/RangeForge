@@ -70,7 +70,8 @@ impl DsdFormat {
         let codec = self.codec.unwrap_or(main.codec);
         let bit_depth = match main.bit_depth {
             BitDepth::Source => self.bit_depth,
-            named => named,
+            named if named.fits(codec) => named,
+            _ => self.bit_depth,
         };
         let mut sample_rate = match main.sample_rate {
             SampleRate::Original => self.sample_rate,

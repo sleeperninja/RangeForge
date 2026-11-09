@@ -36,5 +36,5 @@ See [04-decisions.md](04-decisions.md) for anything marked Parked.
 - **Check the resampling and the 24 to 16 bit dither** against a null or loudness test.
 - **Guess genre from the audio itself** (see D-32).
 - **Right-click copy** of table text, and a highlight on an album heading when all its songs are picked.
-- A note on a file's row when it cannot be mixed, and a Settings CPU limit (not built).
+- A note on a file's row when it cannot be mixed, a "will clip" mark for whole-number formats with Peak Protection off (D-41), and a Settings CPU limit (not built).
 - **Opt-in limiter** for songs peak protection holds back (D-36); gain-only stays the default.

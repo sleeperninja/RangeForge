@@ -1390,8 +1390,17 @@ impl App {
         Ok(())
     }
 
-    pub fn set_bit_depth(&mut self, depth: BitDepth) {
+    /// Sets the bit depth, or says why the codec cannot write it (32-bit float is WAV's alone).
+    pub fn set_bit_depth(&mut self, depth: BitDepth) -> Result<(), String> {
+        if !depth.fits(self.output.codec) {
+            return Err(format!(
+                "{} cannot be written as {}; only WAV can",
+                self.output.codec.name(),
+                depth.label()
+            ));
+        }
         self.output.bit_depth = depth;
+        Ok(())
     }
 
     pub fn set_container(&mut self, container: Container) {
@@ -2433,7 +2442,7 @@ mod tests {
         );
 
         app.set_codec(Codec::Wav).unwrap();
-        app.set_bit_depth(BitDepth::TwentyFour);
+        app.set_bit_depth(BitDepth::TwentyFour).unwrap();
         assert_eq!(
             (app.output.codec, app.output.bit_depth),
             (Codec::Wav, BitDepth::TwentyFour)

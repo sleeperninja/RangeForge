@@ -485,6 +485,7 @@ fn options(output: OutputSettings) -> Options {
             .collect(),
         bit_depths: BitDepth::ALL
             .into_iter()
+            .filter(|depth| depth.fits(output.codec))
             .map(|depth| Choice {
                 id: depth.name().to_string(),
                 label: depth.label().to_string(),
@@ -956,6 +957,28 @@ FILE \"in.flac\" WAVE
         assert_eq!(snapshot.strategy.problem, None);
         assert!(!snapshot.strategy.needs_confirmation);
         assert_eq!(snapshot.log, ["Added x"]);
+    }
+
+    #[test]
+    fn thirty_two_bit_float_is_offered_for_wav_alone() {
+        let mut app = sample_app();
+        let depths = |app: &App| {
+            app.snapshot()
+                .options
+                .bit_depths
+                .iter()
+                .map(|c| c.id.clone())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(depths(&app), ["source", "16", "24"]);
+        app.set_codec(Codec::Wav).unwrap();
+        assert_eq!(depths(&app), ["source", "16", "24", "32f"]);
+        app.set_bit_depth(BitDepth::Float32).unwrap();
+        assert_eq!(app.snapshot().output.bit_depth, "32f");
+        // Another codec refuses it, and leaving WAV puts the depth back to the source's.
+        app.set_codec(Codec::Flac).unwrap();
+        assert_eq!(app.snapshot().output.bit_depth, "source");
+        assert!(app.set_bit_depth(BitDepth::Float32).is_err());
     }
 
     #[test]

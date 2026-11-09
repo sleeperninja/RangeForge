@@ -699,6 +699,47 @@ fn mp3_refuses_a_file_with_more_than_two_channels_and_says_what_to_do() {
 }
 
 #[test]
+fn float_wav_keeps_peaks_above_full_scale_and_whole_number_files_clip_them() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let (dir, input) = with_source("in.wav", 1, 200);
+    let (_, original) = decode_all(&input);
+    let peak = |samples: &[f32]| samples.iter().fold(0.0_f32, |p, s| p.max(s.abs()));
+    let before = peak(&original);
+    assert!(before < 0.7, "the source peaks at {before}");
+
+    // +6 dB is about twice the level: past full scale.
+    let mut peaks = Vec::new();
+    for (depth, name) in [(BitDepth::Float32, "float"), (BitDepth::TwentyFour, "int")] {
+        let opts = Options {
+            format: OutputFormat::new(Codec::Wav, depth),
+            strategy: serialize(),
+            directory: dir.path().to_path_buf(),
+            copy_source_tags: false,
+            mix: MixPlan::default(),
+        };
+        let written = export_whole(&ffmpeg, &input, plan(6.0, name), &opts).unwrap();
+        let (info, samples) = decode_all(&written[0].path);
+        assert_eq!(info.sample_rate, 44_100);
+        peaks.push(peak(&samples));
+    }
+    let expected = before * 10_f32.powf(6.0 / 20.0);
+    assert!(
+        expected > 1.1,
+        "the test needs to go past full scale: {expected}"
+    );
+    assert!(
+        (peaks[0] - expected).abs() < 1e-3,
+        "float keeps the peak: {} against {expected}",
+        peaks[0]
+    );
+    assert!(
+        peaks[1] <= 1.0,
+        "24-bit whole numbers stop at full scale: {}",
+        peaks[1]
+    );
+}
+
+#[test]
 fn opus_and_aac_carry_five_point_one_and_quad() {
     let Some(ffmpeg) = ffmpeg() else { return };
     let dir = tempdir().unwrap();
