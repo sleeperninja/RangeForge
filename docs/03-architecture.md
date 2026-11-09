@@ -56,6 +56,8 @@ Third, an optional **delete the original**, off by default. It happens last, aft
 
 **Volume and quality.** Volume change is a single gain per song, applied to the sound in memory before it is encoded, so the dynamics are untouched. A song exported at 0 dB is sample for sample identical to its source. When a gain forces 16-bit audio between its steps, a tiny amount of triangular dither is used instead of plain rounding, which trades a faint distortion for a steady noise about 96 dB down. Audio kept at 0 dB is never dithered, so it stays exact. Audio written at 24 bits needs no dither.
 
+**Planned: conversions and limiting.** Resampling, a drop in bit depth and mixing channels are format conversions, not volume work, so they are allowed alongside the gain-only rule (D-35). The order will be convert, measure the converted sound, apply the one gain, encode: a channel mix changes the loudness and raises the peaks, so the gain and the true-peak ceiling must be worked out on the mixed signal, and that measurement is cached under its own key. Gain-only stays the default. A limiter would only ever be an opt-in that touches the songs peak protection would otherwise hold below the target, and it would report each song it touched (D-36). Neither is built yet.
+
 **Tags.** CUE albums get title, artist, album, album artist, track number and total, genre and date from the CUE sheet. A single file keeps the tags it already has, with anything we set on top.
 
 ## The parts

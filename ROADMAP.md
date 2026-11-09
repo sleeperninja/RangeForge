@@ -1,6 +1,6 @@
 # RangeForge Roadmap
 
-*The friendly version: what works, what's next, and what we've decided not to do. Updated 9 Nov 2026, at version 0.3.1.*
+*The friendly version: what works, what's next, and what we've decided not to do. Updated 9 Nov 2026, at version 0.4.0.*
 
 The detailed phase list, with the technical wording, lives in [docs/05-roadmap.md](docs/05-roadmap.md) and the reasons behind every decision are in [docs/04-decisions.md](docs/04-decisions.md). This page is the one to read over coffee.
 
@@ -15,7 +15,7 @@ RangeForge does its main job today. Drop in an album or a pile of files, and it 
 - **Measure once, show a table.** Loudness, true peak and range, cached on disk so dropping the same album again is instant.
 - **Change the target volume** and the table updates straight away.
 - **Split CUE albums** into songs, and write ALAC, FLAC, WAV or AAC (plus DSD handled through FFmpeg).
-- **One gain per song, nothing else.** No compression or limiting, and never past the true-peak ceiling.
+- **One gain per song, nothing else.** No compression or limiting, and never past the true-peak ceiling. (That rule is about dynamics: converting sample rate, bit depth or channels is a different thing, and the rules for it are written down, D-35.)
 - **File Strategy:** next to the original, in a subfolder you name, or all in one folder. Numbering, renaming the old file, or overwriting when a name is taken, and optionally deleting the original once everything is safely written.
 - **Names from patterns,** for CUE tracks and for single files (`{artist}-{album}_{track:02}-{title}` and friends).
 - **Tags:** read from the file, the CUE sheet, or guessed from the file and folder names (including the long vinyl-download names, like the Doves ones). Edit names and tags by hand: one dialog, **Album & track names…**, for the artist, album, album artist and each song's title; **Add a tag…** for tags. For a CUE album the split points and track numbers stay the rip's, and the names you type replace the sheet's.
@@ -38,8 +38,8 @@ These are the things on the plate, roughly in the order they make sense.
    - the rows' new names: italic for a guess, the original name on hover
 2. **Rename from the tags, as a File Strategy choice.** Today the single-file naming pattern lives in Settings and applies to every run. The idea is a visible choice next to the others: **Keep the original name** or **Rename from the tags**.
    *To decide:* should it refuse (or at least warn) when a name is only a guess from the file name, so it never produces worse names than the originals? It also needs a check that two new files can't pick the same name in one run.
-3. **Channels control.** Choose how many channels the output has: original, stereo downmix, mono, maybe left-only or right-only for a broken rip.
-   *To decide first:* mixing 5.1 down to stereo changes more than a gain, which our "gain only" rule (D-12) doesn't cover. It needs its own decision, the way resampling got one.
+3. **Channels control.** Choose how many channels the output has: original, stereo downmix, mono, maybe left-only or right-only for a broken rip. The rule is now written down (D-35): conversions are allowed, and the one gain is worked out on the converted sound, because a downmix changes the loudness and raises the peaks.
+   *Still to decide:* the downmix recipe. The starting point is the standard ITU-style one (centre and surrounds at -3 dB, LFE dropped), and the open questions are an LFE variant, a Dolby-style matrix, and how a 4-channel file is mapped.
 4. **Check the downsampling.** The sample rate and bit depth choices exist (44.1 to 192 kHz), but nobody has checked the quality yet: how it resamples, and that dropping 24-bit to 16-bit is dithered cleanly. A listening-free test (nulls and loudness checks) would settle it.
 5. **Remember hand edits between sessions.** Names and tags you edit are kept only until you close the program. They could be saved against the file.
 
@@ -64,7 +64,7 @@ These are the things on the plate, roughly in the order they make sense.
 Not forgotten, just not now.
 
 - **Guess genre from the sound itself.** The only idea that could actually *hear* the reggae in "D'yer Mak'er" without any website. Bigger to build and less certain, so it waits.
-- **Peaks above 0 dBFS, and reaching a loudness target without losing peaks.** To be discussed together with any compression, if that ever comes up.
+- **Peak-preserving loudness, as an opt-in.** Gain-only stays the default (D-12). If it is ever built, an optional switch would let a transparent limiter act only on songs that peak protection would otherwise hold below the target, only as much as needed, and tell you exactly which songs it touched (D-36). Peaks above 0 dBFS and clipped files are a separate item (D-17).
 - **Dolby Digital Plus output,** once the encoder support is there.
 - **Beginner and intermediate UI modes.** One expert layout for now.
 - **The name "RangeForge."** Worth a second thought before anything goes public, in case it's too close to another audio product.
