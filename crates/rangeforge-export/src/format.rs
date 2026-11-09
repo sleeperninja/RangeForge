@@ -476,9 +476,8 @@ impl OutputFormat {
     pub fn resolved_bits(self, source_bits: Option<u32>) -> u32 {
         match self.bit_depth {
             BitDepth::Sixteen => 16,
-            BitDepth::TwentyFour => 24,
             BitDepth::Float32 if self.codec == Codec::Wav => 32,
-            BitDepth::Float32 => 24,
+            BitDepth::TwentyFour | BitDepth::Float32 => 24,
             BitDepth::Source => match source_bits {
                 Some(bits) if bits > 16 => 24,
                 _ => 16,

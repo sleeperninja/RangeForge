@@ -127,7 +127,11 @@ impl OutputSettings {
     }
 
     pub fn cycle_bit_depth(&mut self, steps: i32) {
-        self.bit_depth = cycle(&BitDepth::ALL, self.bit_depth, steps);
+        let offered: Vec<BitDepth> = BitDepth::ALL
+            .into_iter()
+            .filter(|depth| depth.fits(self.codec))
+            .collect();
+        self.bit_depth = cycle(&offered, self.bit_depth, steps);
     }
 
     pub fn cycle_container(&mut self, steps: i32) {
