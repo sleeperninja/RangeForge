@@ -162,8 +162,6 @@
     fillSelect($('bitDepth'), lossy ? nothing : s.options.bit_depths, lossy ? '' : s.output.bit_depth);
     $('bitDepth').disabled = lossy;
     $('sampleRate').disabled = s.options.sample_rates.length === 1;
-    fillSelect($('dsdCodec'), s.options.dsd_codecs, s.dsd.codec);
-    fillSelect($('dsdContainer'), s.options.dsd_containers, s.dsd.container);
     fillSelect($('dsdSampleRate'), s.options.dsd_sample_rates, s.dsd.sample_rate);
     fillSelect($('dsdBitDepth'), s.options.dsd_bit_depths, s.dsd.bit_depth);
     $('confirmFirst').checked = s.strategy.confirm_first;
@@ -618,8 +616,6 @@
     $('bitDepth').addEventListener('change', (e) => call('set_bit_depth', { id: e.target.value }));
     $('container').addEventListener('change', (e) => call('set_container', { id: e.target.value }));
     for (const [id, field] of [
-      ['dsdCodec', 'codec'],
-      ['dsdContainer', 'container'],
       ['dsdSampleRate', 'sample_rate'],
       ['dsdBitDepth', 'bit_depth'],
     ]) {

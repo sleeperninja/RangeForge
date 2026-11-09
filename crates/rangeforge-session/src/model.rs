@@ -472,16 +472,6 @@ impl App {
         }
     }
 
-    /// Chooses the codec DSD files are written in, or `None` to follow the Output Format.
-    pub fn set_dsd_codec(&mut self, codec: Option<Codec>) {
-        self.dsd.codec = codec;
-    }
-
-    /// Likewise for the container.
-    pub fn set_dsd_container(&mut self, container: Option<Container>) {
-        self.dsd.container = container;
-    }
-
     /// Chooses the sample rate DSD files get when the Output Format says original.
     pub fn set_dsd_sample_rate(&mut self, rate: SampleRate) -> Result<(), String> {
         self.dsd.set_sample_rate(rate)

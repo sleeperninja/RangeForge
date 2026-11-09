@@ -291,41 +291,17 @@ pub fn set_downmix(shared: &Shared, id: &str) -> (Reply, Vec<Job>) {
     (reply(shared, &mut app, error), jobs)
 }
 
-/// Sets one part of the DSD Format: `codec`, `container`, `sample_rate` or `bit_depth`. For the
-/// first two, `same` follows the main Output Format.
+/// Sets one part of the DSD Format: `sample_rate` or `bit_depth` (the codec and the rest follow
+/// the main Output Format).
 pub fn set_dsd_format(shared: &Shared, field: &str, id: &str) -> Reply {
-    with_app(shared, |app| {
-        let same = id == "same";
-        match field {
-            "codec" => {
-                let codec = if same {
-                    None
-                } else {
-                    Some(Codec::from_name(id).ok_or_else(|| format!("Unknown codec {id:?}"))?)
-                };
-                app.set_dsd_codec(codec);
-                Ok(())
-            }
-            "container" => {
-                let container = if same {
-                    None
-                } else {
-                    Some(
-                        Container::from_name(id)
-                            .ok_or_else(|| format!("Unknown container {id:?}"))?,
-                    )
-                };
-                app.set_dsd_container(container);
-                Ok(())
-            }
-            "sample_rate" => app.set_dsd_sample_rate(
-                SampleRate::from_name(id).ok_or_else(|| format!("Unknown sample rate {id:?}"))?,
-            ),
-            "bit_depth" => app.set_dsd_bit_depth(
-                BitDepth::from_name(id).ok_or_else(|| format!("Unknown bit depth {id:?}"))?,
-            ),
-            other => Err(format!("Unknown DSD setting {other:?}")),
-        }
+    with_app(shared, |app| match field {
+        "sample_rate" => app.set_dsd_sample_rate(
+            SampleRate::from_name(id).ok_or_else(|| format!("Unknown sample rate {id:?}"))?,
+        ),
+        "bit_depth" => app.set_dsd_bit_depth(
+            BitDepth::from_name(id).ok_or_else(|| format!("Unknown bit depth {id:?}"))?,
+        ),
+        other => Err(format!("Unknown DSD setting {other:?}")),
     })
 }
 
@@ -1987,8 +1963,6 @@ mod tests {
         let shared = shared_with_presets(dir.path());
         assert_eq!(set_dsd_format(&shared, "sample_rate", "176400").error, None);
         assert_eq!(set_dsd_format(&shared, "bit_depth", "16").error, None);
-        assert_eq!(set_dsd_format(&shared, "codec", "flac").error, None);
-        assert_eq!(set_dsd_format(&shared, "container", "mka").error, None);
         set_place(&shared, "subfolder");
         set_place_text(&shared, "Balanced".to_string());
         set_conflict(&shared, "overwrite");
@@ -1999,8 +1973,6 @@ mod tests {
         let snapshot = state(&again).state;
         assert_eq!(snapshot.dsd.sample_rate, "176400");
         assert_eq!(snapshot.dsd.bit_depth, "16");
-        assert_eq!(snapshot.dsd.codec, "flac");
-        assert_eq!(snapshot.dsd.container, "mka");
         assert_eq!(snapshot.strategy.place, "subfolder");
         assert_eq!(snapshot.strategy.subfolder, "Balanced");
         assert_eq!(snapshot.strategy.conflict, "overwrite");
@@ -2061,7 +2033,10 @@ mod tests {
                 .error
                 .is_some()
         );
-        assert!(set_dsd_format(&shared, "codec", "ogg").error.is_some());
+        assert!(
+            set_dsd_format(&shared, "codec", "flac").error.is_some(),
+            "the codec is the main format's"
+        );
         assert!(set_dsd_format(&shared, "volume", "11").error.is_some());
         let snapshot = state(&shared).state;
         assert_eq!(snapshot.dsd.sample_rate, "88200");

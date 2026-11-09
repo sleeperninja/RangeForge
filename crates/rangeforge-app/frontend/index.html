@@ -145,10 +145,8 @@
     <ul id="variableList" class="variables"></ul>
 
     <h4 class="section">DSD Format</h4>
-    <p class="hint">DSD files cannot be written as they are. This is what they become where the Output Format says original or source. Whatever the Output Format names itself is used as it is. Channels are kept. These apply as soon as you change them.</p>
+    <p class="hint">DSD files cannot be written as they are. They are written in the Output Format you chose (codec, container, bitrate, compression, channels and downmix). Only these two are kept here: the sample rate and bit depth to use where the Output Format says source. Each is used on its own, and an Output Format that names one keeps it. These apply as soon as you change them.</p>
     <div class="dsd-grid">
-      <label>Codec <select id="dsdCodec"></select></label>
-      <label>Container <select id="dsdContainer"></select></label>
       <label>Sample Rate <select id="dsdSampleRate"></select></label>
       <label>Bit Depth <select id="dsdBitDepth"></select></label>
     </div>

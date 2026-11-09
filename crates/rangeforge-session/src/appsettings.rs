@@ -127,11 +127,11 @@ impl StoredStrategy {
     }
 }
 
-/// The DSD Format as written in the file. `same` means "whatever the main format says".
+/// The DSD Format as written in the file: the sample rate and bit depth to use where the main
+/// Output Format says source. (An older file may also hold a codec and a container; they are
+/// ignored, since DSD follows the main Output Format for those.)
 #[derive(Debug, Serialize, Deserialize)]
 struct StoredDsd {
-    codec: String,
-    container: String,
     sample_rate: String,
     bit_depth: String,
 }
@@ -139,8 +139,6 @@ struct StoredDsd {
 impl StoredDsd {
     fn from(dsd: DsdFormat) -> Self {
         Self {
-            codec: dsd.codec.map_or("same", Codec::name).to_string(),
-            container: dsd.container.map_or("same", Container::name).to_string(),
             sample_rate: dsd.sample_rate.name().to_string(),
             bit_depth: dsd.bit_depth.name().to_string(),
         }
@@ -152,22 +150,6 @@ impl StoredDsd {
             notes.push(format!(
                 "Unknown saved DSD {what} {text:?}; using the default"
             ));
-        };
-        let codec = if self.codec == "same" {
-            None
-        } else {
-            Codec::from_name(&self.codec).or_else(|| {
-                note("codec", &self.codec);
-                None
-            })
-        };
-        let container = if self.container == "same" {
-            None
-        } else {
-            Container::from_name(&self.container).or_else(|| {
-                note("container", &self.container);
-                None
-            })
         };
         let sample_rate = SampleRate::from_name(&self.sample_rate)
             .filter(|rate| *rate != SampleRate::Original)
@@ -182,8 +164,6 @@ impl StoredDsd {
                 defaults.bit_depth
             });
         DsdFormat {
-            codec,
-            container,
             sample_rate,
             bit_depth,
         }
@@ -501,8 +481,6 @@ mod tests {
             },
             confirm_destructive: false,
             dsd: DsdFormat {
-                codec: Some(Codec::Flac),
-                container: Some(Container::Mka),
                 sample_rate: SampleRate::Hz176400,
                 bit_depth: BitDepth::Sixteen,
             },
@@ -520,6 +498,22 @@ mod tests {
             },
             volume: Settings::new(-18.5, false, -1.2),
         }
+    }
+
+    #[test]
+    fn an_older_file_with_a_dsd_codec_and_container_still_loads_and_they_are_ignored() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        fs::write(
+            &path,
+            r#"{"version": 1, "album_name": "{title}", "single_name": "{name}",
+                "dsd_format": {"codec": "flac", "container": "mka", "sample_rate": "176400", "bit_depth": "16"}}"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.settings.dsd.sample_rate, SampleRate::Hz176400);
+        assert_eq!(loaded.settings.dsd.bit_depth, BitDepth::Sixteen);
+        assert!(loaded.notes.is_empty(), "{:?}", loaded.notes);
     }
 
     #[test]

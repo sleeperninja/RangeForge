@@ -49,7 +49,7 @@
     "conflict": "number", "number_suffix": "_00", "old_suffix": "_old",
     "delete_original": false, "problem": null, "needs_confirmation": false, "confirm_first": true
   },
-  "dsd": {"codec": "same", "container": "same", "sample_rate": "88200", "bit_depth": "24"},
+  "dsd": {"sample_rate": "88200", "bit_depth": "24"},
   "presets": {"names": ["iTunes Lossy", "iTunes Lossless", "CD Quality", "Flac HD Multi", "ALAC Multi"], "selected": 1, "modified": false, "can_save": false, "can_delete": true},
   "metadata": {"enabled": true, "lastfm_enabled": false, "lastfm_key": "saved", "radio_songs": 32763},
   "naming": {
@@ -78,8 +78,6 @@
     "downmixes": [{"id": "standard", "label": "Standard"}, {"id": "bass", "label": "Standard + bass"}, {"id": "front", "label": "Front pair only"}],
     "places": [],
     "conflicts": [],
-    "dsd_codecs": [{"id": "same", "label": "Same as Output Format"}, {"id": "alac", "label": "alac"}, {"id": "flac", "label": "flac"}, {"id": "wav", "label": "wav"}, {"id": "aac", "label": "aac"}],
-    "dsd_containers": [{"id": "same", "label": "Same as Output Format"}, {"id": "native", "label": "Native (m4a, flac or wav)"}, {"id": "mka", "label": "mka"}],
     "dsd_sample_rates": [{"id": "44100", "label": "44.1 kHz"}, {"id": "48000", "label": "48 kHz"}, {"id": "88200", "label": "88.2 kHz"}, {"id": "96000", "label": "96 kHz"}, {"id": "176400", "label": "176.4 kHz"}, {"id": "192000", "label": "192 kHz"}],
     "dsd_bit_depths": [{"id": "16", "label": "16-bit"}, {"id": "24", "label": "24-bit"}]
   },

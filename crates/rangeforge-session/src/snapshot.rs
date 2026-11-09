@@ -158,11 +158,10 @@ pub struct StrategyView {
     pub confirm_first: bool,
 }
 
-/// What DSD files are written as. `same` means "whatever the Output Format says".
+/// What DSD files fall back to where the Output Format says source. Everything else about a DSD
+/// file follows the Output Format.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DsdView {
-    pub codec: String,
-    pub container: String,
     pub sample_rate: String,
     pub bit_depth: String,
 }
@@ -228,8 +227,6 @@ pub struct Options {
     pub places: Vec<Choice>,
     pub conflicts: Vec<Choice>,
     /// For the DSD Format: the Output Format's own choice, or a codec of its own.
-    pub dsd_codecs: Vec<Choice>,
-    pub dsd_containers: Vec<Choice>,
     /// Real rates only: DSD has no original rate to keep.
     pub dsd_sample_rates: Vec<Choice>,
     pub dsd_bit_depths: Vec<Choice>,
@@ -508,26 +505,6 @@ fn options(output: OutputSettings) -> Options {
                 label: kind.label().to_string(),
             })
             .collect(),
-        dsd_codecs: same_as_output()
-            .into_iter()
-            .chain(Codec::ALL.into_iter().map(|codec| Choice {
-                id: codec.name().to_string(),
-                label: codec.name().to_string(),
-            }))
-            .collect(),
-        dsd_containers: same_as_output()
-            .into_iter()
-            .chain([
-                Choice {
-                    id: Container::Native.name().to_string(),
-                    label: "Native (m4a, flac or wav)".to_string(),
-                },
-                Choice {
-                    id: Container::Mka.name().to_string(),
-                    label: "mka".to_string(),
-                },
-            ])
-            .collect(),
         dsd_sample_rates: DsdFormat::SAMPLE_RATES
             .into_iter()
             .map(|rate| Choice {
@@ -543,14 +520,6 @@ fn options(output: OutputSettings) -> Options {
             })
             .collect(),
     }
-}
-
-/// The first choice in a DSD list: follow the main Output Format.
-fn same_as_output() -> Vec<Choice> {
-    vec![Choice {
-        id: "same".to_string(),
-        label: "Same as Output Format".to_string(),
-    }]
 }
 
 impl App {
@@ -594,12 +563,6 @@ impl App {
                 confirm_first: self.confirm_destructive,
             },
             dsd: DsdView {
-                codec: self.dsd.codec.map_or("same", Codec::name).to_string(),
-                container: self
-                    .dsd
-                    .container
-                    .map_or("same", Container::name)
-                    .to_string(),
                 sample_rate: self.dsd.sample_rate.name().to_string(),
                 bit_depth: self.dsd.bit_depth.name().to_string(),
             },
