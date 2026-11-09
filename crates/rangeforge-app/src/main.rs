@@ -25,8 +25,9 @@ use rangeforge_lookup::billboard::{HttpFetcher, unix_now};
 use rangeforge_lookup::lastfm::{HttpGet, LastFm};
 use rangeforge_lookup::tagcache::Subject;
 use rangeforge_session::load::Job;
-use rangeforge_session::model::{Names, Pick, RunEvent};
+use rangeforge_session::model::{Assignment, Names, Pick, RunEvent};
 use rangeforge_session::naming::NamingPreview;
+use rangeforge_session::tracklist::{self, MatchPlan};
 use rangeforge_session::{engine, paths, runner, secrets};
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -286,6 +287,87 @@ async fn get_lastfm_tags(
     Ok(reply)
 }
 
+/// What the matching dialog gets: the songs lined up with a track list, or why not.
+#[derive(serde::Serialize)]
+struct MatchReply {
+    plan: Option<MatchPlan>,
+    error: Option<String>,
+}
+
+impl MatchReply {
+    fn failed(error: impl Into<String>) -> Self {
+        Self {
+            plan: None,
+            error: Some(error.into()),
+        }
+    }
+}
+
+/// Lines the songs named up with an album's track list: the pasted `text` if there is any,
+/// otherwise Last.fm's list for their album. A first guess for the person to correct.
+#[tauri::command]
+async fn plan_track_match(
+    targets: Vec<Pick>,
+    text: Option<String>,
+    state: Session<'_>,
+) -> Result<MatchReply, String> {
+    let pasted = text.filter(|text| !text.trim().is_empty());
+    let list = if let Some(text) = pasted {
+        tracklist::parse_pasted(&text)
+    } else {
+        let (artist, album) = match ops::match_lookup_target(&state, &targets) {
+            Ok(found) => found,
+            Err(problem) => return Ok(MatchReply::failed(problem)),
+        };
+        let Some(key) = state.lastfm_key() else {
+            return Ok(MatchReply::failed(
+                "There is no Last.fm key yet. Add one in Settings, or paste the list.",
+            ));
+        };
+        let asked = {
+            let (artist, album) = (artist.clone(), album.clone());
+            // The request blocks, so it runs off the window's own threads.
+            tauri::async_runtime::spawn_blocking(move || {
+                LastFm::new(HttpGet, key.value).album_tracks(&artist, &album)
+            })
+            .await
+        };
+        match asked {
+            Ok(Ok(list)) if !list.is_empty() => list,
+            Ok(Ok(_)) => {
+                return Ok(MatchReply::failed(format!(
+                    "Last.fm has no track list for “{album}” by “{artist}”. Paste the list instead."
+                )));
+            }
+            Ok(Err(error)) => {
+                return Ok(MatchReply::failed(format!(
+                    "Could not get the track list from Last.fm: {error}. You can paste it instead."
+                )));
+            }
+            Err(error) => return Ok(MatchReply::failed(error.to_string())),
+        }
+    };
+    Ok(match ops::match_plan(&state, &targets, list) {
+        Ok(plan) => MatchReply {
+            plan: Some(plan),
+            error: None,
+        },
+        Err(problem) => MatchReply::failed(problem),
+    })
+}
+
+/// Names songs from the track list as chosen in the matching dialog.
+#[tauri::command]
+async fn apply_track_names(
+    assignments: Vec<Assignment>,
+    state: Session<'_>,
+    app: AppHandle,
+) -> Result<Reply, String> {
+    let reply = ops::apply_track_names(&state, &assignments);
+    watch_genres(&app, state.inner());
+    Ok(reply)
+}
+
 /// Opens the Last.fm tags page of each song named in the person's own browser, where they can
 /// read it and copy the list. The program never fetches those pages itself.
 #[tauri::command]
@@ -431,6 +513,8 @@ fn main() {
             remove_group,
             get_lastfm_tags,
             open_song_pages,
+            plan_track_match,
+            apply_track_names,
             clear_lastfm_cache,
             add_tag,
             remove_tag,

@@ -4,7 +4,7 @@
 //! When the user asks to run, the model builds a [`RunSpec`] and leaves it for the caller to
 //! start; progress comes back as [`RunEvent`]s.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,7 +15,7 @@ use rangeforge_export::format::{BitDepth, Codec, Container, OutputFormat, Sample
 use rangeforge_export::pipeline::TrackPlan;
 use rangeforge_export::strategy::Strategy;
 use rangeforge_lookup::billboard::Hot100;
-use rangeforge_lookup::lastfm::{self, RawTag};
+use rangeforge_lookup::lastfm::{self, ListedTrack, RawTag};
 use rangeforge_lookup::tagcache::Subject;
 
 use crate::appsettings::{MetadataSettings, SavedSettings};
@@ -29,6 +29,7 @@ use crate::load::{Job, load_from};
 use crate::naming::NameSettings;
 use crate::plan::{plan_tracks, track_plans};
 use crate::secrets::KeySource;
+use crate::tracklist::{self, MatchPlan, PlanSong, Song};
 
 /// A key press, in terms the screens share. The terminal view translates real key codes into
 /// these. The desktop app does not use keys at all.
@@ -172,6 +173,16 @@ pub struct TrackRow {
 pub struct Pick {
     pub group: usize,
     pub track: Option<usize>,
+}
+
+/// One song's name from an album's track list, to be applied.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub struct Assignment {
+    pub group: usize,
+    pub track: usize,
+    pub title: String,
+    /// Its place on the album, when the list gave one.
+    pub number: Option<u32>,
 }
 
 /// Names typed in by hand for a song or an album. A blank field means "not known".
@@ -530,10 +541,10 @@ impl App {
         Ok(())
     }
 
-    /// The songs a change applies to, each once: the ones named, or all of a group's songs for
-    /// a target with no song.
-    fn rows_for(&mut self, targets: &[Pick]) -> Result<Vec<&mut TrackRow>, String> {
-        let mut wanted: HashSet<(usize, usize)> = HashSet::new();
+    /// Where the songs the targets name are, each once, in list order: the ones named, or all
+    /// of a group's songs for a target with no song.
+    fn pick_indexes(&self, targets: &[Pick]) -> Result<Vec<(usize, usize)>, String> {
+        let mut wanted: BTreeSet<(usize, usize)> = BTreeSet::new();
         for target in targets {
             let group = self
                 .groups
@@ -547,6 +558,13 @@ impl App {
                 None => wanted.extend((0..group.tracks.len()).map(|index| (target.group, index))),
             }
         }
+        Ok(wanted.into_iter().collect())
+    }
+
+    /// The songs a change applies to, each once: the ones named, or all of a group's songs for
+    /// a target with no song.
+    fn rows_for(&mut self, targets: &[Pick]) -> Result<Vec<&mut TrackRow>, String> {
+        let wanted: HashSet<(usize, usize)> = self.pick_indexes(targets)?.into_iter().collect();
         let wanted = &wanted;
         Ok(self
             .groups
@@ -599,6 +617,113 @@ impl App {
         }
         self.refresh_radio();
         Ok(())
+    }
+
+    /// The artist and album the songs the targets name belong to, as Last.fm is asked about
+    /// them, or why that cannot be told (different albums, or an album that is not known).
+    pub fn album_of(&self, targets: &[Pick]) -> Result<(String, String), String> {
+        let mut found: Option<(Subject, String, String)> = None;
+        for (group, track) in self.pick_indexes(targets)? {
+            let identity = self.groups[group].tracks[track].identity.as_ref();
+            let Some(Subject::Album { artist, album }) = identity.and_then(genres::album_subject)
+            else {
+                return Err(
+                    "Lining songs up needs the album's artist and name. Fill them in \
+                            with Edit album name and artist first."
+                        .to_string(),
+                );
+            };
+            let subject = Subject::Album {
+                artist: artist.clone(),
+                album: album.clone(),
+            };
+            match &found {
+                Some((first, _, _)) if first.key() != subject.key() => {
+                    return Err(
+                        "The songs picked are from different albums. Pick the songs of one album."
+                            .to_string(),
+                    );
+                }
+                Some(_) => {}
+                None => found = Some((subject, artist, album)),
+            }
+        }
+        found
+            .map(|(_, artist, album)| (artist, album))
+            .ok_or_else(|| "There are no songs to line up.".to_string())
+    }
+
+    /// Lines the songs the targets name up with an album's track list: who is who, as a first
+    /// guess for the person to correct.
+    pub fn match_plan(
+        &self,
+        targets: &[Pick],
+        list: Vec<ListedTrack>,
+    ) -> Result<MatchPlan, String> {
+        let (artist, album) = self.album_of(targets)?;
+        if list.is_empty() {
+            return Err("The track list is empty.".to_string());
+        }
+        let mut songs = Vec::new();
+        let mut facts = Vec::new();
+        for (group, track) in self.pick_indexes(targets)? {
+            let row = &self.groups[group].tracks[track];
+            let identity = row.identity.as_ref();
+            let number = identity.and_then(|i| i.track);
+            let title = identity.and_then(|i| i.title.clone());
+            facts.push(Song {
+                label: row.label.clone(),
+                number,
+                title: title.clone(),
+            });
+            songs.push(PlanSong {
+                group,
+                track,
+                label: row.label.clone(),
+                number,
+                title,
+            });
+        }
+        let pairs = tracklist::assign(&facts, &list);
+        Ok(MatchPlan {
+            artist,
+            album,
+            songs,
+            list,
+            pairs,
+        })
+    }
+
+    /// Gives songs the titles (and places on the album) chosen in the matching dialog. Each
+    /// becomes a name typed in by hand, so a later scan never overwrites it. A blank title
+    /// leaves that song alone. Nothing changes if any song named is not in the list. Returns
+    /// how many songs were named.
+    pub fn apply_names_from_list(&mut self, assignments: &[Assignment]) -> Result<usize, String> {
+        for assignment in assignments {
+            self.groups
+                .get(assignment.group)
+                .and_then(|group| group.tracks.get(assignment.track))
+                .ok_or("That song is not in the list.")?;
+        }
+        let mut named = 0;
+        for assignment in assignments {
+            let title = assignment.title.trim();
+            if title.is_empty() {
+                continue;
+            }
+            let row = &mut self.groups[assignment.group].tracks[assignment.track];
+            let identity = row.identity.get_or_insert_with(|| {
+                Identity::unknown(rangeforge_core::identify::IdentitySource::Hand)
+            });
+            identity.title = Some(title.to_string());
+            if let Some(number) = assignment.number.filter(|n| *n > 0) {
+                identity.track = Some(number);
+            }
+            identity.source = rangeforge_core::identify::IdentitySource::Hand;
+            named += 1;
+        }
+        self.refresh_radio();
+        Ok(named)
     }
 
     /// The questions for Last.fm that nobody has been sent to ask yet, once. Empty unless
@@ -2801,6 +2926,115 @@ mixed ,	Rare"
         assert!(app.song_page_url(0, 99).is_err());
         app.groups[0].tracks[0].identity = None;
         assert!(app.song_page_url(0, 0).is_err(), "nobody to look up");
+    }
+
+    fn listed(number: u32, title: &str) -> ListedTrack {
+        ListedTrack {
+            number,
+            title: title.to_string(),
+            seconds: None,
+        }
+    }
+
+    #[test]
+    fn songs_are_lined_up_with_an_album_track_list_and_named_from_it() {
+        let mut app = ready_app();
+        let list = vec![
+            listed(1, "The Song Remains the Same"),
+            listed(2, "The Rain Song"),
+            listed(3, "Over the Hills and Far Away"),
+            listed(4, "No Quarter"),
+        ];
+        let plan = app.match_plan(&[pick_album(0)], list).unwrap();
+        assert_eq!(plan.artist, "Led Zeppelin");
+        assert_eq!(plan.album, "Houses of the Holy");
+        let songs: Vec<(usize, usize)> = plan.songs.iter().map(|s| (s.group, s.track)).collect();
+        assert_eq!(songs, [(0, 0), (0, 1)]);
+        let items: Vec<Option<usize>> = plan.pairs.iter().map(|p| p.map(|p| p.item)).collect();
+        assert_eq!(
+            items,
+            [Some(1), Some(3)],
+            "by title, not by the numbers 1 and 2"
+        );
+
+        // Applying names the songs by hand, with their places on the album.
+        let named = app
+            .apply_names_from_list(&[
+                Assignment {
+                    group: 0,
+                    track: 0,
+                    title: " The Rain Song ".to_string(),
+                    number: Some(2),
+                },
+                Assignment {
+                    group: 0,
+                    track: 1,
+                    title: "No Quarter".to_string(),
+                    number: Some(4),
+                },
+            ])
+            .unwrap();
+        assert_eq!(named, 2);
+        let identity = app.groups[0].tracks[0].identity.as_ref().unwrap();
+        assert_eq!(identity.title.as_deref(), Some("The Rain Song"));
+        assert_eq!(identity.track, Some(2));
+        assert_eq!(
+            identity.source,
+            rangeforge_core::identify::IdentitySource::Hand
+        );
+        assert_eq!(
+            app.groups[0].tracks[1].identity.as_ref().unwrap().track,
+            Some(4)
+        );
+    }
+
+    #[test]
+    fn lining_up_needs_one_known_album_and_a_list_and_never_half_applies() {
+        let mut app = ready_app();
+        assert!(app.match_plan(&[pick_album(0)], Vec::new()).is_err());
+
+        // Two albums in one pick are refused, naming the problem.
+        let other = Names {
+            album: "Physical Graffiti".to_string(),
+            ..Names::default()
+        };
+        app.set_names(&[pick_song(0, 1)], &other, true).unwrap();
+        let list = vec![listed(1, "Kashmir")];
+        let problem = app.match_plan(&[pick_album(0)], list.clone()).unwrap_err();
+        assert!(problem.contains("different albums"), "{problem}");
+        assert!(app.match_plan(&[pick_song(0, 1)], list).is_ok());
+
+        // A song without an album cannot be lined up.
+        app.set_names(&[pick_song(0, 1)], &Names::default(), false)
+            .unwrap();
+        assert!(app.album_of(&[pick_song(0, 1)]).is_err());
+
+        // One bad song in the batch changes nothing; a blank title leaves that song alone.
+        let before = app.groups[0].tracks[0].identity.clone();
+        let assignments = [
+            Assignment {
+                group: 0,
+                track: 0,
+                title: "New".to_string(),
+                number: None,
+            },
+            Assignment {
+                group: 0,
+                track: 99,
+                title: "Nowhere".to_string(),
+                number: None,
+            },
+        ];
+        assert!(app.apply_names_from_list(&assignments).is_err());
+        assert_eq!(app.groups[0].tracks[0].identity, before);
+        let blank = [Assignment {
+            group: 0,
+            track: 0,
+            title: "  ".to_string(),
+            number: Some(5),
+        }];
+        assert_eq!(app.apply_names_from_list(&blank).unwrap(), 0);
+        assert_eq!(app.groups[0].tracks[0].identity, before);
     }
 
     #[test]

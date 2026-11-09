@@ -11,6 +11,7 @@
 //! - [`presets`]: saved sets of settings.
 //! - [`naming`] and [`appsettings`]: the file name patterns, and the file that keeps them.
 //! - [`dsd`]: what DSD files are written as.
+//! - [`tracklist`]: lining songs up with an album's track list, to name many at once.
 //!
 //! Nothing here draws, so all of it can be tested without a window or a terminal.
 
@@ -30,3 +31,4 @@ pub mod presets;
 pub mod runner;
 pub mod secrets;
 pub mod snapshot;
+pub mod tracklist;

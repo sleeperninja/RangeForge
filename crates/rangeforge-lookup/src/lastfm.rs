@@ -27,6 +27,16 @@ pub struct RawTag {
     pub count: u32,
 }
 
+/// A track as an album's track list gives it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListedTrack {
+    /// Its place on the album, starting at 1.
+    pub number: u32,
+    pub title: String,
+    /// Its length in seconds, when the list says.
+    pub seconds: Option<u32>,
+}
+
 /// Why asking Last.fm failed.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum LastFmError {
@@ -119,17 +129,33 @@ impl<G: Get> LastFm<G> {
         })
     }
 
+    /// The tracks Last.fm lists for an album, in album order. Empty when Last.fm does not know
+    /// the album, after the same other spellings as for its tags.
+    pub fn album_tracks(&self, artist: &str, album: &str) -> Result<Vec<ListedTrack>, LastFmError> {
+        self.ask_spellings(artist, album, |artist, album| {
+            let params = [
+                ("method", "album.getInfo"),
+                ("api_key", self.api_key.as_str()),
+                ("autocorrect", "1"),
+                ("format", "json"),
+                ("artist", artist),
+                ("album", album),
+            ];
+            parse_album_tracks(&self.get.get(&params)?)
+        })
+    }
+
     /// Asks as written first. Last.fm answers "no such song" (not an error, just no tags) when
     /// the spelling differs from its own, such as a curly apostrophe in `D’yer Mak’er` or a
     /// `(Remastered)` note, so on an empty answer other spellings are tried: the name with plain
     /// punctuation and without notes, then the artist with "The" added or removed. A real
     /// error stops at once.
-    fn ask_spellings(
+    fn ask_spellings<T>(
         &self,
         artist: &str,
         name: &str,
-        ask: impl Fn(&str, &str) -> Result<Vec<RawTag>, LastFmError>,
-    ) -> Result<Vec<RawTag>, LastFmError> {
+        ask: impl Fn(&str, &str) -> Result<Vec<T>, LastFmError>,
+    ) -> Result<Vec<T>, LastFmError> {
         self.take_trail();
         let mut names = spellings(name);
         let mut artists = artist_spellings(artist);
@@ -238,24 +264,79 @@ fn is_not_found(body: &str) -> bool {
         == Some(6)
 }
 
+/// What an answer's `error` says, if it has one: `Ok` for "not found" (the thing is simply not
+/// known, so there is nothing to list), and an error for anything else.
+fn api_error(json: &Value) -> Option<Result<(), LastFmError>> {
+    let code = json.get("error").and_then(Value::as_i64)?;
+    Some(match code {
+        6 => Ok(()),
+        10 | 26 => Err(LastFmError::InvalidKey),
+        29 => Err(LastFmError::RateLimited),
+        _ => Err(LastFmError::Unexpected(
+            json.get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("an error")
+                .to_string(),
+        )),
+    })
+}
+
+/// Reads an answer to an `album.getInfo` request into the album's track list. An album Last.fm
+/// does not know has no tracks, which is not an error. A track with no title is skipped, a
+/// missing place in the album is taken from the order, and a length of 0 means "not known".
+pub fn parse_album_tracks(body: &str) -> Result<Vec<ListedTrack>, LastFmError> {
+    let json: Value =
+        serde_json::from_str(body).map_err(|_| LastFmError::Unexpected("not JSON".to_string()))?;
+    if let Some(outcome) = api_error(&json) {
+        return outcome.map(|()| Vec::new());
+    }
+    // One track arrives as an object and several as a list.
+    let tracks = match json
+        .get("album")
+        .and_then(|a| a.get("tracks"))
+        .and_then(|t| t.get("track"))
+    {
+        Some(Value::Array(list)) => list.clone(),
+        Some(single @ Value::Object(_)) => vec![single.clone()],
+        _ => Vec::new(),
+    };
+    let number = |value: Option<&Value>| match value {
+        Some(Value::Number(n)) => n.as_u64(),
+        Some(Value::String(text)) => text.trim().parse().ok(),
+        _ => None,
+    };
+    let mut listed = Vec::new();
+    for (index, track) in tracks.iter().enumerate() {
+        let Some(title) = track.get("name").and_then(Value::as_str).map(str::trim) else {
+            continue;
+        };
+        if title.is_empty() {
+            continue;
+        }
+        let place = number(track.get("@attr").and_then(|attr| attr.get("rank")))
+            .and_then(|n| u32::try_from(n).ok())
+            .filter(|n| *n > 0)
+            .unwrap_or_else(|| u32::try_from(index + 1).unwrap_or(u32::MAX));
+        let seconds = number(track.get("duration"))
+            .filter(|n| *n > 0)
+            .and_then(|n| u32::try_from(n).ok());
+        listed.push(ListedTrack {
+            number: place,
+            title: title.to_string(),
+            seconds,
+        });
+    }
+    Ok(listed)
+}
+
 /// Reads an answer to a `gettoptags` request. A song or album Last.fm does not know is not an
 /// error: it has no tags.
 pub fn parse_top_tags(body: &str) -> Result<Vec<RawTag>, LastFmError> {
     let json: Value =
         serde_json::from_str(body).map_err(|_| LastFmError::Unexpected("not JSON".to_string()))?;
 
-    if let Some(code) = json.get("error").and_then(Value::as_i64) {
-        return match code {
-            6 => Ok(Vec::new()),
-            10 | 26 => Err(LastFmError::InvalidKey),
-            29 => Err(LastFmError::RateLimited),
-            _ => Err(LastFmError::Unexpected(
-                json.get("message")
-                    .and_then(Value::as_str)
-                    .unwrap_or("an error")
-                    .to_string(),
-            )),
-        };
+    if let Some(outcome) = api_error(&json) {
+        return outcome.map(|()| Vec::new());
     }
 
     // One tag arrives as an object and several as a list.
@@ -327,6 +408,77 @@ mod tests {
     fn something_last_fm_does_not_know_has_no_tags_and_is_not_an_error() {
         let unknown = r#"{"error":6,"message":"Album not found"}"#;
         assert_eq!(parse_top_tags(unknown).unwrap(), []);
+    }
+
+    /// An album's track list as `album.getInfo` gives it (trimmed from a real answer).
+    const SOME_CITIES: &str = r#"{"album":{"name":"Some Cities","artist":"Doves","tracks":{"track":[
+        {"name":"Some Cities","duration":202,"@attr":{"rank":1}},
+        {"name":"Black and White Town","duration":257,"@attr":{"rank":2}},
+        {"name":"Someday Soon","duration":null,"@attr":{"rank":"8"}},
+        {"name":" ","duration":10,"@attr":{"rank":9}},
+        {"name":"Ambition","duration":"223"}
+    ]}}}"#;
+
+    #[test]
+    fn an_album_track_list_gives_places_titles_and_lengths_where_known() {
+        let tracks = parse_album_tracks(SOME_CITIES).unwrap();
+        let shown: Vec<(u32, &str, Option<u32>)> = tracks
+            .iter()
+            .map(|t| (t.number, t.title.as_str(), t.seconds))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                (1, "Some Cities", Some(202)),
+                (2, "Black and White Town", Some(257)),
+                (8, "Someday Soon", None),
+                // No rank: its place in the list (the blank one was skipped but still counts).
+                (5, "Ambition", Some(223)),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_single_track_an_unknown_album_and_errors_are_handled() {
+        let one = r#"{"album":{"tracks":{"track":{"name":"Only","@attr":{"rank":"1"}}}}}"#;
+        assert_eq!(parse_album_tracks(one).unwrap().len(), 1);
+        assert_eq!(parse_album_tracks(r#"{"album":{"name":"x"}}"#).unwrap(), []);
+        assert_eq!(
+            parse_album_tracks(r#"{"error":6,"message":"Album not found"}"#).unwrap(),
+            []
+        );
+        assert_eq!(
+            parse_album_tracks(r#"{"error":10,"message":"Invalid API key"}"#),
+            Err(LastFmError::InvalidKey)
+        );
+        assert!(matches!(
+            parse_album_tracks("<html>"),
+            Err(LastFmError::Unexpected(_))
+        ));
+    }
+
+    #[test]
+    fn asking_for_an_albums_tracks_names_the_method_and_tries_other_spellings() {
+        let client = LastFm::new(
+            Canned {
+                answer: SOME_CITIES.to_string(),
+                asked: Mutex::new(Vec::new()),
+            },
+            "the-key",
+        )
+        .with_pause(Duration::ZERO);
+        let tracks = client.album_tracks("Doves", "Some Cities").unwrap();
+        assert_eq!(tracks.len(), 4);
+        let asked = client.get.asked.lock().unwrap();
+        let value = |name: &str| {
+            asked[0]
+                .iter()
+                .find(|(key, _)| key == name)
+                .map(|(_, value)| value.clone())
+        };
+        assert_eq!(value("method").as_deref(), Some("album.getInfo"));
+        assert_eq!(value("album").as_deref(), Some("Some Cities"));
+        assert_eq!(value("artist").as_deref(), Some("Doves"));
     }
 
     #[test]

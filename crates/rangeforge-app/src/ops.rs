@@ -12,16 +12,17 @@ use std::time::Duration;
 use rangeforge_audio::cache::Cache;
 use rangeforge_export::format::{BitDepth, Codec, Container, SampleRate};
 use rangeforge_lookup::billboard::{self, Fetcher, Refresh};
-use rangeforge_lookup::lastfm::{LastFmError, RawTag};
+use rangeforge_lookup::lastfm::{LastFmError, ListedTrack, RawTag};
 use rangeforge_lookup::tagcache::{Subject, TagCache};
 use rangeforge_session::controls::PresetList;
 use rangeforge_session::load::Job;
 use rangeforge_session::model::{
-    App, MeasureOutcome, Names, Pick, RunEvent, RunRequest, RunSpec, Settings,
+    App, Assignment, MeasureOutcome, Names, Pick, RunEvent, RunRequest, RunSpec, Settings,
 };
 use rangeforge_session::presets;
 use rangeforge_session::secrets::{self, SecretStore};
 use rangeforge_session::snapshot::{Snapshot, conflict_from_id, place_from_id};
+use rangeforge_session::tracklist::MatchPlan;
 use rangeforge_session::{appsettings, naming};
 use serde::Serialize;
 
@@ -699,6 +700,45 @@ pub fn song_page_urls(
     Ok((urls, notice))
 }
 
+/// The artist and album to ask Last.fm for a track list, for the songs the targets name. It
+/// says why not when lookups are switched off, the songs come from different albums, or an
+/// album's names are not known.
+pub fn match_lookup_target(shared: &Shared, targets: &[Pick]) -> Result<(String, String), String> {
+    let app = shared.lock();
+    if !app.metadata.enabled {
+        return Err(
+            "Metadata lookups are switched off. Turn them on in Settings, or paste the list."
+                .to_string(),
+        );
+    }
+    app.album_of(targets)
+}
+
+/// Lines the songs the targets name up with a track list (from Last.fm, or pasted).
+pub fn match_plan(
+    shared: &Shared,
+    targets: &[Pick],
+    list: Vec<ListedTrack>,
+) -> Result<MatchPlan, String> {
+    shared.lock().match_plan(targets, list)
+}
+
+/// Names songs from the track list as chosen in the matching dialog.
+pub fn apply_track_names(shared: &Shared, assignments: &[Assignment]) -> Reply {
+    let mut app = shared.lock();
+    let error = match app.apply_names_from_list(assignments) {
+        Ok(named) => {
+            app.log(format!(
+                "Named {named} song{} from the track list",
+                if named == 1 { "" } else { "s" }
+            ));
+            None
+        }
+        Err(problem) => Some(problem),
+    };
+    reply(shared, &mut app, error)
+}
+
 /// The screen with a message for the person, such as a page that would not open.
 pub fn notice(shared: &Shared, message: Option<String>) -> Reply {
     let mut app = shared.lock();
@@ -978,6 +1018,86 @@ mod tests {
             chip_texts(screens.last().unwrap(), 0),
             ["Classic Rock", "Hard Rock"]
         );
+    }
+
+    #[test]
+    fn songs_are_named_from_a_track_list_and_the_names_show_and_stay_typed_by_hand() {
+        let dir = tempdir().unwrap();
+        let shared = shared_with_album(dir.path(), &SharedStore::default());
+        let whole = Pick {
+            group: 0,
+            track: None,
+        };
+        let listed = |number: u32, title: &str| ListedTrack {
+            number,
+            title: title.to_string(),
+            seconds: None,
+        };
+        let list = vec![
+            listed(1, "The Song Remains the Same"),
+            listed(2, "The Rain Song (2014 Remaster)"),
+            listed(4, "No Quarter"),
+        ];
+
+        // Last.fm is only asked for when lookups are on; the target is the songs' album.
+        assert_eq!(
+            match_lookup_target(&shared, &[whole]).unwrap(),
+            ("Led Zeppelin".to_string(), "Houses of the Holy".to_string())
+        );
+        let plan = match_plan(&shared, &[whole], list.clone()).unwrap();
+        assert_eq!(plan.songs.len(), 2);
+        // "No Quarter" is found by its title; "The Rain Song" is only the weaker match by track
+        // number (its CUE track number is 1 here, and it takes the list's place 1 or 2).
+        assert_eq!(plan.pairs[1].map(|p| p.item), Some(2));
+
+        let reply = apply_track_names(
+            &shared,
+            &[
+                Assignment {
+                    group: 0,
+                    track: 0,
+                    title: "The Rain Song (2014 Remaster)".to_string(),
+                    number: Some(2),
+                },
+                Assignment {
+                    group: 0,
+                    track: 1,
+                    title: "No Quarter".to_string(),
+                    number: Some(4),
+                },
+            ],
+        );
+        assert_eq!(reply.error, None);
+        assert!(
+            reply
+                .state
+                .log
+                .iter()
+                .any(|line| line.contains("Named 2 songs from the track list"))
+        );
+        let identity = reply.state.groups[0].tracks[0].identity.as_ref().unwrap();
+        assert_eq!(
+            identity.title.as_deref(),
+            Some("The Rain Song (2014 Remaster)")
+        );
+        assert_eq!(identity.source, "hand");
+
+        // Lookups switched off: the Last.fm route says so, and pasting still works.
+        set_metadata(&shared, false);
+        assert!(match_lookup_target(&shared, &[whole]).is_err());
+        assert!(match_plan(&shared, &[whole], list).is_ok());
+
+        // A bad song changes nothing and says why.
+        let bad = apply_track_names(
+            &shared,
+            &[Assignment {
+                group: 5,
+                track: 0,
+                title: "x".to_string(),
+                number: None,
+            }],
+        );
+        assert!(bad.error.is_some());
     }
 
     #[test]

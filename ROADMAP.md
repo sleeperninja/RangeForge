@@ -19,6 +19,7 @@ RangeForge does its main job today. Drop in an album or a pile of files, and it 
 - **File Strategy:** next to the original, in a subfolder you name, or all in one folder. Numbering, renaming the old file, or overwriting when a name is taken, and optionally deleting the original once everything is safely written.
 - **Names from patterns,** for CUE tracks and for single files (`{artist}-{album}_{track:02}-{title}` and friends).
 - **Tags:** read from the file, the CUE sheet, or guessed from the file and folder names (including the long vinyl-download names, like the Doves ones). Edit names and tags by hand, for one song, several, or a whole album.
+- **Name many songs at once** by lining them up with the album's track list, from Last.fm or pasted from a store page. It makes a first guess, shows how each song was paired, and lets you change any row before anything happens.
 - **Genres:** from the album's Last.fm tags, plus a blue **Radio** tag for songs that charted on the Billboard Hot 100.
 - **The window remembers** your File Strategy, Output Format, Volume settings and file name patterns between sessions.
 
@@ -32,8 +33,8 @@ These are the things on the plate, roughly in the order they make sense.
    - right-click → **Open song tags page on Last.fm**, and pasting a list into **Add a tag…**
    - change codec, sample rate, target and the subfolder name, close mid-edit, reopen, and check everything came back
    - drop the Some Cities folder: clean titles and track numbers, and dropping the album again shouldn't add its `_rangeforged` output
-2. **Paste a list of song names.** For files with no usable names, copy the track list from a store page or Discogs and paste it in: one title per line, matched to the songs in order. It shows "12 names for 12 songs" first, and refuses if the counts differ.
-   *To decide:* match by track order, or by the track number in the file name when there is one?
+   - right-click an album → **Match songs to a track list…**: Last.fm's list, then a pasted one, and changing a row by hand
+2. **Show each song's output name in its row.** Once the names are right, the list could show the file each song will be written as (without the extension), with the original name on hover, so you can see the result before pressing Run. A small marker would show names that are only a guess from the file name.
 3. **Rename from the tags, as a File Strategy choice.** Today the single-file naming pattern lives in Settings and applies to every run. The idea is a visible choice next to the others: **Keep the original name** or **Rename from the tags**.
    *To decide:* should it refuse (or at least warn) when a name is only a guess from the file name, so it never produces worse names than the originals? It also needs a check that two new files can't pick the same name in one run.
 4. **Channels control.** Choose how many channels the output has: original, stereo downmix, mono, maybe left-only or right-only for a broken rip.
@@ -48,6 +49,7 @@ These are the things on the plate, roughly in the order they make sense.
 - **Benchmarks** to back up the speed claims (a first manual comparison is done; proper `criterion` benchmarks aren't).
 - **`--json` output and a simple HTML report** from the terminal tool.
 - **Multichannel loudness** (4 to 8 channels), FLAC for Plex, and DSD/MLP input, aimed at the 206 GB surround collection.
+- **Use each song's length when lining songs up with a track list.** Last.fm gives the length of most tracks, which would be a good check for bonus tracks and odd editions. The measurements need to carry the length first.
 - **A CPU limit** in Settings, so a big batch doesn't take over the machine.
 - **Signing the installers.** Right now Windows says the publisher is unknown, and the Mac needs the right-click → Open dance. Also the first real run of the installer build on GitHub (the docs say it hasn't run yet).
 - **Small window niceties:** right-click to copy table text, and a highlight on an album heading when all its songs are picked.

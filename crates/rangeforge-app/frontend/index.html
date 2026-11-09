@@ -195,9 +195,35 @@
     </form>
   </dialog>
 
+  <dialog id="matchDialog" class="wide-dialog match-dialog">
+    <form method="dialog">
+      <p id="matchPrompt"></p>
+      <div class="match-source">
+        <label class="radio"><input type="radio" name="matchSource" value="lastfm" checked> Last.fm's track list</label>
+        <label class="radio"><input type="radio" name="matchSource" value="paste"> Paste a list</label>
+      </div>
+      <div id="matchPasteBox" class="hidden">
+        <textarea id="matchPaste" class="text wide" rows="6" spellcheck="false" autocomplete="off" placeholder="One title per line, as copied from a store page or Discogs. Numbers and times in front or behind are fine."></textarea>
+        <p><button type="button" id="matchLineUp" class="button">Line up</button></p>
+      </div>
+      <p id="matchStatus" class="hint"></p>
+      <div class="match-scroll">
+        <table id="matchTable" class="match-table">
+          <thead><tr><th>Song (as it is now)</th><th>Becomes</th><th></th></tr></thead>
+          <tbody id="matchRows"></tbody>
+        </table>
+      </div>
+      <div class="dialog-buttons">
+        <button value="cancel" class="button">Cancel</button>
+        <button value="apply" id="matchApply" class="button primary" disabled>Name the songs</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="namesDialog">
     <form method="dialog">
       <p id="namesPrompt"></p>
+      <p id="namesSeveralHint" class="hint hidden">Each song has its own title, so there is no title here. To name them one by one, use <b>Match songs to a track list…</b> on the right-click menu.</p>
       <p id="namesArtistRow"><label>Artist<br><input id="namesArtist" class="text wide" type="text" autocomplete="off"></label></p>
       <p id="namesTitleRow"><label>Title<br><input id="namesTitle" class="text wide" type="text" autocomplete="off"></label></p>
       <p><label>Album<br><input id="namesAlbum" class="text wide" type="text" autocomplete="off"></label></p>

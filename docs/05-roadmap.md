@@ -4,7 +4,7 @@ One phase scheme. This is the precise list. [ROADMAP.md](../ROADMAP.md) in the r
 
 **Now (0.3.1):** Phases 0 to 5 are built except benchmarks, `--json`/the HTML report and the Channels control. The desktop window (`rangeforge-app`, Tauri) does the whole job: measure, plan gain, split CUE albums, tag and write ALAC, FLAC, WAV, AAC or DSD output, the three File Strategy choices, file name patterns, presets, hand editing of names and tags, album headings, Last.fm album genres and the Radio tag. File Strategy, Output Format, Volume and the name patterns are remembered between sessions. On Houses of the Holy the whole album is written in about 9 s, every file measures -22.00 LUFS, and a 0 dB export is sample-for-sample identical to the source. The installer workflow (D-23) is set up and has not been run on CI yet.
 
-Next: click through the newest build (song tags page and Add a tag lists, settings restored on reopen), pasting a list of song names, renaming from tags as a File Strategy choice, the Channels control (needs a decision next to D-12), and a check of the resampling. Settled: D-09 (keep Symphonia), D-12 (gain only, the true-peak ceiling is the limit, no compression).
+Next: click through the newest build (song tags page and Add a tag lists, settings restored on reopen, Match songs to a track list), showing each song's output name in its row, renaming from tags as a File Strategy choice, the Channels control (needs a decision next to D-12), and a check of the resampling. Settled: D-09 (keep Symphonia), D-12 (gain only, the true-peak ceiling is the limit, no compression).
 
 | Phase | Goal | Done when |
 | --- | --- | --- |
@@ -31,7 +31,8 @@ Next: click through the newest build (song tags page and Add a tag lists, settin
 See [04-decisions.md](04-decisions.md) for anything marked Parked.
 
 - **Remember hand edits** (names and tags) between sessions, keyed by file, so they survive closing the program.
-- **Paste a list of song names** onto an album's songs (one title per line, matched in order, with a count check).
+- **Show each song's output name** in its row (original name on hover), with a marker for names that are only a guess.
+- **Use song length in the track-list matcher** (needs the length in the measurements and the cache).
 - **Rename from the tags** as a File Strategy choice (keep the original name, or use the single-file pattern), refusing or flagging names that are only a guess, and never letting two new files share a name.
 - **Check the resampling and the 24 to 16 bit dither** against a null or loudness test.
 - **Guess genre from the audio itself** (see D-32).

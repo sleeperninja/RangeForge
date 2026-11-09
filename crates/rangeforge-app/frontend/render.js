@@ -293,6 +293,7 @@
       });
       items.push({ action: 'add_tag', label: `Add a tag to these ${n} songs…`, targets: picks });
       items.push({ action: 'edit_names', label: `Edit names of these ${n} songs…`, targets: picks });
+      items.push({ action: 'match_names', label: `Match these ${n} songs to a track list…`, targets: picks });
       items.push({ action: 'open_song_page', label: `Open song tags pages on Last.fm for these ${n} songs`, targets: picks });
       items.push({ action: 'lastfm', label: 'Get tags from Last.fm for their albums', targets: picks });
       items.push(selectSame);
@@ -327,6 +328,9 @@
       label: song ? 'Edit artist, title and album…' : 'Edit album name and artist…',
       targets: here,
     });
+    if (!song) {
+      items.push({ action: 'match_names', label: 'Match songs to a track list…', targets: here });
+    }
     if (song) {
       items.push({ action: 'open_song_page', label: 'Open song tags page on Last.fm', targets: here });
     }
@@ -360,6 +364,7 @@
       },
       { action: 'add_tag', label: 'Add a tag to every song of this album…', targets },
       { action: 'edit_names', label: 'Edit album name and artist…', targets },
+      { action: 'match_names', label: 'Match songs to a track list…', targets },
       { action: 'lastfm', label: 'Get tags from Last.fm for this album', targets },
       { action: 'remove_many', label: 'Remove this album from the list', groups: groupIndexes },
     ];
