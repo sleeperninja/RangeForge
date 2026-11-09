@@ -3454,6 +3454,7 @@ dependencies = [
  "dotenvy",
  "keyring",
  "rangeforge-audio",
+ "rangeforge-core",
  "rangeforge-export",
  "rangeforge-lookup",
  "rangeforge-session",

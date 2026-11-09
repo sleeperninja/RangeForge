@@ -42,11 +42,9 @@ I checked this on real music, not only on test tones (D-37): on the Pink Floyd 2
 
 ### Bit depth and dither (built)
 
-Going to 16 bits means rounding, and plain rounding adds a faint distortion that follows the music. Triangular dither replaces it with a steady, very quiet noise instead. So the program dithers whenever it has changed the signal and is writing 16 bits. A file left untouched at 0 dB is never dithered, so it stays bit-exact. 24-bit output needs no dither (D-15).
+Going to 16 bits means rounding, and plain rounding adds a faint distortion that follows the music. Triangular dither replaces it with a steady, very quiet noise instead. So the program dithers whenever it has changed the signal and is writing 16 bits: a gain, a drop from 24 bits, a new sample rate, or a channel mix. A file left untouched at 0 dB is never dithered, so it stays bit-exact. 24-bit output needs no dither (D-15).
 
-*One small gap:* a 16-bit file resampled at exactly 0 dB gain is not dithered yet. It almost never happens.
-
-### Channels (**planned**, D-35)
+### Channels (D-35)
 
 Mixing six channels down to two is a lot like turning a colour photo into black and white. There is more than one honest way, and the results are not the same. So the choice has two parts.
 
@@ -62,7 +60,9 @@ Mixing six channels down to two is a lot like turning a colour photo into black 
 
 Quad keeps the four corners and folds the centre into the fronts. Mono is the average of the standard stereo mix.
 
-**Why the downmix is measured on its own.** On real 5.1 music (Pink Floyd's two albums at 24/96, and I Robot from DSD), the standard stereo downmix came out between −0.6 and +1.6 LU of the six-channel loudness, and its true peak was 2.6 to 4.9 dB *higher*. The six-channel measurement simply cannot be trusted for a stereo file. So a downmix is measured after the mix, the gain and ceiling are worked out on that, and the table shows the result.
+**Why the downmix is measured on its own.** On real 5.1 music (Pink Floyd's two albums at 24/96, and I Robot from DSD), the standard stereo downmix came out between −0.6 and +1.6 LU of the six-channel loudness, and its true peak was 2.6 to 4.9 dB *higher*. The six-channel measurement simply cannot be trusted for a stereo file. So a downmix is measured after the mix, the gain and ceiling are worked out on that, and the table shows the result. Changing Channels or the Downmix style measures the loaded files again, and what was measured for another choice is thrown away. A mix can even go over full scale (the standard stereo mix of *Speak To Me* peaks at +0.8 dBTP): the program keeps those values and lets the gain bring them down, and does not clip them first.
+
+**Quad and ALAC.** Quad is written as a proper quad layout for FLAC, WAV, AAC and MKA. ALAC cannot hold it (it would turn it into five channels with a silent centre), so Quad is refused with ALAC, with a reason, and choosing ALAC while Quad is chosen is refused too.
 
 **What is deliberately not offered:**
 

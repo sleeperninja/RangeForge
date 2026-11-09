@@ -54,6 +54,7 @@ Useful options: `--target` and `--ceiling` set the volume, `--codec alac|flac|wa
 $env:RANGEFORGE_FFMPEG = 'C:\path\to\ffmpeg.exe'   # only if it is not on your path
 cargo test -p rangeforge-export                    # generated-audio tests
 cargo test -p rangeforge-export --release --test real_album -- --ignored   # your real album
+cargo test -p rangeforge-export --release --test real_surround -- --ignored   # real 5.1 music: the channel mix
 ```
 
 ## Timing the decoder

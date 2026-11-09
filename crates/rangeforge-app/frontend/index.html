@@ -64,7 +64,8 @@
         <label>Container <select id="container"></select></label>
         <label>Sample Rate <select id="sampleRate"></select></label>
         <label>Bit Depth <select id="bitDepth"></select></label>
-        <label>Channels <input class="readonly" type="text" value="original" readonly title="Not changeable yet"></label>
+        <label>Channels <select id="channels"></select></label>
+        <label id="downmixRow" class="hidden">Downmix <select id="downmix" title="How the channels that go away are treated: Standard folds the centre and surrounds in at -3 dB and drops the LFE; Standard + bass adds the LFE; Front pair only uses left and right as they were mixed"></select></label>
       </div>
 
       <div class="block preset-block">

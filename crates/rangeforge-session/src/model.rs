@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rangeforge_core::identify::Identity;
+use rangeforge_core::mix::{Channels, Downmix, MixPlan};
 use rangeforge_core::planner::{self, GainPlan, Measurement, PlanError, Target};
 use rangeforge_export::format::{BitDepth, Codec, Container, OutputFormat, SampleRate};
 use rangeforge_export::pipeline::TrackPlan;
@@ -254,6 +255,9 @@ pub struct MeasureOutcome {
     pub group: usize,
     pub result: Result<(Vec<Measurement>, Origin), String>,
     pub elapsed: Duration,
+    /// How the channels were mixed for this measurement. An outcome for a mix that is no longer
+    /// the chosen one (the choice changed while it was being measured) is thrown away.
+    pub mix: MixPlan,
     /// For a single file, who its song is, read from the file's tags. `None` for CUE albums,
     /// which are identified from their sheet.
     pub identity: Option<Identity>,
@@ -1007,6 +1011,11 @@ impl App {
 
     /// Records a finished measurement.
     pub fn apply(&mut self, outcome: MeasureOutcome) {
+        // A measurement made for another way of mixing the channels says nothing about the
+        // one chosen now (the key is empty when nothing is mixed, whatever the style).
+        if outcome.mix.key() != self.output.mix.key() {
+            return;
+        }
         let Some(group) = self.groups.get_mut(outcome.group) else {
             return;
         };
@@ -1193,7 +1202,10 @@ impl App {
             }
             items.push(RunItem {
                 group: job.group,
-                job: job.clone(),
+                job: Job {
+                    mix: self.output.mix,
+                    ..job.clone()
+                },
                 plans,
                 format: job_format,
                 directory,
@@ -1284,7 +1296,13 @@ impl App {
 
     /// Sets the codec. A sample rate the new codec cannot write (192 kHz AAC) goes back to the
     /// source's own, with a line in the log saying so.
-    pub fn set_codec(&mut self, codec: Codec) {
+    pub fn set_codec(&mut self, codec: Codec) -> Result<(), String> {
+        if self.output.mix.channels == Channels::Quad && !codec.can_write_quad() {
+            return Err(format!(
+                "{} cannot hold quad (four-channel) audio. Choose another channel layout first, or keep FLAC, WAV or AAC",
+                codec.name()
+            ));
+        }
         self.output.codec = codec;
         if self.output.fit_to_codec() {
             self.log(format!(
@@ -1292,6 +1310,62 @@ impl App {
                 codec.name()
             ));
         }
+        Ok(())
+    }
+
+    /// Chooses how many channels to write. Measuring has to be done again on the mixed sound,
+    /// so this gives back the jobs to measure again, which the caller starts. Refused while a
+    /// run is writing files, and for quad when the codec cannot hold it.
+    pub fn set_channels(&mut self, channels: Channels) -> Result<Vec<Job>, String> {
+        if self.output.mix.channels == channels {
+            return Ok(Vec::new());
+        }
+        if self.running {
+            return Err("Wait for the run to finish before changing the channels".to_string());
+        }
+        if channels == Channels::Quad && !self.output.codec.can_write_quad() {
+            return Err(format!(
+                "{} cannot hold quad (four-channel) audio. Choose FLAC, WAV or AAC for quad, or another channel layout",
+                self.output.codec.name()
+            ));
+        }
+        self.output.mix.channels = channels;
+        self.log(format!("Channels: {}", channels.label()));
+        Ok(self.remeasure_all())
+    }
+
+    /// Chooses how the channels that go away are treated. It changes nothing while the channels
+    /// are left as they are; otherwise measuring is done again (see [`App::set_channels`]).
+    pub fn set_downmix(&mut self, style: Downmix) -> Result<Vec<Job>, String> {
+        if self.output.mix.style == style {
+            return Ok(Vec::new());
+        }
+        if self.output.mix.channels != Channels::Original && self.running {
+            return Err("Wait for the run to finish before changing the downmix".to_string());
+        }
+        self.output.mix.style = style;
+        if self.output.mix.channels == Channels::Original {
+            return Ok(Vec::new());
+        }
+        self.log(format!("Downmix: {}", style.label()));
+        Ok(self.remeasure_all())
+    }
+
+    /// Forgets every measurement and gives back every job, each stamped with the mix now chosen,
+    /// so the files are measured again on the sound that will be written. Measurements already
+    /// saved on disk for that mix come back at once.
+    fn remeasure_all(&mut self) -> Vec<Job> {
+        let mix = self.output.mix;
+        for job in &mut self.jobs {
+            job.mix = mix;
+        }
+        for group in &mut self.groups {
+            group.status = Status::Pending;
+            for track in &mut group.tracks {
+                track.measurement = None;
+            }
+        }
+        self.jobs.clone()
     }
 
     pub fn set_bit_depth(&mut self, depth: BitDepth) {
@@ -1467,7 +1541,10 @@ impl App {
             }
             _ => Vec::new(),
         };
-        let loaded = load_from(paths, self.groups.len(), &skip);
+        let mut loaded = load_from(paths, self.groups.len(), &skip);
+        for job in &mut loaded.jobs {
+            job.mix = self.output.mix;
+        }
         self.groups.extend(loaded.groups);
         self.jobs.extend(loaded.jobs.iter().cloned());
         self.log.extend(loaded.log);
@@ -1813,6 +1890,7 @@ mod tests {
             )),
             elapsed: Duration::ZERO,
             identity: None,
+            mix: MixPlan::default(),
         });
 
         assert_eq!(app.pending(), 0);
@@ -1832,12 +1910,14 @@ mod tests {
             result: Err("file not found".to_string()),
             elapsed: Duration::ZERO,
             identity: None,
+            mix: MixPlan::default(),
         });
         app.apply(MeasureOutcome {
             group: 1,
             result: Ok((vec![measurement(-15.0, -3.0)], Origin::Decoded)),
             elapsed: Duration::ZERO,
             identity: None,
+            mix: MixPlan::default(),
         });
 
         assert_eq!(
@@ -2330,7 +2410,7 @@ mod tests {
             "other values are kept"
         );
 
-        app.set_codec(Codec::Wav);
+        app.set_codec(Codec::Wav).unwrap();
         app.set_bit_depth(BitDepth::TwentyFour);
         assert_eq!(
             (app.output.codec, app.output.bit_depth),
@@ -2627,6 +2707,7 @@ mod tests {
             result: Ok((vec![measurement(-15.0, -3.0)], Origin::Decoded)),
             elapsed: Duration::ZERO,
             identity: Some(tagged),
+            mix: MixPlan::default(),
         });
         let track = &app.groups[0].tracks[0];
         assert_eq!(
@@ -2651,6 +2732,7 @@ mod tests {
             identity: Some(Identity::unknown(
                 rangeforge_core::identify::IdentitySource::FileTags,
             )),
+            mix: MixPlan::default(),
         });
         assert_eq!(app.groups[0].tracks[0].identity, before);
     }
@@ -2674,6 +2756,7 @@ mod tests {
                 track: Some(14),
                 ..Identity::unknown(IdentitySource::FileTags)
             }),
+            mix: MixPlan::default(),
         });
         app.set_naming("{track:02} - {title}", "{artist} - {title}")
             .unwrap();
@@ -3193,6 +3276,147 @@ mixed ,	Rare"
         }];
         assert_eq!(app.apply_names_from_list(&blank).unwrap(), 0);
         assert_eq!(app.groups[0].tracks[0].identity, before);
+    }
+
+    fn outcome_for(mix: MixPlan) -> MeasureOutcome {
+        MeasureOutcome {
+            group: 0,
+            result: Ok((
+                vec![measurement(-18.0, -3.0), measurement(-19.0, -4.0)],
+                Origin::Decoded,
+            )),
+            elapsed: Duration::ZERO,
+            mix,
+            identity: None,
+        }
+    }
+
+    #[test]
+    fn changing_the_channels_measures_again_and_throws_away_stale_answers() {
+        let mut app = ready_app();
+        let stereo = MixPlan {
+            channels: Channels::Stereo,
+            style: Downmix::Standard,
+        };
+        let jobs = app.set_channels(Channels::Stereo).unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(
+            jobs[0].mix, stereo,
+            "the job carries the mix to measure with"
+        );
+        assert!(matches!(app.groups[0].status, Status::Pending));
+        assert!(app.groups[0].tracks.iter().all(|t| t.measurement.is_none()));
+        assert!(
+            app.set_channels(Channels::Stereo).unwrap().is_empty(),
+            "the same choice again changes nothing"
+        );
+
+        // An answer for the mix that was chosen before is not about this one: it is dropped.
+        app.apply(outcome_for(MixPlan::default()));
+        assert!(matches!(app.groups[0].status, Status::Pending));
+        assert!(app.groups[0].tracks.iter().all(|t| t.measurement.is_none()));
+        // The answer for the chosen mix is taken.
+        app.apply(outcome_for(stereo));
+        assert!(matches!(app.groups[0].status, Status::Done(_)));
+        assert!(app.groups[0].tracks.iter().all(|t| t.measurement.is_some()));
+
+        // And back to the original: measured again, and the stereo answer is now the stale one.
+        app.set_channels(Channels::Original).unwrap();
+        app.apply(outcome_for(stereo));
+        assert!(matches!(app.groups[0].status, Status::Pending));
+    }
+
+    #[test]
+    fn the_downmix_style_only_matters_when_something_is_mixed() {
+        let mut app = ready_app();
+        assert!(
+            app.set_downmix(Downmix::WithBass).unwrap().is_empty(),
+            "nothing is mixed, so there is nothing to measure again"
+        );
+        assert!(
+            matches!(app.groups[0].status, Status::Done(_)),
+            "the measurements stand"
+        );
+        app.set_channels(Channels::Stereo).unwrap();
+        assert_eq!(
+            app.output.mix.style,
+            Downmix::WithBass,
+            "the style was kept"
+        );
+        let jobs = app.set_downmix(Downmix::FrontOnly).unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].mix.style, Downmix::FrontOnly);
+        // A style that does not change is no change.
+        assert!(app.set_downmix(Downmix::FrontOnly).unwrap().is_empty());
+    }
+
+    #[test]
+    fn quad_is_refused_with_a_codec_that_cannot_hold_it_whichever_is_chosen_first() {
+        let mut app = ready_app(); // ALAC, as it starts
+        let refused = app.set_channels(Channels::Quad).unwrap_err();
+        assert!(
+            refused.contains("alac") && refused.contains("quad"),
+            "{refused}"
+        );
+        assert_eq!(
+            app.output.mix.channels,
+            Channels::Original,
+            "nothing changed"
+        );
+        assert!(
+            matches!(app.groups[0].status, Status::Done(_)),
+            "and nothing was measured again"
+        );
+
+        app.set_codec(Codec::Flac).unwrap();
+        app.set_channels(Channels::Quad).unwrap();
+        let refused = app.set_codec(Codec::Alac).unwrap_err();
+        assert!(
+            refused.contains("alac") && refused.contains("quad"),
+            "{refused}"
+        );
+        assert_eq!(app.output.codec, Codec::Flac, "the codec was not changed");
+        app.set_codec(Codec::Aac).unwrap();
+        app.set_codec(Codec::Wav).unwrap();
+
+        // Stereo is fine for ALAC.
+        app.set_channels(Channels::Stereo).unwrap();
+        app.set_codec(Codec::Alac).unwrap();
+    }
+
+    #[test]
+    fn nothing_is_changed_while_a_run_writes_files() {
+        let mut app = ready_app();
+        app.running = true;
+        assert!(app.set_channels(Channels::Mono).is_err());
+        app.set_channels(Channels::Original).unwrap(); // not a change, so not refused
+        assert_eq!(app.output.mix.channels, Channels::Original);
+        app.running = false;
+        app.set_channels(Channels::Stereo).unwrap();
+        app.running = true;
+        assert!(app.set_downmix(Downmix::FrontOnly).is_err());
+    }
+
+    #[test]
+    fn a_run_is_written_with_the_mix_the_table_was_measured_with_and_new_files_follow_it() {
+        let mut app = ready_app();
+        let stereo = MixPlan {
+            channels: Channels::Stereo,
+            style: Downmix::Standard,
+        };
+        app.set_channels(Channels::Stereo).unwrap();
+        app.apply(outcome_for(stereo));
+        app.handle_key(Key::Enter);
+        let spec = app.take_run_spec().unwrap();
+        assert_eq!(spec.items[0].job.mix, stereo);
+
+        // A file added after the choice is measured with it from the start.
+        let dir = tempfile::tempdir().unwrap();
+        let cue = dir.path().join("album.cue");
+        std::fs::write(&cue, SHEET.replace("album.flac", "other.flac")).unwrap();
+        std::fs::write(dir.path().join("other.flac"), b"").unwrap();
+        app.add_paths(&[cue]);
+        assert_eq!(app.jobs.last().unwrap().mix, stereo);
     }
 
     #[test]

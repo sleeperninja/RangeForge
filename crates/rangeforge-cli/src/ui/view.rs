@@ -222,8 +222,9 @@ fn output_line(app: &App) -> Line<'static> {
         Span::from("   Bit Depth "),
         control(output.bit_depth.label(), app.focus == Focus::BitDepth),
         label(&format!(
-            "   Sample Rate {}   Channels original",
-            output.sample_rate.label().to_lowercase()
+            "   Sample Rate {}   Channels {}",
+            output.sample_rate.label().to_lowercase(),
+            output.mix.channels.name()
         )),
     ])
 }

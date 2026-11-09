@@ -85,6 +85,7 @@ pub fn run(options: &RunOptions) -> Result<()> {
     let plan = RunPlan {
         settings: Settings::new(options.target, !options.no_peak_protection, options.ceiling),
         format: options.output.output_settings().format(),
+        mix: options.output.output_settings().mix,
         strategy: &strategy,
         names: &names,
     };
@@ -122,6 +123,7 @@ pub fn run(options: &RunOptions) -> Result<()> {
 struct RunPlan<'a> {
     settings: Settings,
     format: OutputFormat,
+    mix: MixPlan,
     strategy: &'a Strategy,
     names: &'a NameTemplates,
 }
@@ -142,8 +144,8 @@ fn run_job(
         bail!("{message}");
     }
     let (measured, _) = match &job.cue_file {
-        Some(file) => measure_split(&job.audio, &file.segments(), MixPlan::default(), cache)?,
-        None => measure_whole(&job.audio, MixPlan::default(), cache)?,
+        Some(file) => measure_split(&job.audio, &file.segments(), plan.mix, cache)?,
+        None => measure_whole(&job.audio, plan.mix, cache)?,
     };
     let planned = plan_tracks(job, &measured.tracks, settings.target());
     // A single file is named from its own tags, or failing that its file name.
@@ -158,7 +160,7 @@ fn run_job(
         strategy: strategy.clone(),
         directory: source_dir.clone(),
         copy_source_tags: job.cue_file.is_none(),
-        mix: rangeforge_core::mix::MixPlan::default(),
+        mix: plan.mix,
     };
     let destinations = preview(&write_options, &plans)?;
     let folder = strategy.directory(&source_dir);

@@ -11,6 +11,7 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use rangeforge_core::mix::{Channels, Downmix};
 use rangeforge_export::format::{BitDepth, Codec, Container, SampleRate};
 use serde::{Deserialize, Serialize};
 
@@ -25,6 +26,10 @@ pub struct Preset {
     pub bit_depth: BitDepth,
     pub container: Container,
     pub sample_rate: SampleRate,
+    pub channels: Channels,
+    /// How the channels that go away are treated; it only matters when `channels` is not
+    /// original.
+    pub downmix: Downmix,
     pub target_lufs: f64,
     pub peak_protection: bool,
     pub peak_ceiling_dbtp: f64,
@@ -38,6 +43,8 @@ impl Preset {
             bit_depth,
             container: Container::Native,
             sample_rate: SampleRate::Original,
+            channels: Channels::Original,
+            downmix: Downmix::Standard,
             target_lufs: -22.0,
             peak_protection: true,
             peak_ceiling_dbtp: -0.6,
@@ -82,6 +89,11 @@ struct StoredPreset {
     /// Added later: a preset saved before then keeps the source's sample rate.
     #[serde(default = "default_sample_rate")]
     sample_rate: String,
+    /// Added later: a preset saved before then leaves the channels as they are.
+    #[serde(default = "default_channels")]
+    channels: String,
+    #[serde(default = "default_downmix")]
+    downmix: String,
     target_lufs: f64,
     peak_protection: bool,
     peak_ceiling_dbtp: f64,
@@ -95,6 +107,14 @@ fn default_sample_rate() -> String {
     SampleRate::Original.name().to_string()
 }
 
+fn default_channels() -> String {
+    Channels::Original.name().to_string()
+}
+
+fn default_downmix() -> String {
+    Downmix::Standard.name().to_string()
+}
+
 impl From<&Preset> for StoredPreset {
     fn from(preset: &Preset) -> Self {
         Self {
@@ -103,6 +123,8 @@ impl From<&Preset> for StoredPreset {
             bit_depth: preset.bit_depth.name().to_string(),
             container: preset.container.name().to_string(),
             sample_rate: preset.sample_rate.name().to_string(),
+            channels: preset.channels.name().to_string(),
+            downmix: preset.downmix.name().to_string(),
             target_lufs: preset.target_lufs,
             peak_protection: preset.peak_protection,
             peak_ceiling_dbtp: preset.peak_ceiling_dbtp,
@@ -116,12 +138,18 @@ impl StoredPreset {
             && self.target_lufs.is_finite()
             && self.peak_ceiling_dbtp.is_finite();
         valid.then_some(())?;
+        let codec = Codec::from_name(&self.codec)?;
+        let channels = Channels::from_name(&self.channels)?;
+        // A preset that asks a codec for what it cannot write (quad as ALAC) is skipped.
+        (channels != Channels::Quad || codec.can_write_quad()).then_some(())?;
         Some(Preset {
             name: self.name,
-            codec: Codec::from_name(&self.codec)?,
+            codec,
             bit_depth: BitDepth::from_name(&self.bit_depth)?,
             container: Container::from_name(&self.container)?,
             sample_rate: SampleRate::from_name(&self.sample_rate)?,
+            channels,
+            downmix: Downmix::from_name(&self.downmix)?,
             target_lufs: self.target_lufs,
             peak_protection: self.peak_protection,
             peak_ceiling_dbtp: self.peak_ceiling_dbtp,
@@ -212,6 +240,8 @@ mod tests {
             bit_depth: BitDepth::Sixteen,
             container: Container::Mka,
             sample_rate: SampleRate::Hz48000,
+            channels: Channels::Stereo,
+            downmix: Downmix::FrontOnly,
             target_lufs: -14.5,
             peak_protection: false,
             peak_ceiling_dbtp: -1.0,
@@ -251,6 +281,30 @@ mod tests {
         let loaded = load(&path);
         assert_eq!(loaded.presets.len(), 0);
         assert!(loaded.notes[0].contains("Skipped 2"), "{:?}", loaded.notes);
+    }
+
+    #[test]
+    fn channels_come_back_and_quad_for_a_codec_that_cannot_hold_it_is_skipped() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("presets.json");
+        fs::write(
+            &path,
+            br#"{"version": 1, "presets": [
+                {"name": "A", "codec": "flac", "bit_depth": "24", "channels": "quad", "downmix": "front", "target_lufs": -20.0, "peak_protection": true, "peak_ceiling_dbtp": -0.6},
+                {"name": "B", "codec": "alac", "bit_depth": "source", "channels": "quad", "target_lufs": -20.0, "peak_protection": true, "peak_ceiling_dbtp": -0.6},
+                {"name": "C", "codec": "flac", "bit_depth": "24", "target_lufs": -20.0, "peak_protection": true, "peak_ceiling_dbtp": -0.6}
+            ]}"#,
+        )
+        .unwrap();
+        let loaded = load(&path);
+        let names: Vec<&str> = loaded.presets.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, ["A", "C"], "quad as ALAC is skipped");
+        assert_eq!(loaded.presets[0].channels, Channels::Quad);
+        assert_eq!(loaded.presets[0].downmix, Downmix::FrontOnly);
+        // One saved before channels existed leaves them as they are.
+        assert_eq!(loaded.presets[1].channels, Channels::Original);
+        assert_eq!(loaded.presets[1].downmix, Downmix::Standard);
+        assert!(loaded.notes[0].contains("Skipped 1"), "{:?}", loaded.notes);
     }
 
     #[test]

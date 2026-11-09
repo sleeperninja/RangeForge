@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
+use rangeforge_core::mix::{Channels, Downmix, MixPlan};
 use rangeforge_export::format::{BitDepth, Codec, Container, SampleRate};
 use rangeforge_export::strategy::Strategy;
 
@@ -98,6 +99,49 @@ impl From<SampleRateArg> for SampleRate {
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
+enum ChannelsArg {
+    /// Keep each source's own channels
+    Original,
+    /// Four channels: front left and right, back left and right (from a 5.1 source)
+    Quad,
+    /// Two channels (from a 5.1, quad or other source with more)
+    Stereo,
+    /// One channel
+    Mono,
+}
+
+impl From<ChannelsArg> for Channels {
+    fn from(arg: ChannelsArg) -> Self {
+        match arg {
+            ChannelsArg::Original => Self::Original,
+            ChannelsArg::Quad => Self::Quad,
+            ChannelsArg::Stereo => Self::Stereo,
+            ChannelsArg::Mono => Self::Mono,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum DownmixArg {
+    /// Centre and surrounds go into left and right at -3 dB; the LFE is dropped
+    Standard,
+    /// The same, with the LFE added at -3 dB to the front channels
+    Bass,
+    /// Left and right as mixed; the centre, surrounds and LFE are not used
+    Front,
+}
+
+impl From<DownmixArg> for Downmix {
+    fn from(arg: DownmixArg) -> Self {
+        match arg {
+            DownmixArg::Standard => Self::Standard,
+            DownmixArg::Bass => Self::WithBass,
+            DownmixArg::Front => Self::FrontOnly,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
 enum ConflictArg {
     /// The new file gets a serial suffix such as _00; the file already there is untouched
     Number,
@@ -123,6 +167,13 @@ pub struct OutputArgs {
     /// The sample rate to write, in hertz, or original
     #[arg(long, value_enum, default_value = "original")]
     sample_rate: SampleRateArg,
+    /// How many channels to write. A mix only ever reduces them, and files with more than
+    /// six channels are always written as they are
+    #[arg(long, value_enum, default_value = "original")]
+    channels: ChannelsArg,
+    /// How the channels that go away are treated, when --channels is not original
+    #[arg(long, value_enum, default_value = "standard")]
+    downmix: DownmixArg,
     /// Write all files into this one folder instead of next to the originals
     #[arg(long, conflicts_with = "subfolder")]
     out: Option<PathBuf>,
@@ -153,12 +204,23 @@ impl OutputArgs {
             bit_depth: self.bit_depth.into(),
             container: self.container.into(),
             sample_rate: self.sample_rate.into(),
+            mix: MixPlan {
+                channels: self.channels.into(),
+                style: self.downmix.into(),
+            },
         }
     }
 
-    /// A plain-words reason the chosen codec cannot write the chosen sample rate, if so.
+    /// A plain-words reason the chosen codec cannot write the chosen sample rate or channels,
+    /// if so.
     pub fn format_problem(&self) -> Option<String> {
         let settings = self.output_settings();
+        if !settings.can_write_mix() {
+            return Some(format!(
+                "{} cannot hold quad (four-channel) audio: use flac, wav or aac, or another --channels",
+                settings.codec.name()
+            ));
+        }
         let hz = settings.sample_rate.hz()?;
         (!settings.codec.supports_rate(hz)).then(|| {
             format!(
@@ -312,6 +374,32 @@ mod tests {
     fn a_serial_suffix_without_digits_is_reported() {
         let error = parse(&["--suffix", "_new"]).strategy().unwrap_err();
         assert!(error.contains("digits"), "{error}");
+    }
+
+    #[test]
+    fn channels_and_downmix_are_chosen_by_name_and_quad_is_refused_for_alac() {
+        let args = parse(&["--channels", "stereo", "--downmix", "bass"]);
+        assert_eq!(
+            args.output_settings().mix,
+            MixPlan {
+                channels: Channels::Stereo,
+                style: Downmix::WithBass
+            }
+        );
+        assert_eq!(args.format_problem(), None);
+        assert_eq!(parse(&[]).output_settings().mix, MixPlan::default());
+        // ALAC cannot hold quad: said up front in plain words, and fine for the others.
+        let problem = parse(&["--channels", "quad"]).format_problem().unwrap();
+        assert!(
+            problem.contains("alac") && problem.contains("quad"),
+            "{problem}"
+        );
+        assert_eq!(
+            parse(&["--codec", "flac", "--channels", "quad"]).format_problem(),
+            None
+        );
+        assert!(Wrapper::try_parse_from(["test", "--channels", "surround"]).is_err());
+        assert!(Wrapper::try_parse_from(["test", "--downmix", "boost"]).is_err());
     }
 
     #[test]

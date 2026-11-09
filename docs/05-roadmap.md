@@ -2,9 +2,9 @@
 
 One phase scheme. This is the precise list. [ROADMAP.md](../ROADMAP.md) in the repository root is the same plan in plain words; when something changes, change both.
 
-**Now (0.4.0):** Phases 0 to 5 are built except benchmarks, `--json`/the HTML report and the Channels control. The desktop window (`rangeforge-app`, Tauri) does the whole job: measure, plan gain, split CUE albums, tag and write ALAC, FLAC, WAV, AAC or DSD output, the three File Strategy choices, file name patterns, presets, hand editing of names and tags, album headings, Last.fm album genres and the Radio tag. File Strategy, Output Format, Volume and the name patterns are remembered between sessions. On Houses of the Holy the whole album is written in about 9 s, every file measures -22.00 LUFS, and a 0 dB export is sample-for-sample identical to the source. The installer workflow (D-23) is set up and has not been run on CI yet.
+**Now (0.4.0, Channels built after it):** Phases 0 to 5 are built except benchmarks and `--json`/the HTML report. The channel mix (D-35: Original, Quad, Stereo, Mono, with a Downmix style) is built, measured on the mixed sound. The desktop window (`rangeforge-app`, Tauri) does the whole job: measure, plan gain, split CUE albums, tag and write ALAC, FLAC, WAV, AAC or DSD output, the three File Strategy choices, file name patterns, presets, hand editing of names and tags, album headings, Last.fm album genres and the Radio tag. File Strategy, Output Format, Volume and the name patterns are remembered between sessions. On Houses of the Holy the whole album is written in about 9 s, every file measures -22.00 LUFS, and a 0 dB export is sample-for-sample identical to the source. The installer workflow (D-23) is set up and has not been run on CI yet.
 
-Next: click through the newest build (song tags page and Add a tag lists, settings restored on reopen, Album & track names, the rows' new names), renaming from tags as a File Strategy choice, the Channels control (needs a decision next to D-12), and a check of the resampling. Settled: D-09 (keep Symphonia), D-12 (gain only, the true-peak ceiling is the limit, no compression).
+Next: click through the newest build (song tags page and Add a tag lists, settings restored on reopen, Album & track names, the rows' new names, Channels and Downmix), renaming from tags as a File Strategy choice, and remembering hand edits between sessions. Settled: D-09 (keep Symphonia), D-12 (gain only, the true-peak ceiling is the limit, no compression).
 
 | Phase | Goal | Done when |
 | --- | --- | --- |
@@ -36,5 +36,5 @@ See [04-decisions.md](04-decisions.md) for anything marked Parked.
 - **Check the resampling and the 24 to 16 bit dither** against a null or loudness test.
 - **Guess genre from the audio itself** (see D-32).
 - **Right-click copy** of table text, and a highlight on an album heading when all its songs are picked.
-- **Channels control** (rules in D-35, recipe still to choose) and a Settings CPU limit (not built).
+- A note on a file's row when it cannot be mixed, and a Settings CPU limit (not built).
 - **Opt-in limiter** for songs peak protection holds back (D-36); gain-only stays the default.

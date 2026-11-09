@@ -147,6 +147,10 @@
     fillSelect($('bitDepth'), s.options.bit_depths, s.output.bit_depth);
     fillSelect($('container'), s.options.containers, s.output.container);
     fillSelect($('sampleRate'), s.options.sample_rates, s.output.sample_rate);
+    fillSelect($('channels'), s.options.channels, s.output.channels);
+    fillSelect($('downmix'), s.options.downmixes, s.output.downmix);
+    // The style only matters when the channels are mixed.
+    $('downmixRow').classList.toggle('hidden', s.output.channels === 'original');
     fillSelect($('dsdCodec'), s.options.dsd_codecs, s.dsd.codec);
     fillSelect($('dsdContainer'), s.options.dsd_containers, s.dsd.container);
     fillSelect($('dsdSampleRate'), s.options.dsd_sample_rates, s.dsd.sample_rate);
@@ -611,6 +615,8 @@
       call('set_confirm_destructive', { on: e.target.checked }),
     );
     $('sampleRate').addEventListener('change', (e) => call('set_sample_rate', { id: e.target.value }));
+    $('channels').addEventListener('change', (e) => call('set_channels', { id: e.target.value }));
+    $('downmix').addEventListener('change', (e) => call('set_downmix', { id: e.target.value }));
 
     $('presetList').addEventListener('click', (e) => {
       const item = e.target.closest('li[data-index]');

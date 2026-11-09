@@ -56,6 +56,7 @@ fn work(queue: &Mutex<Receiver<Job>>, outcomes: &Sender<MeasureOutcome>, cache: 
             group: job.group,
             result,
             elapsed: started.elapsed(),
+            mix: job.mix,
             // A single file brings its tags along; a CUE album is identified by its sheet.
             identity: job.cue_file.is_none().then(|| identify_file(&job.audio)),
         };

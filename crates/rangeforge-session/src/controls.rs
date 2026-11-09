@@ -5,6 +5,7 @@
 
 use std::path::PathBuf;
 
+use rangeforge_core::mix::{Channels, MixPlan};
 use rangeforge_export::format::{BitDepth, Codec, Container, OutputFormat, SampleRate};
 use rangeforge_export::strategy::{Conflict, Destination, Strategy};
 
@@ -25,13 +26,15 @@ fn cycle<T: Copy + PartialEq>(items: &[T], current: T, steps: i32) -> T {
         .unwrap_or(current)
 }
 
-/// The Output Format panel. Channels are not settable: they are always the source's own.
+/// The Output Format panel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OutputSettings {
     pub codec: Codec,
     pub bit_depth: BitDepth,
     pub container: Container,
     pub sample_rate: SampleRate,
+    /// What to do about the channels: the source's own, or mixed down (D-35).
+    pub mix: MixPlan,
 }
 
 impl Default for OutputSettings {
@@ -42,6 +45,7 @@ impl Default for OutputSettings {
             bit_depth: BitDepth::Source,
             container: Container::Native,
             sample_rate: SampleRate::Original,
+            mix: MixPlan::default(),
         }
     }
 }
@@ -59,6 +63,11 @@ impl OutputSettings {
         OutputFormat::new(self.codec, self.bit_depth)
             .with_container(self.container)
             .with_sample_rate(self.sample_rate)
+    }
+
+    /// Whether the codec can write the channels asked for. ALAC cannot hold quad (D-35).
+    pub fn can_write_mix(self) -> bool {
+        self.mix.channels != Channels::Quad || self.codec.can_write_quad()
     }
 
     /// Puts back to "original" any setting the codec cannot do, such as 192 kHz AAC. Returns
@@ -393,6 +402,8 @@ impl PresetList {
             bit_depth: output.bit_depth,
             container: output.container,
             sample_rate: output.sample_rate,
+            channels: output.mix.channels,
+            downmix: output.mix.style,
             target_lufs: volume.target_lufs,
             peak_protection: volume.peak_protection,
             peak_ceiling_dbtp: volume.peak_ceiling_dbtp,
@@ -428,6 +439,10 @@ pub fn apply_preset(preset: &Preset, volume: &mut Settings, output: &mut OutputS
     output.bit_depth = preset.bit_depth;
     output.container = preset.container;
     output.sample_rate = preset.sample_rate;
+    output.mix = MixPlan {
+        channels: preset.channels,
+        style: preset.downmix,
+    };
 }
 
 fn matches(preset: &Preset, volume: &Settings, output: OutputSettings) -> bool {
@@ -435,6 +450,9 @@ fn matches(preset: &Preset, volume: &Settings, output: OutputSettings) -> bool {
         && preset.bit_depth == output.bit_depth
         && preset.container == output.container
         && preset.sample_rate == output.sample_rate
+        && preset.channels == output.mix.channels
+        // The style only matters when something is mixed.
+        && (output.mix.channels == Channels::Original || preset.downmix == output.mix.style)
         && preset.peak_protection == volume.peak_protection
         && (preset.target_lufs - volume.target_lufs).abs() < 1e-9
         && (preset.peak_ceiling_dbtp - volume.peak_ceiling_dbtp).abs() < 1e-9
@@ -776,6 +794,7 @@ mod tests {
             bit_depth: BitDepth::TwentyFour,
             container: Container::Mka,
             sample_rate: SampleRate::Hz96000,
+            mix: MixPlan::default(),
         };
 
         assert_eq!(
@@ -808,5 +827,72 @@ mod tests {
             "nothing selected, nothing deleted"
         );
         assert_eq!(presets.items.len(), 4);
+    }
+
+    #[test]
+    fn a_preset_remembers_the_channels_and_the_style_matters_only_when_mixing() {
+        use rangeforge_core::mix::Downmix;
+
+        let preset = Preset {
+            name: "Stereo front".to_string(),
+            codec: Codec::Flac,
+            bit_depth: BitDepth::TwentyFour,
+            container: Container::Native,
+            sample_rate: SampleRate::Original,
+            channels: Channels::Stereo,
+            downmix: Downmix::FrontOnly,
+            target_lufs: -22.0,
+            peak_protection: true,
+            peak_ceiling_dbtp: -0.6,
+        };
+        let (mut volume, mut output) = (Settings::default(), OutputSettings::default());
+        apply_preset(&preset, &mut volume, &mut output);
+        assert_eq!(
+            output.mix,
+            MixPlan {
+                channels: Channels::Stereo,
+                style: Downmix::FrontOnly
+            }
+        );
+        let mut presets = PresetList::new(vec![preset.clone()]);
+        presets.select_matching(&volume, output);
+        assert_eq!(presets.selected, Some(0));
+
+        // Another style while mixing is another setting, and no longer matches.
+        output.mix.style = Downmix::Standard;
+        presets.select_matching(&volume, output);
+        assert_eq!(presets.selected, None);
+        output.mix = MixPlan {
+            channels: Channels::Mono,
+            style: Downmix::FrontOnly,
+        };
+        presets.select_matching(&volume, output);
+        assert_eq!(presets.selected, None, "other channels do not match either");
+
+        // With the channels left alone, the style is not part of what the preset says.
+        let plain = Preset {
+            channels: Channels::Original,
+            downmix: Downmix::Standard,
+            ..preset
+        };
+        output.mix = MixPlan {
+            channels: Channels::Original,
+            style: Downmix::FrontOnly,
+        };
+        let mut presets = PresetList::new(vec![plain]);
+        presets.select_matching(&volume, output);
+        assert_eq!(presets.selected, Some(0));
+
+        // Saving keeps what is on screen.
+        output.mix = MixPlan {
+            channels: Channels::Quad,
+            style: Downmix::WithBass,
+        };
+        presets.save_as("Quad", &volume, output);
+        let saved = presets.selected_preset().unwrap();
+        assert_eq!(
+            (saved.channels, saved.downmix),
+            (Channels::Quad, Downmix::WithBass)
+        );
     }
 }

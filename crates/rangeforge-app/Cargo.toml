@@ -18,6 +18,7 @@ anyhow.workspace = true
 # Reads a `.env` file in debug builds only, so a developer's API key need not be typed in.
 dotenvy = "0.15"
 rangeforge-audio = { path = "../rangeforge-audio" }
+rangeforge-core = { path = "../rangeforge-core" }
 rangeforge-export = { path = "../rangeforge-export" }
 rangeforge-lookup = { path = "../rangeforge-lookup" }
 rangeforge-session = { path = "../rangeforge-session" }

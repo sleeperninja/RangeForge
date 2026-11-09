@@ -16,6 +16,8 @@ use serde::{Deserialize, Serialize};
 
 use rangeforge_export::format::{BitDepth, Codec, Container, SampleRate};
 
+use rangeforge_core::mix::{Channels, Downmix, MixPlan};
+
 use crate::controls::{OutputSettings, StrategySettings};
 use crate::dsd::DsdFormat;
 use crate::model::Settings;
@@ -193,6 +195,20 @@ struct StoredOutput {
     container: String,
     sample_rate: String,
     bit_depth: String,
+    /// Added later: a file saved before then leaves the channels as they are. Each has its own
+    /// default, so an older file still loads.
+    #[serde(default = "original_channels")]
+    channels: String,
+    #[serde(default = "standard_downmix")]
+    downmix: String,
+}
+
+fn original_channels() -> String {
+    Channels::Original.name().to_string()
+}
+
+fn standard_downmix() -> String {
+    Downmix::Standard.name().to_string()
 }
 
 impl StoredOutput {
@@ -202,6 +218,8 @@ impl StoredOutput {
             container: output.container.name().to_string(),
             sample_rate: output.sample_rate.name().to_string(),
             bit_depth: output.bit_depth.name().to_string(),
+            channels: output.mix.channels.name().to_string(),
+            downmix: output.mix.style.name().to_string(),
         }
     }
 
@@ -231,12 +249,28 @@ impl StoredOutput {
             note("bit depth", &self.bit_depth);
             defaults.bit_depth
         });
+        let channels = Channels::from_name(&self.channels).unwrap_or_else(|| {
+            note("channels", &self.channels);
+            Channels::Original
+        });
+        let style = Downmix::from_name(&self.downmix).unwrap_or_else(|| {
+            note("downmix", &self.downmix);
+            Downmix::Standard
+        });
         let mut output = OutputSettings {
             codec,
             bit_depth,
             container,
             sample_rate,
+            mix: MixPlan { channels, style },
         };
+        if !output.can_write_mix() {
+            output.mix.channels = Channels::Original;
+            notes.push(format!(
+                "The saved channels (quad) cannot be written as {}, so they are back to original",
+                codec.name()
+            ));
+        }
         if output.fit_to_codec() {
             notes.push(format!(
                 "The saved sample rate cannot be written as {}, so it is back to original",
@@ -448,6 +482,10 @@ mod tests {
                 bit_depth: BitDepth::TwentyFour,
                 container: Container::Mka,
                 sample_rate: SampleRate::Hz96000,
+                mix: MixPlan {
+                    channels: Channels::Stereo,
+                    style: Downmix::WithBass,
+                },
             },
             volume: Settings::new(-18.5, false, -1.2),
         }
@@ -566,6 +604,39 @@ mod tests {
         );
         assert!(loaded.settings.strategy.delete_original, "the rest is kept");
         assert_eq!(loaded.settings.dsd.sample_rate, SampleRate::Hz88200);
+        assert_eq!(loaded.notes.len(), 2, "{:?}", loaded.notes);
+    }
+
+    #[test]
+    fn an_older_output_block_has_original_channels_and_a_bad_mix_falls_back_with_a_note() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let file = |output: &str| {
+            format!(
+                r#"{{"version": 1, "album_name": "{{title}}", "single_name": "{{name}}", "output_format": {output}}}"#
+            )
+        };
+        // Saved before channels could be chosen: the whole file still loads.
+        fs::write(&path, file(r#"{"codec": "flac", "container": "native", "sample_rate": "original", "bit_depth": "16"}"#)).unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.settings.output.mix, MixPlan::default());
+        assert_eq!(loaded.notes, Vec::<String>::new());
+
+        // Quad cannot be written as ALAC: it goes back to original, with a note, and the style stays.
+        fs::write(&path, file(r#"{"codec": "alac", "container": "native", "sample_rate": "original", "bit_depth": "source", "channels": "quad", "downmix": "front"}"#)).unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.settings.output.mix.channels, Channels::Original);
+        assert_eq!(loaded.settings.output.mix.style, Downmix::FrontOnly);
+        assert!(
+            loaded.notes.iter().any(|n| n.contains("quad")),
+            "{:?}",
+            loaded.notes
+        );
+
+        // Names that are not understood fall back one by one.
+        fs::write(&path, file(r#"{"codec": "flac", "container": "native", "sample_rate": "original", "bit_depth": "16", "channels": "surround", "downmix": "boost"}"#)).unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.settings.output.mix, MixPlan::default());
         assert_eq!(loaded.notes.len(), 2, "{:?}", loaded.notes);
     }
 

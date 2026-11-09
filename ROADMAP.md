@@ -17,6 +17,7 @@ RangeForge does its main job today. Drop in an album or a pile of files, and it 
 - **Split CUE albums** into songs, and write ALAC, FLAC, WAV or AAC (plus DSD handled through FFmpeg).
 - **One gain per song, nothing else.** No compression or limiting, and never past the true-peak ceiling. (That rule is about dynamics: converting sample rate, bit depth or channels is a different thing, and the rules for it are written down, D-35.)
 - **File Strategy:** next to the original, in a subfolder you name, or all in one folder. Numbering, renaming the old file, or overwriting when a name is taken, and optionally deleting the original once everything is safely written.
+- **Mix the channels down** (Quad, Stereo or Mono, with a Downmix style: Standard, Standard + bass, Front pair only), measured on the mixed sound so the table shows the real loudness and peak. Quad is not offered for ALAC. Files with more than six channels stay as they are.
 - **Names from patterns,** for CUE tracks and for single files (`{artist}-{album}_{track:02}-{title}` and friends).
 - **Tags:** read from the file, the CUE sheet, or guessed from the file and folder names (including the long vinyl-download names, like the Doves ones). Edit names and tags by hand: one dialog, **Album & track names…**, for the artist, album, album artist and each song's title; **Add a tag…** for tags. For a CUE album the split points and track numbers stay the rip's, and the names you type replace the sheet's.
 - **Name many songs at once** by lining them up with the album's track list, from Last.fm or pasted from a store page. It makes a first guess, shows how each song was paired, and lets you change any row before anything happens.
@@ -36,12 +37,11 @@ These are the things on the plate, roughly in the order they make sense.
    - drop the Some Cities folder: clean titles and track numbers, and dropping the album again shouldn't add its `_rangeforged` output
    - right-click an album or any song → **Album & track names…**: fix the album's names, get Last.fm's track list and then a pasted one, and change a row by hand; on a CUE album, check the written names and that the track numbers stay
    - the rows' new names: italic for a guess, the original name on hover
+   - **Channels** and **Downmix** on a real 5.1 album: the table's loudness and peak change, the written files are stereo, and quad is refused for ALAC
 2. **Rename from the tags, as a File Strategy choice.** Today the single-file naming pattern lives in Settings and applies to every run. The idea is a visible choice next to the others: **Keep the original name** or **Rename from the tags**.
    *To decide:* should it refuse (or at least warn) when a name is only a guess from the file name, so it never produces worse names than the originals? It also needs a check that two new files can't pick the same name in one run.
-3. **Channels control.** Choose how many channels the output has: Original, Quad, Stereo or Mono, with a **Downmix** style under it (Standard, Standard + bass, Front pair only). The rules are written down (D-35): the one gain is worked out on the converted sound, because a downmix changes the loudness and raises the peaks (on real 5.1 music, by up to 1.6 LU and 4.9 dB), and the table will show the downmixed measurement. Files with more than 6 channels stay as they are. No centre boost and no Dolby-style matrix unless someone demands them.
-   *Still to decide:* how a quad source maps down to stereo or mono, and the mono scaling.
-4. **Downsampling: checked, mostly good (D-37).** On real hi-res music (the Pink Floyd 24/96 six-channel files, and the DSD I Robot) the resampling is already clean: inaudibly close to a very-high-precision reference, no extra peaks, loudness exactly on target at every rate. A SoX-based resampler would give a steeper edge and make the DSD stage about three times faster, at a gain no one can hear. *To decide:* whether that is worth the bundling work. One small fix is waiting: dither also when only the sample rate changes.
-5. **Remember hand edits between sessions.** Names and tags you edit are kept only until you close the program. They could be saved against the file.
+3. **Downsampling: checked, mostly good (D-37).** On real hi-res music (the Pink Floyd 24/96 six-channel files, and the DSD I Robot) the resampling is already clean: inaudibly close to a very-high-precision reference, no extra peaks, loudness exactly on target at every rate. A SoX-based resampler would give a steeper edge and make the DSD stage about three times faster, at a gain no one can hear. *To decide:* whether that is worth the bundling work. The small dither fix is in.
+4. **Remember hand edits between sessions.** Names and tags you edit are kept only until you close the program. They could be saved against the file.
 
 ---
 
@@ -51,6 +51,7 @@ These are the things on the plate, roughly in the order they make sense.
 - **`--json` output and a simple HTML report** from the terminal tool.
 - **Multichannel loudness** (4 to 8 channels), FLAC for Plex, and DSD/MLP input, aimed at the 206 GB surround collection.
 - **Use each song's length when lining songs up with a track list.** Last.fm gives the length of most tracks, which would be a good check for bonus tracks and odd editions. The measurements need to carry the length first.
+- **Say on a file's row when it cannot be mixed** (more than six channels, or already fewer): it is written as it is, with no note yet.
 - **A CPU limit** in Settings, so a big batch doesn't take over the machine.
 - **Signing the installers.** Right now Windows says the publisher is unknown, and the Mac needs the right-click → Open dance. Also the first real run of the installer build on GitHub (the docs say it hasn't run yet).
 - **Small window niceties:** right-click to copy table text, and a highlight on an album heading when all its songs are picked.

@@ -11,6 +11,7 @@
 use serde::Serialize;
 
 use rangeforge_core::identify::IdentitySource;
+use rangeforge_core::mix::{Channels, Downmix};
 use rangeforge_export::format::{BitDepth, Codec, Container};
 
 use crate::controls::{ConflictKind, OutputSettings, WhereKind, sample_rates_for};
@@ -122,6 +123,10 @@ pub struct OutputView {
     /// `original`, or the rate in hertz.
     pub sample_rate: String,
     pub bit_depth: String,
+    /// `original`, `quad`, `stereo` or `mono`.
+    pub channels: String,
+    /// `standard`, `bass` or `front`; it matters when the channels are not original.
+    pub downmix: String,
     /// The ending of the files that will be written: `m4a`, `flac`, `wav` or `mka`.
     pub extension: &'static str,
 }
@@ -206,6 +211,9 @@ pub struct Options {
     pub containers: Vec<Choice>,
     /// Only the sample rates the chosen codec can write.
     pub sample_rates: Vec<Choice>,
+    /// How many channels to write. Quad is left out for a codec that cannot hold it.
+    pub channels: Vec<Choice>,
+    pub downmixes: Vec<Choice>,
     pub places: Vec<Choice>,
     pub conflicts: Vec<Choice>,
     /// For the DSD Format: the Output Format's own choice, or a codec of its own.
@@ -423,6 +431,21 @@ fn options(output: OutputSettings) -> Options {
             })
             .collect(),
         // Only the rates the chosen codec can write.
+        channels: Channels::ALL
+            .into_iter()
+            .filter(|channels| *channels != Channels::Quad || output.codec.can_write_quad())
+            .map(|channels| Choice {
+                id: channels.name().to_string(),
+                label: channels.label().to_string(),
+            })
+            .collect(),
+        downmixes: Downmix::ALL
+            .into_iter()
+            .map(|style| Choice {
+                id: style.name().to_string(),
+                label: style.label().to_string(),
+            })
+            .collect(),
         sample_rates: sample_rates_for(output.codec)
             .into_iter()
             .map(|rate| Choice {
@@ -517,6 +540,8 @@ impl App {
                 container: self.output.container.name().to_string(),
                 sample_rate: self.output.sample_rate.name().to_string(),
                 bit_depth: self.output.bit_depth.name().to_string(),
+                channels: self.output.mix.channels.name().to_string(),
+                downmix: self.output.mix.style.name().to_string(),
                 extension: self.output.format().extension(),
             },
             strategy: StrategyView {
@@ -841,6 +866,47 @@ FILE \"in.flac\" WAVE
     }
 
     #[test]
+    fn the_channel_choices_follow_the_codec_and_the_panel_says_what_is_chosen() {
+        let mut app = sample_app();
+        let ids = |choices: &[Choice]| choices.iter().map(|c| c.id.clone()).collect::<Vec<_>>();
+        let snapshot = app.snapshot();
+        assert_eq!(
+            (
+                snapshot.output.channels.as_str(),
+                snapshot.output.downmix.as_str()
+            ),
+            ("original", "standard")
+        );
+        // ALAC, as the app starts, cannot hold quad, so it is not offered.
+        assert_eq!(
+            ids(&snapshot.options.channels),
+            ["original", "stereo", "mono"]
+        );
+        assert_eq!(
+            ids(&snapshot.options.downmixes),
+            ["standard", "bass", "front"]
+        );
+
+        app.set_codec(Codec::Flac).unwrap();
+        assert_eq!(
+            ids(&app.snapshot().options.channels),
+            ["original", "quad", "stereo", "mono"]
+        );
+        app.set_channels(Channels::Stereo).unwrap();
+        app.set_downmix(rangeforge_core::mix::Downmix::WithBass)
+            .unwrap();
+        let snapshot = app.snapshot();
+        assert_eq!(
+            (
+                snapshot.output.channels.as_str(),
+                snapshot.output.downmix.as_str()
+            ),
+            ("stereo", "bass")
+        );
+        serde_json::to_string(&snapshot).unwrap();
+    }
+
+    #[test]
     fn the_settings_panels_are_described() {
         let snapshot = sample_app().snapshot();
         assert!((snapshot.volume.target_lufs - -22.0).abs() < 1e-9);
@@ -888,10 +954,10 @@ FILE \"in.flac\" WAVE
         assert_eq!(options.sample_rates[0].label, "original");
         assert_eq!(options.sample_rates[3].label, "88.2 kHz");
 
-        app.set_codec(Codec::Flac);
+        app.set_codec(Codec::Flac).unwrap();
         assert_eq!(labels(&app.snapshot().options.containers), ["flac", "mka"]);
 
-        app.set_codec(Codec::Aac);
+        app.set_codec(Codec::Aac).unwrap();
         let rates = ids(&app.snapshot().options.sample_rates);
         assert_eq!(rates, ["original", "44100", "48000", "88200", "96000"]);
     }
@@ -967,7 +1033,7 @@ FILE \"in.flac\" WAVE
         assert!(naming.variables.iter().any(|v| v.key == "{albumartist}"));
 
         // The example follows the chosen format's extension.
-        app.set_codec(Codec::Flac);
+        app.set_codec(Codec::Flac).unwrap();
         app.set_naming("{artist} - {title}", "{name}").unwrap();
         let naming = app.snapshot().naming;
         assert_eq!(

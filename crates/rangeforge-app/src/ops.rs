@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use rangeforge_audio::cache::Cache;
+use rangeforge_core::mix::{Channels, Downmix};
 use rangeforge_export::format::{BitDepth, Codec, Container, SampleRate};
 use rangeforge_lookup::billboard::{self, Fetcher, Refresh};
 use rangeforge_lookup::lastfm::{LastFmError, ListedTrack, RawTag};
@@ -217,8 +218,7 @@ pub fn set_peak_protection(shared: &Shared, on: bool) -> Reply {
 pub fn set_codec(shared: &Shared, id: &str) -> Reply {
     with_app(shared, |app| {
         let codec = Codec::from_name(id).ok_or_else(|| format!("Unknown format {id:?}"))?;
-        app.set_codec(codec);
-        Ok(())
+        app.set_codec(codec)
     })
 }
 
@@ -245,6 +245,34 @@ pub fn set_sample_rate(shared: &Shared, id: &str) -> Reply {
             SampleRate::from_name(id).ok_or_else(|| format!("Unknown sample rate {id:?}"))?;
         app.set_sample_rate(rate)
     })
+}
+
+/// Chooses how many channels to write. Measuring has to be done again on the mixed sound, so this
+/// gives back the jobs for the caller to start, as adding files does.
+pub fn set_channels(shared: &Shared, id: &str) -> (Reply, Vec<Job>) {
+    let mut app = shared.lock();
+    let result = Channels::from_name(id)
+        .ok_or_else(|| format!("Unknown channels {id:?}"))
+        .and_then(|channels| app.set_channels(channels));
+    let (jobs, error) = match result {
+        Ok(jobs) => (jobs, None),
+        Err(problem) => (Vec::new(), Some(problem)),
+    };
+    (reply(shared, &mut app, error), jobs)
+}
+
+/// Chooses how the channels that go away are treated. It changes nothing while the channels are
+/// left as they are; otherwise it gives back the jobs to measure again, like [`set_channels`].
+pub fn set_downmix(shared: &Shared, id: &str) -> (Reply, Vec<Job>) {
+    let mut app = shared.lock();
+    let result = Downmix::from_name(id)
+        .ok_or_else(|| format!("Unknown downmix {id:?}"))
+        .and_then(|style| app.set_downmix(style));
+    let (jobs, error) = match result {
+        Ok(jobs) => (jobs, None),
+        Err(problem) => (Vec::new(), Some(problem)),
+    };
+    (reply(shared, &mut app, error), jobs)
 }
 
 /// Sets one part of the DSD Format: `codec`, `container`, `sample_rate` or `bit_depth`. For the
@@ -1753,6 +1781,131 @@ mod tests {
         }
         assert!(dir.path().join("song.m4a").exists());
         assert!(song.exists(), "the source is untouched");
+    }
+
+    /// A 4-second 16-bit 5.1 WAVE file in which only the back left channel plays (440 Hz).
+    fn write_back_left_wav(path: &Path) {
+        let (rate, channels, frames) = (44_100_u32, 6_u16, 44_100 * 4);
+        let mut data = Vec::new();
+        for frame in 0..frames {
+            for channel in 0..usize::from(channels) {
+                let value: i16 = if channel == 4 {
+                    #[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+                    let sample = (0.4
+                        * (std::f32::consts::TAU * 440.0 * frame as f32 / 44_100.0).sin()
+                        * 32767.0)
+                        .round() as i16;
+                    sample
+                } else {
+                    0
+                };
+                data.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        let align = channels * 2;
+        let mut fmt = Vec::new();
+        fmt.extend_from_slice(&0xFFFE_u16.to_le_bytes());
+        fmt.extend_from_slice(&channels.to_le_bytes());
+        fmt.extend_from_slice(&rate.to_le_bytes());
+        fmt.extend_from_slice(&(rate * u32::from(align)).to_le_bytes());
+        fmt.extend_from_slice(&align.to_le_bytes());
+        fmt.extend_from_slice(&16_u16.to_le_bytes());
+        fmt.extend_from_slice(&22_u16.to_le_bytes());
+        fmt.extend_from_slice(&16_u16.to_le_bytes());
+        fmt.extend_from_slice(&0x3F_u32.to_le_bytes()); // 5.1
+        fmt.extend_from_slice(&[
+            1, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xAA, 0, 0x38, 0x9B, 0x71,
+        ]);
+        let mut file = Vec::new();
+        let size = |bytes: &[u8]| u32::try_from(bytes.len()).unwrap();
+        file.extend_from_slice(b"RIFF");
+        file.extend_from_slice(&(4 + 8 + size(&fmt) + 8 + size(&data)).to_le_bytes());
+        file.extend_from_slice(b"WAVEfmt ");
+        file.extend_from_slice(&size(&fmt).to_le_bytes());
+        file.extend_from_slice(&fmt);
+        file.extend_from_slice(b"data");
+        file.extend_from_slice(&size(&data).to_le_bytes());
+        file.extend_from_slice(&data);
+        fs::write(path, file).unwrap();
+    }
+
+    #[test]
+    fn changing_the_channels_measures_the_files_again_and_the_choice_is_remembered() {
+        let Some(ffmpeg) = ffmpeg() else { return };
+        let dir = tempdir().unwrap();
+        let song = dir.path().join("surround.wav");
+        write_back_left_wav(&song);
+        let shared = shared_with_presets(dir.path());
+        let (_, jobs) = add_paths(&shared, &[song.display().to_string()]);
+        let measure = |jobs: Vec<Job>| {
+            let outcomes = engine::start(jobs, shared.cache());
+            let outcome = outcomes.recv_timeout(Duration::from_secs(60)).unwrap();
+            apply_outcome(&shared, outcome)
+        };
+        let loudness = |reply: &Reply| reply.state.groups[0].tracks[0].loudness_lufs.unwrap();
+        let six = loudness(&measure(jobs));
+
+        // Stereo: the file is measured again, and the row says so until the answer is back.
+        let (reply, jobs) = set_channels(&shared, "stereo");
+        assert_eq!(reply.error, None);
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(reply.state.output.channels, "stereo");
+        assert!(reply.state.groups[0].measuring);
+        assert_eq!(reply.state.groups[0].tracks[0].loudness_lufs, None);
+        let reply = measure(jobs);
+        assert!(!reply.state.groups[0].measuring);
+        assert!(reply.state.groups[0].tracks[0].adjust_db.is_some());
+        // Only the back left plays. The 6-channel meter weights a surround at +1.5 dB; the mix
+        // puts it in one side at -3 dB. So the mixed sound measures 4.5 LU quieter.
+        let stereo = loudness(&reply);
+        assert!((six - stereo - 4.5).abs() < 0.3, "{six} -> {stereo}");
+
+        // Run it: the written file is stereo.
+        let (run, spec) = begin_run(&shared, false);
+        assert_eq!(run.outcome, "started");
+        let events = runner::start(spec.unwrap(), ffmpeg);
+        loop {
+            let event = events.recv_timeout(Duration::from_secs(60)).unwrap();
+            let done = event == RunEvent::AllDone;
+            apply_run_event(&shared, event);
+            if done {
+                break;
+            }
+        }
+        let written = dir.path().join("surround.m4a");
+        let info = rangeforge_audio::decode::for_each_block::<rangeforge_audio::AudioError, _>(
+            &written,
+            |_, _| Ok(()),
+        )
+        .unwrap();
+        assert_eq!(info.channels, 2, "written as stereo");
+
+        // Quad is refused for ALAC, with a reason, and nothing is measured again.
+        let (reply, jobs) = set_channels(&shared, "quad");
+        assert!(
+            reply.error.as_deref().is_some_and(|e| e.contains("quad")),
+            "{:?}",
+            reply.error
+        );
+        assert!(jobs.is_empty());
+        assert_eq!(reply.state.output.channels, "stereo");
+        assert!(set_channels(&shared, "surround").0.error.is_some());
+
+        // The choice, and the style, are as they were left after a restart.
+        let (_, jobs) = set_downmix(&shared, "bass");
+        assert_eq!(
+            jobs.len(),
+            1,
+            "the style matters now that something is mixed"
+        );
+        let again = shared_with_presets(dir.path());
+        let snapshot = state(&again).state;
+        assert_eq!(snapshot.output.channels, "stereo");
+        assert_eq!(snapshot.output.downmix, "bass");
+
+        // Back to the original: measured again, and the loudness is the 6-channel one.
+        let (_, jobs) = set_channels(&shared, "original");
+        assert!((loudness(&measure(jobs)) - six).abs() < 0.01);
     }
 
     #[test]

@@ -169,6 +169,22 @@ async fn set_sample_rate(id: String, state: Session<'_>) -> Result<Reply, String
     Ok(ops::set_sample_rate(&state, &id))
 }
 
+/// Chooses how many channels to write, then measures the loaded files again on the mixed sound.
+#[tauri::command]
+async fn set_channels(id: String, state: Session<'_>, app: AppHandle) -> Result<Reply, String> {
+    let (reply, jobs) = ops::set_channels(&state, &id);
+    watch_measuring(&app, state.inner(), jobs);
+    Ok(reply)
+}
+
+/// Chooses how the channels that go away are treated, then measures again if that matters.
+#[tauri::command]
+async fn set_downmix(id: String, state: Session<'_>, app: AppHandle) -> Result<Reply, String> {
+    let (reply, jobs) = ops::set_downmix(&state, &id);
+    watch_measuring(&app, state.inner(), jobs);
+    Ok(reply)
+}
+
 #[tauri::command]
 async fn set_dsd_format(field: String, id: String, state: Session<'_>) -> Result<Reply, String> {
     Ok(ops::set_dsd_format(&state, &field, &id))
@@ -506,6 +522,8 @@ fn main() {
             set_codec,
             set_container,
             set_sample_rate,
+            set_channels,
+            set_downmix,
             set_bit_depth,
             set_dsd_format,
             set_confirm_destructive,
