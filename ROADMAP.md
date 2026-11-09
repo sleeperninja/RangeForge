@@ -18,7 +18,7 @@ RangeForge does its main job today. Drop in an album or a pile of files, and it 
 - **One gain per song, nothing else.** No compression or limiting, and never past the true-peak ceiling.
 - **File Strategy:** next to the original, in a subfolder you name, or all in one folder. Numbering, renaming the old file, or overwriting when a name is taken, and optionally deleting the original once everything is safely written.
 - **Names from patterns,** for CUE tracks and for single files (`{artist}-{album}_{track:02}-{title}` and friends).
-- **Tags:** read from the file, the CUE sheet, or guessed from the file and folder names (including the long vinyl-download names, like the Doves ones). Edit names and tags by hand, for one song, several, or a whole album.
+- **Tags:** read from the file, the CUE sheet, or guessed from the file and folder names (including the long vinyl-download names, like the Doves ones). Edit names and tags by hand: one dialog, **Album & track names…**, for the artist, album, album artist and each song's title; **Add a tag…** for tags. For a CUE album the split points and track numbers stay the rip's, and the names you type replace the sheet's.
 - **Name many songs at once** by lining them up with the album's track list, from Last.fm or pasted from a store page. It makes a first guess, shows how each song was paired, and lets you change any row before anything happens.
 - **Rows show the name each song will be written as,** with the original file name on hover, and a guess in italics, so you can see the result before pressing Run.
 - **Genres:** from the album's Last.fm tags, plus a blue **Radio** tag for songs that charted on the Billboard Hot 100.
@@ -34,7 +34,7 @@ These are the things on the plate, roughly in the order they make sense.
    - right-click → **Open song tags page on Last.fm**, and pasting a list into **Add a tag…**
    - change codec, sample rate, target and the subfolder name, close mid-edit, reopen, and check everything came back
    - drop the Some Cities folder: clean titles and track numbers, and dropping the album again shouldn't add its `_rangeforged` output
-   - right-click an album → **Match songs to a track list…**: Last.fm's list, then a pasted one, and changing a row by hand
+   - right-click an album or any song → **Album & track names…**: fix the album's names, get Last.fm's track list and then a pasted one, and change a row by hand; on a CUE album, check the written names and that the track numbers stay
    - the rows' new names: italic for a guess, the original name on hover
 2. **Rename from the tags, as a File Strategy choice.** Today the single-file naming pattern lives in Settings and applies to every run. The idea is a visible choice next to the others: **Keep the original name** or **Rename from the tags**.
    *To decide:* should it refuse (or at least warn) when a name is only a guess from the file name, so it never produces worse names than the originals? It also needs a check that two new files can't pick the same name in one run.

@@ -66,7 +66,7 @@ test('the right-click menu depends on the row and what is switched on', () => {
       'Include this song',
       'Include every song of this album',
       'Add a tag to this song…',
-      'Edit artist, title and album…',
+      'Album & track names…',
       'Open song tags page on Last.fm',
       'Get tags from Last.fm for this album',
       'Select every song with this album',
@@ -81,8 +81,7 @@ test('the right-click menu depends on the row and what is switched on', () => {
     [
       'Leave out every song of this album',
       'Add a tag to every song of this album…',
-      'Edit album name and artist…',
-      'Match songs to a track list…',
+      'Album & track names…',
       'Get tags from Last.fm for this album',
       'Remove from the list',
     ],
@@ -93,11 +92,17 @@ test('the right-click menu depends on the row and what is switched on', () => {
     label: 'Add a tag to every song of this album…',
     targets: [{ group: 0, track: null }],
   });
+  assert.strictEqual(album[3].action, 'lastfm');
   assert.deepStrictEqual(album[3].targets, [{ group: 0, track: null }]);
-  assert.strictEqual(album[3].action, 'match_names');
-  assert.strictEqual(album[4].action, 'lastfm');
-  // Lining songs up with a track list is for an album or several songs, not for one song.
-  assert.ok(!song.some((item) => item.action === 'match_names'));
+  // One item names the album and its songs, from a song's menu or the album's, and the old
+  // separate name editing and matching items are gone.
+  const names = (menu) => menu.filter((item) => item.action === 'album_names');
+  assert.strictEqual(names(song).length, 1);
+  assert.strictEqual(names(album).length, 1);
+  // From a song's menu or its album's row, it is the same album's songs.
+  const sameAlbum = Render.menuItems(demo, 1, null);
+  assert.deepStrictEqual(names(song)[0].targets, names(sameAlbum)[0].targets);
+  assert.ok(![...song, ...album].some((i) => i.action === 'edit_names' || i.action === 'match_names'));
 
   // A song's tags page is opened in the browser from the song's own menu only.
   assert.deepStrictEqual(song[4], {
@@ -108,7 +113,7 @@ test('the right-click menu depends on the row and what is switched on', () => {
   assert.ok(!album.some((item) => item.action === 'open_song_page'));
 
   assert.deepStrictEqual(Render.menuItems(demo, 99, null), []);
-  assert.match(Render.menuHtml(album), /data-item="5">Remove from the list/);
+  assert.match(Render.menuHtml(album), /data-item="4">Remove from the list/);
 
   // Tags can be removed with a ×, once the song's place in the list is known.
   const chips = Render.chipsHtml([{ text: 'Prog "Rock"', kind: 'mine', title: 'x' }], 2, 5);
@@ -128,19 +133,19 @@ test('several picked songs get one menu that works on all of them', () => {
     [
       'Leave out these 3 songs',
       'Add a tag to these 3 songs…',
-      'Edit names of these 3 songs…',
-      'Match these 3 songs to a track list…',
+      'Album & track names…',
       'Open song tags pages on Last.fm for these 3 songs',
       'Get tags from Last.fm for their albums',
       'Select every song with this album',
     ],
   );
   assert.deepStrictEqual(menu[1].targets, picks);
-  assert.strictEqual(menu[3].action, 'match_names');
+  // The album dialog covers the clicked song's whole album, not only the picked songs.
+  assert.strictEqual(menu[2].action, 'album_names');
+  assert.deepStrictEqual(menu[2].targets, Render.albumScope(demo, 0));
+  assert.strictEqual(menu[3].action, 'open_song_page');
   assert.deepStrictEqual(menu[3].targets, picks);
-  assert.strictEqual(menu[4].action, 'open_song_page');
-  assert.deepStrictEqual(menu[4].targets, picks);
-  assert.strictEqual(menu[5].action, 'lastfm');
+  assert.strictEqual(menu[4].action, 'lastfm');
   // One picked song is just that song's own menu.
   assert.strictEqual(Render.menuItems(demo, 0, 1, [picks[1]])[0].action, 'toggle_track');
 });
@@ -237,8 +242,7 @@ test('an album heading works on every file under it', () => {
     [
       'Leave out every song of this album',
       'Add a tag to every song of this album…',
-      'Edit album name and artist…',
-      'Match songs to a track list…',
+      'Album & track names…',
       'Get tags from Last.fm for this album',
       'Remove this album from the list',
     ],
@@ -247,10 +251,13 @@ test('an album heading works on every file under it', () => {
     { group: 0, track: null },
     { group: 1, track: null },
   ]);
-  assert.strictEqual(menu[3].action, 'match_names');
-  assert.deepStrictEqual(menu[3].targets, menu[1].targets);
-  assert.strictEqual(menu[4].action, 'lastfm');
-  assert.deepStrictEqual(menu[5].groups, [0, 1]);
+  assert.strictEqual(menu[2].action, 'album_names');
+  assert.deepStrictEqual(menu[2].targets, [
+    { group: 0, track: 0 },
+    { group: 1, track: 0 },
+  ]);
+  assert.strictEqual(menu[3].action, 'lastfm');
+  assert.deepStrictEqual(menu[4].groups, [0, 1]);
   assert.deepStrictEqual(Render.blockMenuItems(state, [9]), []);
 });
 
@@ -345,4 +352,20 @@ test('a renamed song shows its new name, with the original on hover and a guess 
   // Names are escaped.
   const risky = Render.trackRowHtml(song({ output_name: 'A <b> & "C"' }), 'alac', 0, 0);
   assert.doesNotMatch(risky, /<b>/);
+});
+
+test('the album dialog covers the whole album from any of its songs, and a lone file on its own', () => {
+  const state = {
+    output: { codec: 'alac' },
+    groups: [file('a', 'Some Cities', 'f'), file('b', 'Some Cities', 'f'), file('c', 'Other', 'f'), file('d', null, 'f')],
+  };
+  const both = [
+    { group: 0, track: 0 },
+    { group: 1, track: 0 },
+  ];
+  assert.deepStrictEqual(Render.albumScope(state, 0), both);
+  assert.deepStrictEqual(Render.albumScope(state, 1), both, 'the same album from its other file');
+  // An album of one file, and a file with no album, are their own scope.
+  assert.deepStrictEqual(Render.albumScope(state, 2), [{ group: 2, track: 0 }]);
+  assert.deepStrictEqual(Render.albumScope(state, 3), [{ group: 3, track: 0 }]);
 });

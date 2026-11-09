@@ -244,18 +244,16 @@
       includeMany(item.targets, item.on);
     } else if (item.action === 'add_tag') {
       askForTag(item.targets);
-    } else if (item.action === 'edit_names') {
-      askForNames(item.targets);
     } else if (item.action === 'lastfm') {
       call('get_lastfm_tags', { targets: item.targets });
     } else if (item.action === 'open_song_page') {
       call('open_song_pages', { targets: item.targets });
-    } else if (item.action === 'match_names') {
-      askToMatch(item.targets);
+    } else if (item.action === 'album_names') {
+      askForAlbum(item.targets);
     } else if (item.action === 'select_album') {
       const same = Render.sameAlbum(state, item.group, item.track);
       if (same.length === 0) {
-        toast('This song has no album name yet. Use Edit artist, title and album to give it one.');
+        toast('This song has no album name yet. Use Album & track names to give it one.');
       } else {
         setSelection(same.map((p) => pickKey(p.group, p.track)), pickKey(same[0].group, same[0].track));
         toast(`${same.length} song${same.length === 1 ? '' : 's'} selected. Right-click one to work on them all.`);
@@ -414,188 +412,160 @@
     $('tagText').focus();
   }
 
-  // Lining songs up with an album's track list, to name many songs at once. The program makes a
-  // first guess (by title, then by track number, then by order) and each row can be changed.
-  async function askToMatch(targets) {
-    const dialog = $('matchDialog');
-    const songCount = songsOf(targets).length;
-    $('matchPrompt').textContent = `Give ${songCount} song${songCount === 1 ? '' : 's'} their names from the album's track list:`;
-    let plan = null;
-    const sourceInputs = document.querySelectorAll('input[name="matchSource"]');
-
-    const how = { title: ['by title', ''], number: ['by track number only', 'weak'], order: ['by order only', 'weak'] };
-    const unchanged = '(leave as it is)';
-
-    function status(text) {
-      $('matchStatus').textContent = text;
-    }
-
-    function chosen() {
-      return [...document.querySelectorAll('#matchRows select')].map((select) => Number(select.value));
-    }
-
-    function refresh() {
-      const picks = chosen();
-      const seen = new Map();
-      for (const pick of picks) {
-        if (pick >= 0) {
-          seen.set(pick, (seen.get(pick) || 0) + 1);
-        }
-      }
-      const clash = [...seen.values()].some((count) => count > 1);
-      document.querySelectorAll('#matchRows tr').forEach((row, i) => {
-        row.classList.toggle('clash', picks[i] >= 0 && seen.get(picks[i]) > 1);
-      });
-      const named = picks.filter((pick) => pick >= 0).length;
-      const unused = plan ? plan.list.length - seen.size : 0;
-      if (plan) {
-        status(
-          clash
-            ? 'Two songs have the same title chosen. Change one of them.'
-            : `${named} of ${plan.songs.length} songs will be named. ${unused} listed title${unused === 1 ? ' is' : 's are'} not used.` +
-                (plan.list.length !== plan.songs.length ? ` The list has ${plan.list.length} titles for ${plan.songs.length} songs.` : ''),
-        );
-      }
-      $('matchApply').disabled = clash || named === 0;
-    }
-
-    function show(next) {
-      plan = next;
-      const options = ['<option value="-1">' + Render.esc(unchanged) + '</option>']
-        .concat(plan.list.map((entry, i) => `<option value="${i}">${entry.number}. ${Render.esc(entry.title)}</option>`))
-        .join('');
-      $('matchRows').innerHTML = plan.songs
-        .map((song, s) => {
-          const pair = plan.pairs[s];
-          const [text, weak] = pair ? how[pair.how] : ['not matched', 'weak'];
-          return (
-            `<tr><td class="was" title="${Render.esc(song.label)}">${Render.esc(song.label)}</td>` +
-            `<td><select data-song="${s}">${options}</select></td>` +
-            `<td class="how ${weak}">${text}</td></tr>`
-          );
-        })
-        .join('');
-      document.querySelectorAll('#matchRows select').forEach((select, s) => {
-        const pair = plan.pairs[s];
-        select.value = pair ? String(pair.item) : '-1';
-        select.addEventListener('change', refresh);
-      });
-      refresh();
-    }
-
-    async function lineUp() {
-      const paste = document.querySelector('input[name="matchSource"][value="paste"]').checked;
-      status(paste ? 'Lining up…' : 'Asking Last.fm for the track list…');
-      $('matchApply').disabled = true;
-      let reply = null;
-      try {
-        reply = await tauri.core.invoke('plan_track_match', { targets, text: paste ? $('matchPaste').value : null });
-      } catch (error) {
-        reply = { plan: null, error: String(error) };
-      }
-      if (reply.plan) {
-        show(reply.plan);
-        status(`${reply.plan.artist} – ${reply.plan.album}. ` + $('matchStatus').textContent);
-      } else {
-        plan = null;
-        $('matchRows').innerHTML = '';
-        status(reply.error || 'Nothing could be lined up.');
-        // When Last.fm cannot help, the paste box is the way on.
-        if (!paste) {
-          document.querySelector('input[name="matchSource"][value="paste"]').checked = true;
-          $('matchPasteBox').classList.remove('hidden');
-        }
-      }
-    }
-
-    for (const input of sourceInputs) {
-      input.onchange = () => {
-        const paste = document.querySelector('input[name="matchSource"][value="paste"]').checked;
-        $('matchPasteBox').classList.toggle('hidden', !paste);
-        if (!paste) {
-          lineUp();
-        } else {
-          $('matchPaste').focus();
-        }
-      };
-    }
-    $('matchLineUp').onclick = lineUp;
-
-    document.querySelector('input[name="matchSource"][value="lastfm"]').checked = true;
-    $('matchPasteBox').classList.add('hidden');
-    $('matchRows').innerHTML = '';
-    $('matchApply').disabled = true;
-    dialog.returnValue = '';
-    dialog.addEventListener(
-      'close',
-      () => {
-        if (dialog.returnValue === 'apply' && plan) {
-          const picks = chosen();
-          const assignments = plan.songs.flatMap((song, s) =>
-            picks[s] >= 0
-              ? [{ group: song.group, track: song.track, title: plan.list[picks[s]].title, number: plan.list[picks[s]].number }]
-              : [],
-          );
-          call('apply_track_names', { assignments });
-        }
-      },
-      { once: true },
-    );
-    dialog.showModal();
-    lineUp();
-  }
-
   // The value every song agrees on, or an empty string if they differ.
   function shared(values) {
     const first = values[0] || '';
     return values.every((v) => (v || '') === first) ? first : '';
   }
 
-  // Asks for who songs are, or what an album is called when the targets are a whole album.
-  // With several songs, fields left empty keep what each song already has.
-  function askForNames(targets) {
+  // The album dialog: the artist, album and album artist of an album, and each song's title,
+  // together. The titles can be typed, or taken from the album's track list (from Last.fm or
+  // pasted), which is lined up with the songs as a first guess that can be changed row by row.
+  // `targets` is every song of the album, whichever song or row the menu was opened from.
+  function askForAlbum(targets) {
+    const dialog = $('albumDialog');
     const songs = songsOf(targets);
     const identities = songs.map((s) => s.identity || {});
-    const whole = targets.every((t) => t.track === null);
-    const several = !whole && songs.length > 1;
-    $('namesPrompt').textContent = whole
-      ? 'The album’s names, for every song in it:'
-      : several
-        ? `Names for these ${songs.length} songs. A field left empty keeps what each song has.`
-        : 'Who this song is:';
-    $('namesArtistRow').classList.toggle('hidden', whole);
-    // One title cannot fit several songs, so with more than one the box goes and a note points
-    // at the track-list matcher.
-    $('namesTitleRow').classList.toggle('hidden', whole || several);
-    $('namesSeveralHint').classList.toggle('hidden', !several);
-    $('namesArtist').value = shared(identities.map((i) => i.artist));
-    $('namesTitle').value = shared(identities.map((i) => i.title));
-    $('namesAlbum').value = shared(identities.map((i) => i.album));
-    $('namesAlbumArtist').value = shared(identities.map((i) => i.album_artist));
-    const dialog = $('namesDialog');
+    $('albumPrompt').textContent = `The album’s names and its ${songs.length} song${songs.length === 1 ? '' : 's'}:`;
+    $('albumArtist').value = shared(identities.map((i) => i.artist));
+    $('albumName').value = shared(identities.map((i) => i.album));
+    $('albumAlbumArtist').value = shared(identities.map((i) => i.album_artist));
+    let plan = null;
+    const how = { title: ['by title', ''], number: ['by track number only', 'weak'], order: ['by order only', 'weak'] };
+    const pasteChosen = () => document.querySelector('input[name="matchSource"][value="paste"]').checked;
+    const status = (text) => {
+      $('matchStatus').textContent = text;
+    };
+
+    // One row per song, in the album's order, each with its title ready to change.
+    $('matchRows').innerHTML = targets
+      .map((target, i) => {
+        const song = songs[i];
+        const title = (song.identity && song.identity.title) || '';
+        return (
+          `<tr data-group="${target.group}" data-track="${target.track}" data-orig="${Render.esc(title)}">` +
+          `<td class="was" title="${Render.esc(song.label)}">${Render.esc(song.label)}</td>` +
+          `<td><input class="title text" type="text" list="matchTitles" autocomplete="off" value="${Render.esc(title)}"></td>` +
+          '<td class="how"></td></tr>'
+        );
+      })
+      .join('');
+    const rows = () => [...document.querySelectorAll('#matchRows tr')];
+    const textOf = (row) => row.querySelector('input.title').value.trim();
+
+    function refresh() {
+      const seen = new Map();
+      for (const row of rows()) {
+        const text = textOf(row).toLowerCase();
+        row.classList.toggle('changed', textOf(row) !== row.dataset.orig.trim() && textOf(row) !== '');
+        if (text) {
+          seen.set(text, (seen.get(text) || 0) + 1);
+        }
+      }
+      rows().forEach((row) => row.classList.toggle('clash', (seen.get(textOf(row).toLowerCase()) || 0) > 1));
+      if ([...seen.values()].some((count) => count > 1)) {
+        status('Two songs have the same title. That is allowed, but check it is right.');
+      } else if (plan) {
+        const used = rows().filter((row) => textOf(row) !== '').length;
+        status(
+          `${plan.artist} – ${plan.album}: ${plan.list.length} titles for ${plan.songs.length} songs, ${used} titled.`,
+        );
+      }
+    }
+
+    async function getList() {
+      const paste = pasteChosen();
+      status(paste ? 'Lining up…' : 'Asking Last.fm for the track list…');
+      let reply = null;
+      try {
+        reply = await tauri.core.invoke('plan_track_match', {
+          targets,
+          text: paste ? $('matchPaste').value : null,
+          // The names as typed now, which may not be saved yet. The album artist is what Last.fm
+          // files an album under, so it comes first.
+          artist: $('albumAlbumArtist').value.trim() || $('albumArtist').value.trim() || null,
+          album: $('albumName').value.trim() || null,
+        });
+      } catch (error) {
+        reply = { plan: null, error: String(error) };
+      }
+      if (!reply.plan) {
+        plan = null;
+        status(reply.error || 'Nothing could be lined up.');
+        // When Last.fm cannot help, the paste box is the way on.
+        if (!paste) {
+          document.querySelector('input[name="matchSource"][value="paste"]').checked = true;
+          $('matchPasteBox').classList.remove('hidden');
+        }
+        return;
+      }
+      plan = reply.plan;
+      $('matchTitles').innerHTML = plan.list.map((entry) => `<option value="${Render.esc(entry.title)}"></option>`).join('');
+      for (const row of rows()) {
+        const at = plan.songs.findIndex((s) => s.group === Number(row.dataset.group) && s.track === Number(row.dataset.track));
+        const pair = at >= 0 ? plan.pairs[at] : null;
+        if (pair) {
+          row.querySelector('input.title').value = plan.list[pair.item].title;
+        }
+        const [text, weak] = pair ? how[pair.how] : ['', ''];
+        const cell = row.querySelector('.how');
+        cell.textContent = text;
+        cell.className = `how ${weak}`;
+      }
+      refresh();
+    }
+
+    for (const input of document.querySelectorAll('input[name="matchSource"]')) {
+      input.onchange = () => {
+        $('matchPasteBox').classList.toggle('hidden', !pasteChosen());
+        if (pasteChosen()) {
+          $('matchPaste').focus();
+        }
+      };
+    }
+    $('matchLineUp').onclick = getList;
+    $('matchRows').oninput = refresh;
+    document.querySelector('input[name="matchSource"][value="lastfm"]').checked = true;
+    $('matchPasteBox').classList.add('hidden');
+    $('matchPaste').value = '';
+    $('matchTitles').innerHTML = '';
+    status('');
     dialog.returnValue = '';
     dialog.addEventListener(
       'close',
       () => {
-        if (dialog.returnValue === 'save') {
-          call('set_names', {
-            targets,
-            // Several songs, or several files under one album heading: an empty field leaves
-            // what each has rather than wiping it.
-            onlyFilled: several || (whole && targets.length > 1),
-            names: {
-              artist: $('namesArtist').value,
-              title: $('namesTitle').value,
-              album: $('namesAlbum').value,
-              albumArtist: $('namesAlbumArtist').value,
-            },
-          });
+        if (dialog.returnValue !== 'save') {
+          return;
         }
+        // Only titles that were changed are sent. A title taken from the track list comes with
+        // its place on the album; one typed by hand does not.
+        const assignments = rows()
+          .filter((row) => textOf(row) !== '' && textOf(row) !== row.dataset.orig.trim())
+          .map((row) => {
+            const title = textOf(row);
+            const listed = plan ? plan.list.find((entry) => entry.title === title) : null;
+            return {
+              group: Number(row.dataset.group),
+              track: Number(row.dataset.track),
+              title,
+              number: listed ? listed.number : null,
+            };
+          });
+        call('apply_album_names', {
+          targets,
+          names: {
+            artist: $('albumArtist').value,
+            title: '',
+            album: $('albumName').value,
+            albumArtist: $('albumAlbumArtist').value,
+          },
+          assignments,
+        });
       },
       { once: true },
     );
     dialog.showModal();
-    (whole ? $('namesAlbum') : $('namesArtist')).select();
+    $('albumName').select();
   }
 
   function wire() {

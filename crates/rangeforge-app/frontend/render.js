@@ -205,6 +205,21 @@
     return blocks.map((block) => (block.key !== null && block.groups.length < 2 ? { key: null, groups: block.groups } : block));
   }
 
+  // Every song of some groups, as targets. A target with a song names exactly that song.
+  function songsOfGroups(state, groupIndexes) {
+    return groupIndexes.flatMap((group) =>
+      state.groups[group] ? state.groups[group].tracks.map((_, track) => ({ group, track })) : [],
+    );
+  }
+
+  // Every song of the album a group belongs to, as targets: the files gathered under one album
+  // heading together, or a lone group's own songs. The album dialog works on all of them
+  // whichever song or row it was opened from.
+  function albumScope(state, groupIndex) {
+    const block = blocksOf(state).find((b) => b.groups.includes(groupIndex));
+    return songsOfGroups(state, block ? block.groups : [groupIndex]);
+  }
+
   // What the heading's progress cell says about all of the album's files.
   function blockProgress(groups) {
     const states = groups.map((group) => group.run_state || 'idle');
@@ -289,6 +304,12 @@
     return picks;
   }
 
+  // The one item for naming an album and its songs: the artist, album and album artist, and each
+  // song's title, from the album's track list or typed. Always for the whole album.
+  function albumNames(state, groupIndex) {
+    return { action: 'album_names', label: 'Album & track names…', targets: albumScope(state, groupIndex) };
+  }
+
   // What the right-click menu offers for a row. `trackIndex` is null on an album's own row.
   // `picks` is the selected songs as `{group, track}` pairs when several are selected and the
   // row is one of them: the menu then works on all of them. Items that work on songs carry
@@ -312,8 +333,7 @@
         on: !everyOn,
       });
       items.push({ action: 'add_tag', label: `Add a tag to these ${n} songs…`, targets: picks });
-      items.push({ action: 'edit_names', label: `Edit names of these ${n} songs…`, targets: picks });
-      items.push({ action: 'match_names', label: `Match these ${n} songs to a track list…`, targets: picks });
+      items.push(albumNames(state, groupIndex));
       items.push({ action: 'open_song_page', label: `Open song tags pages on Last.fm for these ${n} songs`, targets: picks });
       items.push({ action: 'lastfm', label: 'Get tags from Last.fm for their albums', targets: picks });
       items.push(selectSame);
@@ -343,14 +363,7 @@
       label: song ? 'Add a tag to this song…' : 'Add a tag to every song of this album…',
       targets: here,
     });
-    items.push({
-      action: 'edit_names',
-      label: song ? 'Edit artist, title and album…' : 'Edit album name and artist…',
-      targets: here,
-    });
-    if (!song) {
-      items.push({ action: 'match_names', label: 'Match songs to a track list…', targets: here });
-    }
+    items.push(albumNames(state, groupIndex));
     if (song) {
       items.push({ action: 'open_song_page', label: 'Open song tags page on Last.fm', targets: here });
     }
@@ -383,8 +396,7 @@
         on: !everyOn,
       },
       { action: 'add_tag', label: 'Add a tag to every song of this album…', targets },
-      { action: 'edit_names', label: 'Edit album name and artist…', targets },
-      { action: 'match_names', label: 'Match songs to a track list…', targets },
+      { action: 'album_names', label: 'Album & track names…', targets: songsOfGroups(state, groupIndexes) },
       { action: 'lastfm', label: 'Get tags from Last.fm for this album', targets },
       { action: 'remove_many', label: 'Remove this album from the list', groups: groupIndexes },
     ];
@@ -474,6 +486,7 @@
     tableBodyHtml,
     includedState,
     menuItems,
+    albumScope,
     sameAlbum,
     blocksOf,
     blockMenuItems,

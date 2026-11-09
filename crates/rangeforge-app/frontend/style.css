@@ -267,14 +267,16 @@ h4.section { margin-top: 16px; }
 .key-row .key-input { flex: 1; min-width: 0; }
 dialog.wide-dialog { width: 560px; max-width: 90vw; }
 dialog.match-dialog { width: 760px; }
-.match-source { display: flex; gap: 16px; margin-bottom: 8px; }
+.album-fields { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.match-source { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
 .match-scroll { max-height: 45vh; overflow: auto; border: 1px solid var(--panel-edge); border-radius: 3px; }
 .match-table { width: 100%; border-collapse: collapse; }
 .match-table th { position: sticky; top: 0; text-align: left; padding: 4px 8px; background: var(--panel); color: var(--muted); font-weight: normal; }
 .match-table td { padding: 3px 8px; border-top: 1px solid var(--panel-edge); vertical-align: middle; }
 .match-table td.was { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.match-table select { width: 100%; }
+.match-table input.title { width: 100%; box-sizing: border-box; }
 .match-table tr.clash td { background: rgba(220, 70, 70, 0.18); }
+.match-table tr.changed input.title { font-weight: 600; }
 .match-table .how { color: var(--muted); white-space: nowrap; }
 .match-table .how.weak { color: #c77700; }
 dialog h3 { margin: 0 0 8px; }

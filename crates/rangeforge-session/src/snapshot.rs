@@ -309,13 +309,19 @@ fn chips(app: &App, track: &TrackRow) -> Vec<TagChip> {
     chips
 }
 
-fn track_view(app: &App, group: &Group, track: &TrackRow) -> TrackView {
+fn track_view(
+    app: &App,
+    group_index: usize,
+    group: &Group,
+    track_index: usize,
+    track: &TrackRow,
+) -> TrackView {
     let (adjust_db, limited, unadjustable) = match app.plan(track) {
         Some(Ok(plan)) => (finite(plan.gain_db), plan.limited_by_peak, false),
         Some(Err(_)) => (None, false, true),
         None => (None, false, false),
     };
-    let output_name = app.output_stem(group, track);
+    let output_name = app.output_stem(group_index, group, track_index, track);
     let output_guessed = output_name.is_some()
         && track
             .identity
@@ -393,7 +399,8 @@ fn group_view(app: &App, index: usize, group: &Group) -> GroupView {
         tracks: group
             .tracks
             .iter()
-            .map(|track| track_view(app, group, track))
+            .enumerate()
+            .map(|(track_index, track)| track_view(app, index, group, track_index, track))
             .collect(),
     }
 }
@@ -736,6 +743,100 @@ mod tests {
         // A song cut from a CUE sheet keeps its label.
         let cue = sample_app().snapshot();
         assert!(cue.groups[0].tracks.iter().all(|t| t.output_name.is_none()));
+    }
+
+    #[test]
+    fn a_cue_track_shows_the_name_it_will_be_written_as_with_typed_in_names_on_top() {
+        use crate::load::Job;
+        use crate::model::{Names, Pick};
+        use rangeforge_core::cue;
+        use rangeforge_core::identify::Identity;
+        use std::path::PathBuf;
+
+        let sheet = cue::parse(
+            "PERFORMER \"The Band\"
+TITLE \"Album\"
+FILE \"in.flac\" WAVE
+  TRACK 01 AUDIO
+    TITLE \"First\"
+    INDEX 01 00:00:00
+  TRACK 02 AUDIO
+    TITLE \"Second\"
+    INDEX 01 01:00:00
+",
+        )
+        .unwrap();
+        let file = sheet.files[0].clone();
+        let tracks: Vec<TrackRow> = file
+            .tracks
+            .iter()
+            .map(|t| TrackRow {
+                identity: Some(Identity::from_cue(&sheet, t)),
+                ..track(
+                    &format!("{} - {}", t.number, t.title.clone().unwrap()),
+                    Some(measured(-20.0, -3.0, 8.0)),
+                )
+            })
+            .collect();
+        let group = Group {
+            name: "The Band - Album".to_string(),
+            kind: Kind::CueAlbum,
+            source_extension: "flac".to_string(),
+            tracks,
+            status: Status::Done(Origin::Decoded),
+            run: RunState::Idle,
+        };
+        let job = Job {
+            group: 0,
+            audio: PathBuf::from("music/in.flac"),
+            cue_file: Some(file),
+            sheet: Some(sheet),
+        };
+        let mut app = App::new(vec![group], vec![job], Vec::new(), Settings::default());
+        let names = |app: &App| -> Vec<Option<String>> {
+            app.snapshot().groups[0]
+                .tracks
+                .iter()
+                .map(|t| t.output_name.clone())
+                .collect()
+        };
+
+        // The label says "1 - First"; the file will be "01 - First".
+        assert_eq!(
+            names(&app),
+            [
+                Some("01 - First".to_string()),
+                Some("02 - Second".to_string())
+            ]
+        );
+        assert!(
+            app.snapshot().groups[0]
+                .tracks
+                .iter()
+                .all(|t| !t.output_guessed)
+        );
+
+        // A title typed in changes that song's name and keeps the rip's number.
+        let typed = Names {
+            title: "Second (Remastered)".to_string(),
+            ..Names::default()
+        };
+        app.set_names(
+            &[Pick {
+                group: 0,
+                track: Some(1),
+            }],
+            &typed,
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            names(&app),
+            [
+                Some("01 - First".to_string()),
+                Some("02 - Second (Remastered)".to_string())
+            ]
+        );
     }
 
     #[test]

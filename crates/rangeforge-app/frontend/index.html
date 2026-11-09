@@ -195,43 +195,34 @@
     </form>
   </dialog>
 
-  <dialog id="matchDialog" class="wide-dialog match-dialog">
+  <dialog id="albumDialog" class="wide-dialog match-dialog">
     <form method="dialog">
-      <p id="matchPrompt"></p>
+      <p id="albumPrompt"></p>
+      <div class="album-fields">
+        <label>Artist<br><input id="albumArtist" class="text wide" type="text" autocomplete="off"></label>
+        <label>Album<br><input id="albumName" class="text wide" type="text" autocomplete="off"></label>
+        <label>Album artist<br><input id="albumAlbumArtist" class="text wide" type="text" autocomplete="off"></label>
+      </div>
+      <p class="hint">A box left empty keeps what each song has. These names also go on the written files, over what a CUE sheet says (the sheet's split points and track numbers stay).</p>
       <div class="match-source">
-        <label class="radio"><input type="radio" name="matchSource" value="lastfm" checked> Last.fm's track list</label>
-        <label class="radio"><input type="radio" name="matchSource" value="paste"> Paste a list</label>
+        <label class="radio"><input type="radio" name="matchSource" value="lastfm" checked> Track list from Last.fm</label>
+        <label class="radio"><input type="radio" name="matchSource" value="paste"> Paste a track list</label>
+        <button type="button" id="matchLineUp" class="button">Get track list</button>
       </div>
       <div id="matchPasteBox" class="hidden">
-        <textarea id="matchPaste" class="text wide" rows="6" spellcheck="false" autocomplete="off" placeholder="One title per line, as copied from a store page or Discogs. Numbers and times in front or behind are fine."></textarea>
-        <p><button type="button" id="matchLineUp" class="button">Line up</button></p>
+        <textarea id="matchPaste" class="text wide" rows="5" spellcheck="false" autocomplete="off" placeholder="One title per line, as copied from a store page or Discogs. Numbers and times in front or behind are fine."></textarea>
       </div>
       <p id="matchStatus" class="hint"></p>
       <div class="match-scroll">
         <table id="matchTable" class="match-table">
-          <thead><tr><th>Song (as it is now)</th><th>Becomes</th><th></th></tr></thead>
+          <thead><tr><th>Song (as it is now)</th><th>Title</th><th></th></tr></thead>
           <tbody id="matchRows"></tbody>
         </table>
       </div>
+      <datalist id="matchTitles"></datalist>
       <div class="dialog-buttons">
         <button value="cancel" class="button">Cancel</button>
-        <button value="apply" id="matchApply" class="button primary" disabled>Name the songs</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="namesDialog">
-    <form method="dialog">
-      <p id="namesPrompt"></p>
-      <p id="namesSeveralHint" class="hint hidden">Each song has its own title, so there is no title here. To name them one by one, use <b>Match songs to a track list…</b> on the right-click menu.</p>
-      <p id="namesArtistRow"><label>Artist<br><input id="namesArtist" class="text wide" type="text" autocomplete="off"></label></p>
-      <p id="namesTitleRow"><label>Title<br><input id="namesTitle" class="text wide" type="text" autocomplete="off"></label></p>
-      <p><label>Album<br><input id="namesAlbum" class="text wide" type="text" autocomplete="off"></label></p>
-      <p><label>Album artist<br><input id="namesAlbumArtist" class="text wide" type="text" autocomplete="off"></label></p>
-      <p class="hint">Last.fm is asked with these names. Leave a field empty if it is not known.</p>
-      <div class="dialog-buttons">
-        <button value="cancel" class="button">Cancel</button>
-        <button value="save" class="button primary">Save</button>
+        <button value="save" id="albumSave" class="button primary">Save</button>
       </div>
     </form>
   </dialog>

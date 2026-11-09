@@ -28,7 +28,7 @@ use crate::dsd::DsdFormat;
 use crate::genres::{self, Answers, SongGenres, TagEdits};
 use crate::load::{Job, load_from};
 use crate::naming::NameSettings;
-use crate::plan::{plan_tracks, track_plans};
+use crate::plan::{cue_tags, plan_tracks, track_plans};
 use crate::secrets::KeySource;
 use crate::tracklist::{self, MatchPlan, PlanSong, Song};
 
@@ -503,19 +503,36 @@ impl App {
     /// makes it something other than the file's own name. `None` for a song cut from a CUE
     /// sheet (its label already is its name), and when the pattern leaves the name as it is.
     /// This is the name the run will use: the same pattern and the same identity.
-    pub fn output_stem(&self, group: &Group, track: &TrackRow) -> Option<String> {
-        if !matches!(group.kind, Kind::SingleFile) {
-            return None;
-        }
+    pub fn output_stem(
+        &self,
+        group_index: usize,
+        group: &Group,
+        track_index: usize,
+        track: &TrackRow,
+    ) -> Option<String> {
         let names = self.naming.templates().ok()?;
-        let values = match &track.identity {
-            Some(identity) => NameValues::from_identity(identity, &track.label),
-            None => NameValues {
-                name: Some(track.label.clone()),
-                ..NameValues::default()
-            },
+        let stem = match group.kind {
+            Kind::SingleFile => {
+                let values = match &track.identity {
+                    Some(identity) => NameValues::from_identity(identity, &track.label),
+                    None => NameValues {
+                        name: Some(track.label.clone()),
+                        ..NameValues::default()
+                    },
+                };
+                names.single.render(&values)
+            }
+            Kind::CueAlbum => {
+                // The same tags the run writes: the sheet's, with typed-in names on top.
+                let job = self.jobs.iter().find(|job| job.group == group_index)?;
+                let (sheet, file) = (job.sheet.as_ref()?, job.cue_file.as_ref()?);
+                let cue_track = file.tracks.get(track_index)?;
+                let tags = cue_tags(sheet, cue_track, file.tracks.len(), track.identity.as_ref());
+                let source = crate::plan::file_stem(&job.audio);
+                names.album.render(&NameValues::from_tags(&tags, &source))
+            }
         };
-        Some(names.single.render(&values)).filter(|stem| !stem.is_empty() && *stem != track.label)
+        Some(stem).filter(|stem| !stem.is_empty() && *stem != track.label)
     }
 
     /// Whether the song carries the Radio tag: it charted, and nobody took the tag away.
@@ -649,7 +666,7 @@ impl App {
             else {
                 return Err(
                     "Lining songs up needs the album's artist and name. Fill them in \
-                            with Edit album name and artist first."
+                            with Album & track names first."
                         .to_string(),
                 );
             };
@@ -679,8 +696,9 @@ impl App {
         &self,
         targets: &[Pick],
         list: Vec<ListedTrack>,
+        artist: String,
+        album: String,
     ) -> Result<MatchPlan, String> {
-        let (artist, album) = self.album_of(targets)?;
         if list.is_empty() {
             return Err("The track list is empty.".to_string());
         }
@@ -731,12 +749,14 @@ impl App {
             if title.is_empty() {
                 continue;
             }
+            let cue_track = matches!(self.groups[assignment.group].kind, Kind::CueAlbum);
             let row = &mut self.groups[assignment.group].tracks[assignment.track];
             let identity = row.identity.get_or_insert_with(|| {
                 Identity::unknown(rangeforge_core::identify::IdentitySource::Hand)
             });
             identity.title = Some(title.to_string());
-            if let Some(number) = assignment.number.filter(|n| *n > 0) {
+            // A song cut from a CUE sheet keeps the number the rip gave it.
+            if !cue_track && let Some(number) = assignment.number.filter(|n| *n > 0) {
                 identity.track = Some(number);
             }
             identity.source = rangeforge_core::identify::IdentitySource::Hand;
@@ -744,6 +764,27 @@ impl App {
         }
         self.refresh_radio();
         Ok(named)
+    }
+
+    /// Applies what the album dialog collected: the artist, album and album artist for every
+    /// song the targets name (a blank field keeps what each song has), and the chosen titles.
+    /// Everything is checked first, so nothing changes if any song named is not in the list.
+    /// Returns how many songs were given a title.
+    pub fn apply_album_names(
+        &mut self,
+        targets: &[Pick],
+        names: &Names,
+        assignments: &[Assignment],
+    ) -> Result<usize, String> {
+        self.pick_indexes(targets)?;
+        for assignment in assignments {
+            self.groups
+                .get(assignment.group)
+                .and_then(|group| group.tracks.get(assignment.track))
+                .ok_or("That song is not in the list.")?;
+        }
+        self.set_names(targets, names, true)?;
+        self.apply_names_from_list(assignments)
     }
 
     /// The questions for Last.fm that nobody has been sent to ask yet, once. Empty unless
@@ -2965,7 +3006,10 @@ mixed ,	Rare"
             listed(3, "Over the Hills and Far Away"),
             listed(4, "No Quarter"),
         ];
-        let plan = app.match_plan(&[pick_album(0)], list).unwrap();
+        let (artist, album) = app.album_of(&[pick_album(0)]).unwrap();
+        let plan = app
+            .match_plan(&[pick_album(0)], list, artist, album)
+            .unwrap();
         assert_eq!(plan.artist, "Led Zeppelin");
         assert_eq!(plan.album, "Houses of the Holy");
         let songs: Vec<(usize, usize)> = plan.songs.iter().map(|s| (s.group, s.track)).collect();
@@ -2997,21 +3041,108 @@ mixed ,	Rare"
         assert_eq!(named, 2);
         let identity = app.groups[0].tracks[0].identity.as_ref().unwrap();
         assert_eq!(identity.title.as_deref(), Some("The Rain Song"));
-        assert_eq!(identity.track, Some(2));
         assert_eq!(
             identity.source,
             rangeforge_core::identify::IdentitySource::Hand
         );
+        // The songs are cut from a CUE sheet, so their numbers stay as the rip gave them, even
+        // where the list's places differ.
+        assert_eq!(identity.track, Some(1));
         assert_eq!(
             app.groups[0].tracks[1].identity.as_ref().unwrap().track,
-            Some(4)
+            Some(2)
         );
+    }
+
+    #[test]
+    fn a_single_files_place_comes_from_the_list_but_a_cue_tracks_does_not() {
+        use rangeforge_core::identify::IdentitySource;
+
+        let single = Group {
+            name: "raw_name_001.m4a".to_string(),
+            kind: Kind::SingleFile,
+            source_extension: "m4a".to_string(),
+            tracks: vec![TrackRow {
+                identity: Some(Identity {
+                    title: Some("raw_name_001".to_string()),
+                    track: Some(7),
+                    ..Identity::unknown(IdentitySource::FileName)
+                }),
+                ..TrackRow::new("raw_name_001".to_string())
+            }],
+            status: Status::Done(Origin::Decoded),
+            run: RunState::Idle,
+        };
+        let mut app = app_with(vec![single]);
+        let given = Assignment {
+            group: 0,
+            track: 0,
+            title: "Firesite".to_string(),
+            number: Some(1),
+        };
+        assert_eq!(app.apply_names_from_list(&[given]).unwrap(), 1);
+        let identity = app.groups[0].tracks[0].identity.as_ref().unwrap();
+        assert_eq!(identity.title.as_deref(), Some("Firesite"));
+        assert_eq!(identity.track, Some(1), "a file's own number was a guess");
+    }
+
+    #[test]
+    fn the_album_dialog_applies_names_and_titles_together_or_not_at_all() {
+        let mut app = ready_app();
+        let both = [pick_song(0, 0), pick_song(0, 1)];
+        let names = Names {
+            artist: "Led Zeppelin".to_string(),
+            album: "Houses of the Holy (Remaster)".to_string(),
+            album_artist: "Led Zeppelin".to_string(),
+            ..Names::default()
+        };
+        let title = |track: usize, text: &str| Assignment {
+            group: 0,
+            track,
+            title: text.to_string(),
+            number: None,
+        };
+        assert_eq!(
+            app.apply_album_names(&both, &names, &[title(0, "The Rain Song (2014)")])
+                .unwrap(),
+            1
+        );
+        let first = app.groups[0].tracks[0].identity.as_ref().unwrap();
+        assert_eq!(first.title.as_deref(), Some("The Rain Song (2014)"));
+        assert_eq!(
+            first.album.as_deref(),
+            Some("Houses of the Holy (Remaster)")
+        );
+        // The second song kept its own title and took the album's new name.
+        let second = app.groups[0].tracks[1].identity.as_ref().unwrap();
+        assert_eq!(second.title.as_deref(), Some("No Quarter"));
+        assert_eq!(
+            second.album.as_deref(),
+            Some("Houses of the Holy (Remaster)")
+        );
+
+        // A song that is not there stops everything before any change.
+        let before = app.groups[0].tracks[0].identity.clone();
+        let other = Names {
+            album: "Nope".to_string(),
+            ..Names::default()
+        };
+        assert!(
+            app.apply_album_names(&both, &other, &[title(99, "x")])
+                .is_err()
+        );
+        assert_eq!(app.groups[0].tracks[0].identity, before);
     }
 
     #[test]
     fn lining_up_needs_one_known_album_and_a_list_and_never_half_applies() {
         let mut app = ready_app();
-        assert!(app.match_plan(&[pick_album(0)], Vec::new()).is_err());
+        let names = || ("Led Zeppelin".to_string(), "Houses of the Holy".to_string());
+        let (artist, album) = names();
+        assert!(
+            app.match_plan(&[pick_album(0)], Vec::new(), artist, album)
+                .is_err()
+        );
 
         // Two albums in one pick are refused, naming the problem.
         let other = Names {
@@ -3020,9 +3151,15 @@ mixed ,	Rare"
         };
         app.set_names(&[pick_song(0, 1)], &other, true).unwrap();
         let list = vec![listed(1, "Kashmir")];
-        let problem = app.match_plan(&[pick_album(0)], list.clone()).unwrap_err();
+        let problem = app.album_of(&[pick_album(0)]).unwrap_err();
         assert!(problem.contains("different albums"), "{problem}");
-        assert!(app.match_plan(&[pick_song(0, 1)], list).is_ok());
+        assert!(app.album_of(&[pick_song(0, 1)]).is_ok());
+        // The names shown can be ones just typed in the dialog and not applied yet.
+        let (artist, album) = ("Led Zeppelin".to_string(), "Physical Graffiti".to_string());
+        let plan = app
+            .match_plan(&[pick_song(0, 1)], list, artist, album.clone())
+            .unwrap();
+        assert_eq!(plan.album, album);
 
         // A song without an album cannot be lined up.
         app.set_names(&[pick_song(0, 1)], &Names::default(), false)

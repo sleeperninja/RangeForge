@@ -304,21 +304,42 @@ impl MatchReply {
 }
 
 /// Lines the songs named up with an album's track list: the pasted `text` if there is any,
-/// otherwise Last.fm's list for their album. A first guess for the person to correct.
+/// otherwise Last.fm's list for the album. `artist` and `album` are what the dialog's boxes say
+/// now (they may not be applied yet); a blank box falls back to what the songs say. A first
+/// guess for the person to correct.
 #[tauri::command]
 async fn plan_track_match(
     targets: Vec<Pick>,
     text: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
     state: Session<'_>,
 ) -> Result<MatchReply, String> {
+    let clean = |value: Option<String>| {
+        value
+            .map(|text| text.trim().to_string())
+            .filter(|text| !text.is_empty())
+    };
+    let known = ops::album_names(&state, &targets).ok();
+    let artist = clean(artist)
+        .or_else(|| known.as_ref().map(|(artist, _)| artist.clone()))
+        .unwrap_or_default();
+    let album = clean(album)
+        .or_else(|| known.map(|(_, album)| album))
+        .unwrap_or_default();
+
     let pasted = text.filter(|text| !text.trim().is_empty());
     let list = if let Some(text) = pasted {
         tracklist::parse_pasted(&text)
     } else {
-        let (artist, album) = match ops::match_lookup_target(&state, &targets) {
-            Ok(found) => found,
-            Err(problem) => return Ok(MatchReply::failed(problem)),
-        };
+        if artist.is_empty() || album.is_empty() {
+            return Ok(MatchReply::failed(
+                "Type the artist and the album first, so Last.fm knows what to look for, or paste the list.",
+            ));
+        }
+        if let Err(problem) = ops::lookups_switched_on(&state) {
+            return Ok(MatchReply::failed(problem));
+        }
         let Some(key) = state.lastfm_key() else {
             return Ok(MatchReply::failed(
                 "There is no Last.fm key yet. Add one in Settings, or paste the list.",
@@ -336,7 +357,7 @@ async fn plan_track_match(
             Ok(Ok(list)) if !list.is_empty() => list,
             Ok(Ok(_)) => {
                 return Ok(MatchReply::failed(format!(
-                    "Last.fm has no track list for “{album}” by “{artist}”. Paste the list instead."
+                    "Last.fm has no track list for “{album}” by “{artist}”. Check the names, or paste the list."
                 )));
             }
             Ok(Err(error)) => {
@@ -347,23 +368,35 @@ async fn plan_track_match(
             Err(error) => return Ok(MatchReply::failed(error.to_string())),
         }
     };
-    Ok(match ops::match_plan(&state, &targets, list) {
-        Ok(plan) => MatchReply {
-            plan: Some(plan),
-            error: None,
+    Ok(
+        match ops::match_plan(&state, &targets, list, artist, album) {
+            Ok(plan) => MatchReply {
+                plan: Some(plan),
+                error: None,
+            },
+            Err(problem) => MatchReply::failed(problem),
         },
-        Err(problem) => MatchReply::failed(problem),
-    })
+    )
 }
 
-/// Names songs from the track list as chosen in the matching dialog.
+/// Applies the album dialog: the artist, album and album artist for every song named (a blank
+/// box keeps what each has), and the titles chosen. Then lets Last.fm be asked about the new
+/// album names if lookups are on.
 #[tauri::command]
-async fn apply_track_names(
+async fn apply_album_names(
+    targets: Vec<Pick>,
+    names: NamesInput,
     assignments: Vec<Assignment>,
     state: Session<'_>,
     app: AppHandle,
 ) -> Result<Reply, String> {
-    let reply = ops::apply_track_names(&state, &assignments);
+    let names = Names {
+        artist: names.artist,
+        title: names.title,
+        album: names.album,
+        album_artist: names.album_artist,
+    };
+    let reply = ops::apply_album_names(&state, &targets, &names, &assignments);
     watch_genres(&app, state.inner());
     Ok(reply)
 }
@@ -409,26 +442,6 @@ struct NamesInput {
     title: String,
     album: String,
     album_artist: String,
-}
-
-/// Types in names by hand, then lets Last.fm be asked about the new ones if lookups are on.
-#[tauri::command]
-async fn set_names(
-    targets: Vec<Pick>,
-    names: NamesInput,
-    only_filled: bool,
-    state: Session<'_>,
-    app: AppHandle,
-) -> Result<Reply, String> {
-    let names = Names {
-        artist: names.artist,
-        title: names.title,
-        album: names.album,
-        album_artist: names.album_artist,
-    };
-    let reply = ops::set_names(&state, &targets, &names, only_filled);
-    watch_genres(&app, state.inner());
-    Ok(reply)
 }
 
 #[tauri::command]
@@ -514,11 +527,10 @@ fn main() {
             get_lastfm_tags,
             open_song_pages,
             plan_track_match,
-            apply_track_names,
+            apply_album_names,
             clear_lastfm_cache,
             add_tag,
             remove_tag,
-            set_names,
             set_included,
             run,
         ])

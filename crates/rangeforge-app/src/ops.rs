@@ -700,37 +700,52 @@ pub fn song_page_urls(
     Ok((urls, notice))
 }
 
-/// The artist and album to ask Last.fm for a track list, for the songs the targets name. It
-/// says why not when lookups are switched off, the songs come from different albums, or an
-/// album's names are not known.
-pub fn match_lookup_target(shared: &Shared, targets: &[Pick]) -> Result<(String, String), String> {
-    let app = shared.lock();
-    if !app.metadata.enabled {
-        return Err(
+/// Whether Last.fm may be asked for a track list: the main Metadata switch must be on.
+pub fn lookups_switched_on(shared: &Shared) -> Result<(), String> {
+    if shared.lock().metadata.enabled {
+        Ok(())
+    } else {
+        Err(
             "Metadata lookups are switched off. Turn them on in Settings, or paste the list."
                 .to_string(),
-        );
+        )
     }
-    app.album_of(targets)
+}
+
+/// The artist and album the songs the targets name belong to, or why that cannot be told.
+pub fn album_names(shared: &Shared, targets: &[Pick]) -> Result<(String, String), String> {
+    shared.lock().album_of(targets)
 }
 
 /// Lines the songs the targets name up with a track list (from Last.fm, or pasted).
+/// `artist` and `album` are for showing: they may be names typed but not applied yet.
 pub fn match_plan(
     shared: &Shared,
     targets: &[Pick],
     list: Vec<ListedTrack>,
+    artist: String,
+    album: String,
 ) -> Result<MatchPlan, String> {
-    shared.lock().match_plan(targets, list)
+    shared.lock().match_plan(targets, list, artist, album)
 }
 
-/// Names songs from the track list as chosen in the matching dialog.
-pub fn apply_track_names(shared: &Shared, assignments: &[Assignment]) -> Reply {
+/// Applies the album dialog: names for every song the targets name, and the chosen titles.
+pub fn apply_album_names(
+    shared: &Shared,
+    targets: &[Pick],
+    names: &Names,
+    assignments: &[Assignment],
+) -> Reply {
     let mut app = shared.lock();
-    let error = match app.apply_names_from_list(assignments) {
-        Ok(named) => {
+    let error = match app.apply_album_names(targets, names, assignments) {
+        Ok(0) => {
+            app.log("Updated the album's names");
+            None
+        }
+        Ok(titled) => {
             app.log(format!(
-                "Named {named} song{} from the track list",
-                if named == 1 { "" } else { "s" }
+                "Updated the album's names and named {titled} song{}",
+                if titled == 1 { "" } else { "s" }
             ));
             None
         }
@@ -753,12 +768,6 @@ pub fn add_tag(shared: &Shared, targets: &[Pick], text: &str) -> Reply {
 /// Takes a tag away from a song by hand.
 pub fn remove_tag(shared: &Shared, group: usize, track: usize, text: &str) -> Reply {
     with_app(shared, |app| app.remove_tag(group, track, text))
-}
-
-/// Types in names for songs, or for albums, replacing what was known. With `only_filled`, blank
-/// fields leave what is known alone.
-pub fn set_names(shared: &Shared, targets: &[Pick], names: &Names, only_filled: bool) -> Reply {
-    with_app(shared, |app| app.set_names(targets, names, only_filled))
 }
 
 pub fn clear_list(shared: &Shared) -> Reply {
@@ -1021,13 +1030,19 @@ mod tests {
     }
 
     #[test]
-    fn songs_are_named_from_a_track_list_and_the_names_show_and_stay_typed_by_hand() {
+    fn the_album_dialog_names_the_album_and_its_songs_and_the_rows_show_it() {
         let dir = tempdir().unwrap();
         let shared = shared_with_album(dir.path(), &SharedStore::default());
-        let whole = Pick {
-            group: 0,
-            track: None,
-        };
+        let both = [
+            Pick {
+                group: 0,
+                track: Some(0),
+            },
+            Pick {
+                group: 0,
+                track: Some(1),
+            },
+        ];
         let listed = |number: u32, title: &str| ListedTrack {
             number,
             title: title.to_string(),
@@ -1039,57 +1054,122 @@ mod tests {
             listed(4, "No Quarter"),
         ];
 
-        // Last.fm is only asked for when lookups are on; the target is the songs' album.
+        // What the songs say, for filling the boxes and asking Last.fm.
         assert_eq!(
-            match_lookup_target(&shared, &[whole]).unwrap(),
+            album_names(&shared, &both).unwrap(),
             ("Led Zeppelin".to_string(), "Houses of the Holy".to_string())
         );
-        let plan = match_plan(&shared, &[whole], list.clone()).unwrap();
-        assert_eq!(plan.songs.len(), 2);
-        // "No Quarter" is found by its title; "The Rain Song" is only the weaker match by track
-        // number (its CUE track number is 1 here, and it takes the list's place 1 or 2).
-        assert_eq!(plan.pairs[1].map(|p| p.item), Some(2));
+        assert!(lookups_switched_on(&shared).is_ok());
 
-        let reply = apply_track_names(
+        // The list is lined up under the names typed in the dialog, applied or not.
+        let plan = match_plan(
             &shared,
-            &[
-                Assignment {
-                    group: 0,
-                    track: 0,
-                    title: "The Rain Song (2014 Remaster)".to_string(),
-                    number: Some(2),
-                },
-                Assignment {
-                    group: 0,
-                    track: 1,
-                    title: "No Quarter".to_string(),
-                    number: Some(4),
-                },
-            ],
+            &both,
+            list.clone(),
+            "Led Zeppelin".to_string(),
+            "Houses of the Holy (Remaster)".to_string(),
+        )
+        .unwrap();
+        assert_eq!(plan.album, "Houses of the Holy (Remaster)");
+        assert_eq!(
+            plan.pairs[1].map(|p| p.item),
+            Some(2),
+            "No Quarter by title"
         );
+
+        let names = Names {
+            artist: "Led Zeppelin".to_string(),
+            album: "Houses of the Holy (Remaster)".to_string(),
+            album_artist: "Led Zeppelin".to_string(),
+            ..Names::default()
+        };
+        let titles = [
+            Assignment {
+                group: 0,
+                track: 0,
+                title: "The Rain Song (2014 Remaster)".to_string(),
+                number: Some(2),
+            },
+            // A title typed by hand, not from the list: no place on the album comes with it.
+            Assignment {
+                group: 0,
+                track: 1,
+                title: "No Quarter (live)".to_string(),
+                number: None,
+            },
+        ];
+        let reply = apply_album_names(&shared, &both, &names, &titles);
         assert_eq!(reply.error, None);
         assert!(
             reply
                 .state
                 .log
                 .iter()
-                .any(|line| line.contains("Named 2 songs from the track list"))
+                .any(|line| line.contains("named 2 songs")),
+            "{:?}",
+            reply.state.log
         );
-        let identity = reply.state.groups[0].tracks[0].identity.as_ref().unwrap();
+        let first = reply.state.groups[0].tracks[0].identity.as_ref().unwrap();
         assert_eq!(
-            identity.title.as_deref(),
+            first.title.as_deref(),
             Some("The Rain Song (2014 Remaster)")
         );
-        assert_eq!(identity.source, "hand");
+        assert_eq!(
+            first.album.as_deref(),
+            Some("Houses of the Holy (Remaster)")
+        );
+        assert_eq!(first.source, "hand");
+
+        // The rows show what the run will write, typed-in names on top of the CUE sheet's:
+        // the number is the rip's, the title and the album are the typed ones.
+        let rows: Vec<Option<String>> = reply.state.groups[0]
+            .tracks
+            .iter()
+            .map(|t| t.output_name.clone())
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                Some("01 - The Rain Song (2014 Remaster)".to_string()),
+                Some("02 - No Quarter (live)".to_string())
+            ]
+        );
+    }
+
+    #[test]
+    fn the_album_dialog_needs_lookups_for_last_fm_only_and_refuses_a_bad_song_whole() {
+        let dir = tempdir().unwrap();
+        let shared = shared_with_album(dir.path(), &SharedStore::default());
+        let both = [
+            Pick {
+                group: 0,
+                track: Some(0),
+            },
+            Pick {
+                group: 0,
+                track: Some(1),
+            },
+        ];
+        let list = vec![ListedTrack {
+            number: 1,
+            title: "The Rain Song".to_string(),
+            seconds: None,
+        }];
+        let names = Names::default();
 
         // Lookups switched off: the Last.fm route says so, and pasting still works.
         set_metadata(&shared, false);
-        assert!(match_lookup_target(&shared, &[whole]).is_err());
-        assert!(match_plan(&shared, &[whole], list).is_ok());
+        assert!(lookups_switched_on(&shared).is_err());
+        assert!(
+            match_plan(&shared, &both, list, String::new(), String::new()).is_ok(),
+            "a pasted list needs no lookup"
+        );
 
         // A bad song changes nothing and says why.
-        let bad = apply_track_names(
+        let bad = apply_album_names(
             &shared,
+            &both,
+            &names,
             &[Assignment {
                 group: 5,
                 track: 0,
