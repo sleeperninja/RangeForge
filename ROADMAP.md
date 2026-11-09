@@ -2,7 +2,7 @@
 
 *The friendly version: what works, what's next, and what we've decided not to do. Updated 9 Nov 2026, at version 0.4.0.*
 
-The detailed phase list, with the technical wording, lives in [docs/05-roadmap.md](docs/05-roadmap.md) and the reasons behind every decision are in [docs/04-decisions.md](docs/04-decisions.md). This page is the one to read over coffee.
+How it decides things, in plain words, is in [HOW-IT-WORKS.md](HOW-IT-WORKS.md). The detailed phase list, with the technical wording, lives in [docs/05-roadmap.md](docs/05-roadmap.md) and the reasons behind every decision are in [docs/04-decisions.md](docs/04-decisions.md). This page is the one to read over coffee.
 
 ---
 
@@ -38,8 +38,8 @@ These are the things on the plate, roughly in the order they make sense.
    - the rows' new names: italic for a guess, the original name on hover
 2. **Rename from the tags, as a File Strategy choice.** Today the single-file naming pattern lives in Settings and applies to every run. The idea is a visible choice next to the others: **Keep the original name** or **Rename from the tags**.
    *To decide:* should it refuse (or at least warn) when a name is only a guess from the file name, so it never produces worse names than the originals? It also needs a check that two new files can't pick the same name in one run.
-3. **Channels control.** Choose how many channels the output has: original, stereo downmix, mono, maybe left-only or right-only for a broken rip. The rule is now written down (D-35): conversions are allowed, and the one gain is worked out on the converted sound, because a downmix changes the loudness and raises the peaks.
-   *Still to decide:* the downmix recipe. The starting point is the standard ITU-style one (centre and surrounds at -3 dB, LFE dropped), and the open questions are an LFE variant, a Dolby-style matrix, and how a 4-channel file is mapped.
+3. **Channels control.** Choose how many channels the output has: Original, Quad, Stereo or Mono, with a **Downmix** style under it (Standard, Standard + bass, Front pair only). The rules are written down (D-35): the one gain is worked out on the converted sound, because a downmix changes the loudness and raises the peaks (on real 5.1 music, by up to 1.6 LU and 4.9 dB), and the table will show the downmixed measurement. Files with more than 6 channels stay as they are. No centre boost and no Dolby-style matrix unless someone demands them.
+   *Still to decide:* how a quad source maps down to stereo or mono, and the mono scaling.
 4. **Downsampling: checked, mostly good (D-37).** On real hi-res music (the Pink Floyd 24/96 six-channel files, and the DSD I Robot) the resampling is already clean: inaudibly close to a very-high-precision reference, no extra peaks, loudness exactly on target at every rate. A SoX-based resampler would give a steeper edge and make the DSD stage about three times faster, at a gain no one can hear. *To decide:* whether that is worth the bundling work. One small fix is waiting: dither also when only the sample rate changes.
 5. **Remember hand edits between sessions.** Names and tags you edit are kept only until you close the program. They could be saved against the file.
 

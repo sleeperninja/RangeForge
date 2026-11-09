@@ -10,4 +10,4 @@ cargo test --workspace
 cargo run -p rangeforge-cli -- cue path\to\album.cue
 ```
 
-Status: working and pre-1.0 (0.3.x). The desktop app measures, plans gain, splits CUE albums and writes tagged files; a personal tool first. See [ROADMAP.md](ROADMAP.md) for the plain-words plan and [docs/05-roadmap.md](docs/05-roadmap.md) for the detail.
+Status: working and pre-1.0 (0.4.x). The desktop app measures, plans gain, splits CUE albums and writes tagged files; a personal tool first. See [HOW-IT-WORKS.md](HOW-IT-WORKS.md) for how it decides things, [ROADMAP.md](ROADMAP.md) for the plain-words plan and [docs/05-roadmap.md](docs/05-roadmap.md) for the detail.

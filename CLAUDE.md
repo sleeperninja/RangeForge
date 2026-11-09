@@ -27,6 +27,7 @@ It replaces about seven tools (MediaHuman, an FFmpeg GUI, Adobe Audition, a Powe
 | [docs/04-decisions.md](docs/04-decisions.md) | Every past decision, why it was made, and whether it still stands |
 | [docs/05-roadmap.md](docs/05-roadmap.md) | What gets built, in what order (precise). [ROADMAP.md](ROADMAP.md) in the root is the friendly version; keep the two in step |
 | [docs/06-development.md](docs/06-development.md) | How to build, test and release |
+| [HOW-IT-WORKS.md](HOW-IT-WORKS.md) | The strategy in plain words: how volume is set, what conversions do, how names are trusted |
 | [docs/faq.md](docs/faq.md) | Plain answers to recurring questions |
 | Git history (commit `01c53ea`) | The old plans, market research, wireframes and Electron code. Not kept in the tree. |
 
@@ -39,6 +40,7 @@ It replaces about seven tools (MediaHuman, an FFmpeg GUI, Adobe Audition, a Powe
 - **Never change the waveform except by one gain per song,** and never past the true-peak ceiling. No compression or limiting. See decision D-12.
 - **Tests that write or delete files use generated audio or copies in temporary folders.** `testdata/` is read-only, and tests never touch the real Recycle Bin.
 - **Update the docs in the same change as the code.** There is no separate session-close ritual.
+- **HOW-IT-WORKS.md explains, `docs/04-decisions.md` records.** When a decision changes how something works, update both: the manual in plain words, the ledger with the date and the reason. The manual links to decision numbers and does not restate them.
 - **Keep one source of truth.** If two documents disagree, fix one of them. Do not add a third.
 
 ## Code standards (Rust)
