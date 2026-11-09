@@ -18,10 +18,7 @@
           <thead>
             <tr>
               <th class="name">
-                <span class="name-head">Name
-                  <button id="clearCompleted" class="button tiny" type="button" title="Remove the albums that have been written from the list">Clear completed</button>
-                  <button id="clearAll" class="button tiny" type="button" title="Empty the list">Clear all</button>
-                </span>
+                <span class="name-head">Name</span>
               </th>
               <th class="codec">Codec</th>
               <th class="num">Loudness<br><span class="unit">(LUFS)</span></th>
@@ -50,10 +47,16 @@
       <div class="block run-block">
         <button id="run" class="run" type="button">Run (0)</button>
         <p id="statusLine" class="status-line"></p>
+        <div class="clear-buttons">
+          <button id="clearCompleted" class="button small" type="button" title="Remove the albums that have been written from the list">Clear completed</button>
+          <button id="clearAll" class="button small" type="button" title="Empty the list">Clear all</button>
+        </div>
+        <div class="spacer"></div>
         <div class="toggles">
           <label class="toggle" title="Look songs up online: the Radio tag, and Last.fm genres if you add a key in Settings"><input id="metadataToggle" type="checkbox"> Metadata API</label>
           <label class="toggle"><input id="showLogs" type="checkbox"> Show Logs</label>
-          <button class="button small" id="settingsButton" type="button" title="File names, and more later">&#9881; Settings</button>
+          <button class="button small" id="settingsButton" type="button" title="File names, Last.fm, DSD and more">&#9881; Settings</button>
+          <button class="button small" id="aboutButton" type="button" title="Version, the manual, and how to support RangeForge">About</button>
         </div>
       </div>
 
@@ -163,6 +166,7 @@
       <button id="lastfmForget" class="button small" type="button">Forget</button>
     </div>
     <p id="lastfmStatus" class="hint"></p>
+    <p class="hint">RangeForge does not come with a Last.fm key. Getting your own is free: <a href="#" data-about="lastfm_key">create one for an app on Last.fm</a>, then paste it here. The key stays on this computer.</p>
     <div class="key-row">
       <button id="lastfmClear" class="button small" type="button">Clear saved Last.fm answers</button>
       <span class="hint">Last.fm answers are kept for weeks so they are not asked twice. Clear them to pull every genre fresh.</span>
@@ -170,6 +174,22 @@
     <div class="dialog-buttons">
       <button id="settingsCancel" class="button" type="button">Cancel</button>
       <button id="settingsSave" class="button primary" type="button">Save</button>
+    </div>
+  </dialog>
+
+  <dialog id="aboutDialog">
+    <h3>RangeForge <span id="aboutVersion" class="hint"></span></h3>
+    <p>Measures loudness once, evens out volume with one gain per song, splits CUE albums, tags and writes clean files. Free to use.</p>
+    <p>If it saves you time, you can support it on Ko-fi. It is optional and nothing is locked behind it.</p>
+    <div class="about-links">
+      <button class="button primary" type="button" data-about="kofi">Support on Ko-fi</button>
+      <button class="button" type="button" data-about="manual">Read the manual</button>
+      <button class="button" type="button" data-about="faq">FAQ</button>
+      <button class="button" type="button" data-about="releases">Downloads (manual PDF, new versions)</button>
+      <button class="button" type="button" data-about="notices">Third-party notices</button>
+    </div>
+    <div class="dialog-buttons">
+      <button id="aboutClose" class="button" type="button">Close</button>
     </div>
   </dialog>
 

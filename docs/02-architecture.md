@@ -1,4 +1,4 @@
-# 03 - How it works
+# How it works
 
 **In short:** the app reads each audio file once, takes notes on it, and does everything else from those notes. Because it never goes back to re-read the file, changing a setting feels instant. The notes are saved, so dropping the same album tomorrow costs nothing.
 

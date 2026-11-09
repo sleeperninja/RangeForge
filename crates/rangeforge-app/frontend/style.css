@@ -172,7 +172,13 @@ tr.message.error td { color: var(--error); text-align: left; }
 }
 .run:disabled { opacity: 0.4; cursor: not-allowed; }
 .status-line { margin: 0; font-size: 12px; color: var(--muted); }
+.clear-buttons { display: flex; gap: 6px; }
+.clear-buttons .button { flex: 1; padding-left: 4px; padding-right: 4px; }
+.spacer { flex: 1; }
 .toggles { display: flex; flex-direction: column; gap: 2px; }
+.toggles .button { align-self: flex-start; }
+.about-links { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+dialog a { color: var(--accent); }
 .toggle.disabled { color: var(--muted); }
 
 .output-block label { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }

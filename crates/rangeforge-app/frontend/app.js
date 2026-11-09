@@ -77,6 +77,20 @@
     }
   }
 
+  // For the few actions that answer with a plain value and not a new screen.
+  async function ask(name, args) {
+    if (!inTauri) {
+      toast('Demo mode: this page is not connected to the program.');
+      return null;
+    }
+    try {
+      return await tauri.core.invoke(name, args || {});
+    } catch (error) {
+      toast(String(error));
+      return null;
+    }
+  }
+
   function take(reply) {
     if (reply.error) {
       toast(reply.error);
@@ -693,6 +707,20 @@
       }
     });
     $('settingsButton').addEventListener('click', openSettings);
+    $('aboutButton').addEventListener('click', async () => {
+      const version = await ask('about_version');
+      $('aboutVersion').textContent = version ? `version ${version}` : '';
+      $('aboutDialog').showModal();
+    });
+    $('aboutClose').addEventListener('click', () => $('aboutDialog').close());
+    // Every link in the About and Settings windows is a fixed name the program knows.
+    document.addEventListener('click', (e) => {
+      const link = e.target.closest('[data-about]');
+      if (link) {
+        e.preventDefault();
+        ask('open_about_link', { which: link.dataset.about });
+      }
+    });
     $('settingsCancel').addEventListener('click', () => $('settingsDialog').close());
     $('settingsSave').addEventListener('click', saveSettings);
     $('nameAlbum').addEventListener('input', updatePreview);

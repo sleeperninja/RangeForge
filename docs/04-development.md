@@ -1,4 +1,4 @@
-# 06 - Development
+# Development
 
 ## Quick start
 
@@ -75,7 +75,7 @@ cargo run --release -p rangeforge-cli -- ui "testdata\<album folder>"
 cargo run --release -p rangeforge-cli -- ui --snapshot --target -18 --width 130 --height 25 "testdata\<album folder>"
 ```
 
-Use a real terminal such as Windows Terminal for the interactive version. The keys are listed in [02-ui.md](02-ui.md). Starting values can be set with `--target`, `--ceiling`, `--no-peak-protection`, `--codec`, `--bit-depth`, `--container`, `--sample-rate`, `--out`, `--subfolder`, `--on-conflict`, `--suffix` and `--delete-original` (the same options as `run`), and `--show-logs` opens the log panel. It uses the analysis cache below, so an album you have measured before appears instantly.
+Use a real terminal such as Windows Terminal for the interactive version. The keys are listed in [01-ui.md](01-ui.md). Starting values can be set with `--target`, `--ceiling`, `--no-peak-protection`, `--codec`, `--bit-depth`, `--container`, `--sample-rate`, `--out`, `--subfolder`, `--on-conflict`, `--suffix` and `--delete-original` (the same options as `run`), and `--show-logs` opens the log panel. It uses the analysis cache below, so an album you have measured before appears instantly.
 
 Pressing Run needs FFmpeg. The program looks, in order, at `RANGEFORGE_FFMPEG`, an `ffmpeg` file next to the program, the system path, and the usual package folders (`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`). If it cannot be found, the screen says so and nothing is written. On a Mac with no Homebrew, drop an `ffmpeg` binary in the same folder as `rangeforge-app`.
 
@@ -172,7 +172,7 @@ Installers are built by the **Release** workflow (`.github/workflows/release.yml
 
 The installers are **not signed**. On Windows, SmartScreen says the publisher is unknown: choose More info, then Run anyway. On macOS the app is signed ad-hoc (which Apple Silicon requires), but a downloaded app is still quarantined: open the DMG, drag the app out, then right-click it and choose Open the first time. Proper signing would need an Apple Developer account and a Windows certificate; that is a later decision (D-23).
 
-**FFmpeg is inside the installer** (decision D-23), as an LGPL build named in `THIRD_PARTY_NOTICES.md`. `scripts/fetch-ffmpeg.sh <rust-target> <folder>` fetches it: the prebuilt LGPL build on Windows, and a build from the pinned source tag on macOS and Linux (about ten minutes the first time, then cached). The release workflow runs the export tests against that very FFmpeg before packaging anything. The file lands in `crates/rangeforge-app/binaries/` (not in git).
+**FFmpeg is inside the installer** (decision D-23), as an LGPL build named in `THIRD_PARTY_NOTICES.md`. `scripts/fetch-ffmpeg.sh <rust-target> <folder>` fetches it: the prebuilt LGPL build on Windows, and a build from the pinned source tag on macOS and Linux, together with LAME and libopus built from their pinned tarballs (D-43; about ten minutes the first time, then cached; needs a compiler, make and pkg-config). The script checks that the result is not GPL and can write ALAC, FLAC, AAC, PCM (including 32-bit float), MP3 and Opus. The release workflow runs the export tests against that very FFmpeg before packaging anything. The file lands in `crates/rangeforge-app/binaries/` (not in git).
 
 **Building on your own machine:** run `scriptsbuild-local.bat` on Windows (or `scripts/build-local.sh` in a terminal on a Mac or Linux). Each machine builds one thing: an MSI on Windows x64, an app and DMG on a Mac with Apple Silicon, a .deb on Linux. It first lists every requirement with ok or MISSING and how to install what is missing (Rust, the Rust target, Visual Studio C++ Build Tools, Xcode tools, the Tauri build tool, and so on) then fetches FFmpeg, runs the export tests, builds, and copies the installer to `dist/<version>/`. `--check` stops after that list. Below is the same thing by hand.
 

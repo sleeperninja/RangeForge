@@ -6,11 +6,15 @@
 # Usage: scripts/fetch-ffmpeg.sh <rust-target-triple> <out-dir>
 #
 # It is always an LGPL build (no GPL or non-free parts), so it can be shipped inside the
-# app. RangeForge only needs FFmpeg's own ALAC, FLAC, AAC and PCM encoders.
+# app. RangeForge needs FFmpeg's own ALAC, FLAC, AAC and PCM encoders, and LAME (MP3) and
+# libopus (Opus) for those two formats.
 #
-#  - Windows: the prebuilt LGPL static build from BtbN, for FFmpeg 9.0.
-#  - macOS and Linux: built from the FFmpeg source at the tag below, with no outside
-#    libraries, so the result runs on a machine that has nothing else installed.
+#  - Windows: the prebuilt LGPL static build from BtbN, for FFmpeg 9.0 (it includes LAME,
+#    libopus and libsoxr).
+#  - macOS and Linux: built from the FFmpeg source at the tag below, together with LAME and
+#    libopus built from the source tarballs below (checked by hash), all linked statically, so
+#    the result runs on a machine that has nothing else installed. Needs a C compiler, make
+#    and pkg-config.
 #
 # Running it again does nothing if the file is already there.
 set -euo pipefail
@@ -22,6 +26,11 @@ out="${2:?usage: fetch-ffmpeg.sh <rust-target-triple> <out-dir>}"
 TAG=n9.0.2
 COMMIT=946fcce07b6dcd0331c8cc609192aeff5e1924f8
 BTBN=https://github.com/BtbN/FFmpeg-Builds/releases/download/latest
+# The MP3 and Opus encoders for the builds from source, pinned by hash.
+LAME_URL=https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz
+LAME_SHA256=ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e
+OPUS_URL=https://downloads.xiph.org/releases/opus/opus-1.5.2.tar.gz
+OPUS_SHA256=65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1
 
 mkdir -p "$out"
 out="$(cd "$out" && pwd)"
@@ -60,6 +69,34 @@ case "$triple" in
     ;;
 
   x86_64-apple-darwin | aarch64-apple-darwin | x86_64-unknown-linux-gnu)
+    command -v pkg-config > /dev/null 2>&1 || { echo "pkg-config is needed to build FFmpeg" >&2; exit 1; }
+    jobs="$(nproc 2> /dev/null || sysctl -n hw.ncpu 2> /dev/null || echo 2)"
+    case "$triple" in
+      *-apple-darwin)
+        export MACOSX_DEPLOYMENT_TARGET=11.0
+        export CFLAGS="-mmacosx-version-min=11.0" LDFLAGS="-mmacosx-version-min=11.0"
+        ;;
+    esac
+    prefix="$work/deps"
+    mkdir -p "$prefix"
+    # Checks a download against its pinned hash (sha256sum on Linux, shasum on a Mac).
+    verify() {
+      local want="$1" file="$2" got
+      if command -v sha256sum > /dev/null 2>&1; then got="$(sha256sum "$file" | cut -d' ' -f1)"
+      else got="$(shasum -a 256 "$file" | cut -d' ' -f1)"; fi
+      [ "$got" = "$want" ] || { echo "$file has hash $got, expected $want" >&2; exit 1; }
+    }
+    echo "Building LAME and Opus (static)"
+    curl -fL --retry 3 ${CURL_OPTIONS:-} -o "$work/lame.tar.gz" "$LAME_URL"
+    verify "$LAME_SHA256" "$work/lame.tar.gz"
+    curl -fL --retry 3 ${CURL_OPTIONS:-} -o "$work/opus.tar.gz" "$OPUS_URL"
+    verify "$OPUS_SHA256" "$work/opus.tar.gz"
+    tar -xzf "$work/lame.tar.gz" -C "$work"
+    ( cd "$work/lame-3.100"       && ./configure --prefix="$prefix" --disable-shared --enable-static --disable-frontend --disable-decoder --disable-gtktest       && make -j"$jobs" && make install ) > /dev/null
+    tar -xzf "$work/opus.tar.gz" -C "$work"
+    ( cd "$work/opus-1.5.2"       && ./configure --prefix="$prefix" --disable-shared --enable-static --disable-doc --disable-extra-programs       && make -j"$jobs" && make install ) > /dev/null
+    export PKG_CONFIG_PATH="$prefix/lib/pkgconfig"
+
     echo "Building FFmpeg $TAG from source"
     git clone --quiet --depth 1 --branch "$TAG" https://github.com/FFmpeg/FFmpeg.git "$work/src"
     actual="$(git -C "$work/src" rev-parse HEAD)"
@@ -73,15 +110,15 @@ case "$triple" in
       --disable-doc --disable-network --disable-debug
       --disable-ffplay --disable-ffprobe --disable-avdevice
       --disable-shared --enable-static --disable-x86asm
+      --enable-libmp3lame --enable-libopus
+      "--extra-cflags=-I$prefix/include" "--extra-ldflags=-L$prefix/lib"
     )
     case "$triple" in
       *-apple-darwin)
-        export MACOSX_DEPLOYMENT_TARGET=11.0
         flags+=(--extra-cflags=-mmacosx-version-min=11.0 --extra-ldflags=-mmacosx-version-min=11.0)
         ;;
     esac
     ./configure "${flags[@]}"
-    jobs="$(nproc 2> /dev/null || sysctl -n hw.ncpu 2> /dev/null || echo 2)"
     make -j"$jobs"
     case "$triple" in
       *-apple-darwin) strip -x ffmpeg ;;
@@ -107,7 +144,7 @@ if echo "$version" | grep -q -- '--enable-gpl'; then
   exit 1
 fi
 encoders="$("$target" -hide_banner -encoders)"
-for name in alac flac aac pcm_s16le pcm_s24le; do
+for name in alac flac aac pcm_s16le pcm_s24le pcm_f32le libmp3lame libopus; do
   if ! echo "$encoders" | grep -qw "$name"; then
     echo "This FFmpeg cannot encode $name" >&2
     rm -f "$target"

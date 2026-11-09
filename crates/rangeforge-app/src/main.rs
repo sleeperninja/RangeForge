@@ -195,6 +195,18 @@ async fn set_confirm_destructive(on: bool, state: Session<'_>) -> Result<Reply, 
     Ok(ops::set_confirm_destructive(&state, on))
 }
 
+/// The version, for the About window.
+#[tauri::command]
+fn about_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// Opens one of the About window's links (the donation page, the manual and so on) by name.
+#[tauri::command]
+async fn open_about_link(which: String) -> Result<(), String> {
+    browser::open_about(&which)
+}
+
 #[tauri::command]
 async fn set_bitrate(id: String, state: Session<'_>) -> Result<Reply, String> {
     Ok(ops::set_bitrate(&state, &id))
@@ -534,6 +546,8 @@ fn main() {
             set_sample_rate,
             set_channels,
             set_downmix,
+            about_version,
+            open_about_link,
             set_bitrate,
             set_flac_level,
             set_bit_depth,
