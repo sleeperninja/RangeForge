@@ -15,7 +15,7 @@ It replaces about seven tools (MediaHuman, an FFmpeg GUI, Adobe Audition, a Powe
 
 - The project is being **rebuilt in Rust**. The old Electron/React version is in git history (commit `01c53ea`). It was a plan more than a product, so we are not porting it.
 - The UI mockups in `docs/mockups/` are the source of truth for how the app looks and behaves.
-- Current stage: see [docs/05-roadmap.md](docs/05-roadmap.md).
+- Current stage: see [docs/05-roadmap.md](docs/05-roadmap.md), or [ROADMAP.md](ROADMAP.md) for the same plan in plain words.
 
 ## Read these, in this order
 
@@ -25,7 +25,7 @@ It replaces about seven tools (MediaHuman, an FFmpeg GUI, Adobe Audition, a Powe
 | [docs/02-ui.md](docs/02-ui.md) | What the screen shows and how each control behaves |
 | [docs/03-architecture.md](docs/03-architecture.md) | How it works inside, in plain words first, detail later |
 | [docs/04-decisions.md](docs/04-decisions.md) | Every past decision, why it was made, and whether it still stands |
-| [docs/05-roadmap.md](docs/05-roadmap.md) | What gets built, in what order |
+| [docs/05-roadmap.md](docs/05-roadmap.md) | What gets built, in what order (precise). [ROADMAP.md](ROADMAP.md) in the root is the friendly version; keep the two in step |
 | [docs/06-development.md](docs/06-development.md) | How to build, test and release |
 | [docs/faq.md](docs/faq.md) | Plain answers to recurring questions |
 | Git history (commit `01c53ea`) | The old plans, market research, wireframes and Electron code. Not kept in the tree. |
