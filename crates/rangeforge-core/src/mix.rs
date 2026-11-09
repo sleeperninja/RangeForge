@@ -53,9 +53,9 @@ impl Channels {
     pub fn label(self) -> &'static str {
         match self {
             Self::Original => "original",
-            Self::Quad => "quad (4)",
-            Self::Stereo => "stereo (2)",
-            Self::Mono => "mono (1)",
+            Self::Quad => "quad (4.0)",
+            Self::Stereo => "stereo (2.0)",
+            Self::Mono => "mono (1.0)",
         }
     }
 }

@@ -1,6 +1,6 @@
 # How RangeForge Decides Things
 
-*The plain-words manual: the thinking behind what the program does, and why. Written 9 Nov 2026, for version 0.4.0. The dated record of each decision is in [docs/04-decisions.md](docs/04-decisions.md); the `D-` numbers below point there. Things marked **planned** are decided but not built yet.*
+*The plain-words manual: the thinking behind what the program does, and why. Written 9 Nov 2026, for version 0.5.0. The dated record of each decision is in [docs/04-decisions.md](docs/04-decisions.md); the `D-` numbers below point there. Things marked **planned** are decided but not built yet.*
 
 ---
 
