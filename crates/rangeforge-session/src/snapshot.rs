@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use rangeforge_core::identify::IdentitySource;
 use rangeforge_core::mix::{Channels, Downmix};
-use rangeforge_export::format::{BitDepth, Codec, Container};
+use rangeforge_export::format::{BitDepth, Codec, Container, FLAC_LEVELS};
 
 use crate::controls::{ConflictKind, OutputSettings, WhereKind, sample_rates_for};
 use crate::dsd::DsdFormat;
@@ -127,6 +127,10 @@ pub struct OutputView {
     pub channels: String,
     /// `standard`, `bass` or `front`; it matters when the channels are not original.
     pub downmix: String,
+    /// The lossy bitrate, such as `320` or `v0`. Only a lossy codec uses it.
+    pub bitrate: String,
+    /// FLAC's compression level, `0` to `8`. Only FLAC uses it.
+    pub flac_level: u8,
     /// The ending of the files that will be written: `m4a`, `flac`, `wav` or `mka`.
     pub extension: &'static str,
 }
@@ -214,6 +218,10 @@ pub struct Options {
     /// How many channels to write. Quad is left out for a codec that cannot hold it.
     pub channels: Vec<Choice>,
     pub downmixes: Vec<Choice>,
+    /// The bitrates the chosen codec offers; empty for a lossless one, whose picker is dimmed.
+    pub bitrates: Vec<Choice>,
+    /// FLAC's compression levels, 0 (largest) to 8 (smallest).
+    pub flac_levels: Vec<Choice>,
     pub places: Vec<Choice>,
     pub conflicts: Vec<Choice>,
     /// For the DSD Format: the Output Format's own choice, or a codec of its own.
@@ -413,6 +421,7 @@ fn group_view(app: &App, index: usize, group: &Group) -> GroupView {
     }
 }
 
+#[allow(clippy::too_many_lines)] // one list of choices after another
 fn options(output: OutputSettings) -> Options {
     Options {
         codecs: Codec::ALL
@@ -444,6 +453,27 @@ fn options(output: OutputSettings) -> Options {
             .map(|style| Choice {
                 id: style.name().to_string(),
                 label: style.label().to_string(),
+            })
+            .collect(),
+        bitrates: output
+            .codec
+            .bitrates()
+            .iter()
+            .map(|rate| Choice {
+                id: rate.name(),
+                label: rate.label(),
+            })
+            .collect(),
+        flac_levels: FLAC_LEVELS
+            .into_iter()
+            .map(|level| Choice {
+                id: level.to_string(),
+                label: match level {
+                    0 => "0 (largest)".to_string(),
+                    5 => "5 (usual)".to_string(),
+                    8 => "8 (smallest)".to_string(),
+                    other => other.to_string(),
+                },
             })
             .collect(),
         sample_rates: sample_rates_for(output.codec)
@@ -538,10 +568,12 @@ impl App {
             output: OutputView {
                 codec: self.output.codec.name().to_string(),
                 container: self.output.container.name().to_string(),
-                sample_rate: self.output.sample_rate.name().to_string(),
+                sample_rate: self.output.shown_sample_rate().name().to_string(),
                 bit_depth: self.output.bit_depth.name().to_string(),
                 channels: self.output.mix.channels.name().to_string(),
                 downmix: self.output.mix.style.name().to_string(),
+                bitrate: self.output.bitrate.name(),
+                flac_level: self.output.flac_level,
                 extension: self.output.format().extension(),
             },
             strategy: StrategyView {
@@ -919,7 +951,7 @@ FILE \"in.flac\" WAVE
         assert_eq!(snapshot.strategy.place, "next");
         assert_eq!(snapshot.strategy.conflict, "number");
         assert_eq!(snapshot.strategy.number_suffix, "_00");
-        assert_eq!(snapshot.strategy.subfolder, "RangeForge");
+        assert_eq!(snapshot.strategy.subfolder, "_forged");
         assert!(!snapshot.strategy.delete_original);
         assert_eq!(snapshot.strategy.problem, None);
         assert!(!snapshot.strategy.needs_confirmation);
@@ -930,14 +962,17 @@ FILE \"in.flac\" WAVE
     fn the_choices_to_offer_come_from_the_session() {
         let options = sample_app().snapshot().options;
         let ids = |choices: &[Choice]| choices.iter().map(|c| c.id.clone()).collect::<Vec<_>>();
-        assert_eq!(ids(&options.codecs), ["alac", "flac", "wav", "aac"]);
+        assert_eq!(
+            ids(&options.codecs),
+            ["alac", "flac", "wav", "aac", "mp3", "opus"]
+        );
         assert_eq!(ids(&options.bit_depths), ["source", "16", "24"]);
         assert_eq!(ids(&options.places), ["next", "subfolder", "folder"]);
         assert_eq!(
             ids(&options.conflicts),
             ["number", "rename_existing", "overwrite"]
         );
-        assert_eq!(options.conflicts[1].label, "Rename the existing file");
+        assert_eq!(options.conflicts[1].label, "Rename existing file");
         assert_eq!(options.bit_depths[1].label, "16-bit");
     }
 

@@ -6,7 +6,9 @@
 use std::path::PathBuf;
 
 use rangeforge_core::mix::{Channels, MixPlan};
-use rangeforge_export::format::{BitDepth, Codec, Container, OutputFormat, SampleRate};
+use rangeforge_export::format::{
+    BitDepth, Bitrate, Codec, Container, DEFAULT_FLAC_LEVEL, OutputFormat, SampleRate,
+};
 use rangeforge_export::strategy::{Conflict, Destination, Strategy};
 
 use crate::model::Settings;
@@ -35,6 +37,11 @@ pub struct OutputSettings {
     pub sample_rate: SampleRate,
     /// What to do about the channels: the source's own, or mixed down (D-35).
     pub mix: MixPlan,
+    /// What a lossy codec (AAC, MP3, Opus) aims for. Kept valid for the codec by
+    /// [`OutputSettings::fit_to_codec`]; the lossless codecs ignore it.
+    pub bitrate: Bitrate,
+    /// FLAC's compression level, 0 (largest file) to 8 (smallest); other codecs ignore it.
+    pub flac_level: u8,
 }
 
 impl Default for OutputSettings {
@@ -46,12 +53,21 @@ impl Default for OutputSettings {
             container: Container::Native,
             sample_rate: SampleRate::Original,
             mix: MixPlan::default(),
+            bitrate: Codec::Alac.default_bitrate(),
+            flac_level: DEFAULT_FLAC_LEVEL,
         }
     }
 }
 
 /// The sample rates offered for `codec`: the source's own, and every rate it can be written at.
+/// A codec with a single rate (Opus, 48 kHz) offers just that one, and the picker is dimmed.
 pub fn sample_rates_for(codec: Codec) -> Vec<SampleRate> {
+    if let Some(fixed) = codec.fixed_rate() {
+        return SampleRate::ALL
+            .into_iter()
+            .filter(|rate| rate.hz() == Some(fixed))
+            .collect();
+    }
     SampleRate::ALL
         .into_iter()
         .filter(|rate| rate.hz().is_none_or(|hz| codec.supports_rate(hz)))
@@ -63,6 +79,18 @@ impl OutputSettings {
         OutputFormat::new(self.codec, self.bit_depth)
             .with_container(self.container)
             .with_sample_rate(self.sample_rate)
+            .with_bitrate(self.bitrate)
+            .with_flac_level(self.flac_level)
+    }
+
+    /// The sample rate the picker shows: the codec's only one if it has just one, else the
+    /// choice made.
+    pub fn shown_sample_rate(self) -> SampleRate {
+        let fixed = self.codec.fixed_rate();
+        SampleRate::ALL
+            .into_iter()
+            .find(|rate| fixed.is_some() && rate.hz() == fixed)
+            .unwrap_or(self.sample_rate)
     }
 
     /// Whether the codec can write the channels asked for. ALAC cannot hold quad (D-35).
@@ -73,10 +101,16 @@ impl OutputSettings {
     /// Puts back to "original" any setting the codec cannot do, such as 192 kHz AAC. Returns
     /// true if something had to change.
     pub fn fit_to_codec(&mut self) -> bool {
-        let fits = self
-            .sample_rate
-            .hz()
-            .is_none_or(|hz| self.codec.supports_rate(hz));
+        // A bitrate the codec does not offer becomes its usual one (320 for MP3).
+        if !self.codec.is_lossless() && !self.codec.bitrates().contains(&self.bitrate) {
+            self.bitrate = self.codec.default_bitrate();
+        }
+        // A codec with one rate (Opus) writes that rate whatever is chosen, so nothing to fix.
+        let fits = self.codec.fixed_rate().is_some()
+            || self
+                .sample_rate
+                .hz()
+                .is_none_or(|hz| self.codec.supports_rate(hz));
         if !fits {
             self.sample_rate = SampleRate::Original;
         }
@@ -114,8 +148,8 @@ impl WhereKind {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::NextToOriginal => "Next to the original",
-            Self::Subfolder => "In a subfolder of the original's folder",
+            Self::NextToOriginal => "Next to original",
+            Self::Subfolder => "Subfolder of original folder",
             Self::Folder => "All in one folder",
         }
     }
@@ -134,9 +168,9 @@ impl ConflictKind {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Number => "Add a number to the new file",
-            Self::RenameExisting => "Rename the existing file",
-            Self::Overwrite => "Overwrite the existing file",
+            Self::Number => "Add number to new file",
+            Self::RenameExisting => "Rename existing file",
+            Self::Overwrite => "Overwrite existing file",
         }
     }
 }
@@ -404,6 +438,8 @@ impl PresetList {
             sample_rate: output.sample_rate,
             channels: output.mix.channels,
             downmix: output.mix.style,
+            bitrate: output.bitrate,
+            flac_level: output.flac_level,
             target_lufs: volume.target_lufs,
             peak_protection: volume.peak_protection,
             peak_ceiling_dbtp: volume.peak_ceiling_dbtp,
@@ -443,6 +479,9 @@ pub fn apply_preset(preset: &Preset, volume: &mut Settings, output: &mut OutputS
         channels: preset.channels,
         style: preset.downmix,
     };
+    output.bitrate = preset.bitrate;
+    output.flac_level = preset.flac_level;
+    output.fit_to_codec();
 }
 
 fn matches(preset: &Preset, volume: &Settings, output: OutputSettings) -> bool {
@@ -453,6 +492,9 @@ fn matches(preset: &Preset, volume: &Settings, output: OutputSettings) -> bool {
         && preset.channels == output.mix.channels
         // The style only matters when something is mixed.
         && (output.mix.channels == Channels::Original || preset.downmix == output.mix.style)
+        // The bitrate matters to a lossy codec, and the level to FLAC, and to nothing else.
+        && (output.codec.is_lossless() || preset.bitrate == output.bitrate)
+        && (output.codec != Codec::Flac || preset.flac_level == output.flac_level)
         && preset.peak_protection == volume.peak_protection
         && (preset.target_lufs - volume.target_lufs).abs() < 1e-9
         && (preset.peak_ceiling_dbtp - volume.peak_ceiling_dbtp).abs() < 1e-9
@@ -464,6 +506,75 @@ mod tests {
     use crate::presets::built_in;
 
     #[test]
+    fn the_bitrate_follows_the_codec_and_opus_has_one_rate() {
+        let mut output = OutputSettings {
+            codec: Codec::Aac,
+            ..OutputSettings::default()
+        };
+        // AAC's usual, kept when MP3 offers it too, and put right when a codec does not.
+        output.fit_to_codec();
+        assert_eq!(output.bitrate, Bitrate::Kbps(256));
+        output.codec = Codec::Mp3;
+        output.bitrate = Bitrate::Vbr(0);
+        output.fit_to_codec();
+        assert_eq!(output.bitrate, Bitrate::Vbr(0), "V0 is an MP3 choice");
+        output.codec = Codec::Opus;
+        output.fit_to_codec();
+        assert_eq!(output.bitrate, Bitrate::Kbps(192), "Opus has no V0");
+        // Opus offers 48 kHz alone, shows it, and leaves the chosen rate for the next codec.
+        assert_eq!(sample_rates_for(Codec::Opus), [SampleRate::Hz48000]);
+        output.sample_rate = SampleRate::Hz96000;
+        assert!(
+            !output.fit_to_codec(),
+            "nothing to fix for a single-rate codec"
+        );
+        assert_eq!(output.shown_sample_rate(), SampleRate::Hz48000);
+        output.codec = Codec::Flac;
+        assert_eq!(output.shown_sample_rate(), SampleRate::Hz96000);
+        // MP3 offers the rates up to 48 kHz.
+        let mp3_rates = sample_rates_for(Codec::Mp3);
+        assert!(mp3_rates.contains(&SampleRate::Original));
+        assert!(mp3_rates.contains(&SampleRate::Hz48000));
+        assert!(!mp3_rates.contains(&SampleRate::Hz88200));
+    }
+
+    #[test]
+    fn a_preset_matches_on_the_bitrate_only_for_a_lossy_codec_and_the_level_only_for_flac() {
+        let mut presets = list();
+        let volume = Settings::default();
+        let mut output = OutputSettings {
+            codec: Codec::Mp3,
+            bitrate: Bitrate::Vbr(0),
+            ..OutputSettings::default()
+        };
+        presets.save_as("MP3 top", &volume, output);
+        assert!(!presets.is_modified(&volume, output));
+        output.bitrate = Bitrate::Kbps(128);
+        assert!(presets.is_modified(&volume, output));
+        // A lossless preset does not care what bitrate is left over from a lossy one.
+        output.codec = Codec::Wav;
+        presets.save_as("WAV", &volume, output);
+        output.bitrate = Bitrate::Vbr(4);
+        assert!(!presets.is_modified(&volume, output));
+        output.codec = Codec::Flac;
+        presets.save_as(
+            "FLAC small",
+            &volume,
+            OutputSettings {
+                flac_level: 8,
+                ..output
+            },
+        );
+        assert!(presets.is_modified(
+            &volume,
+            OutputSettings {
+                flac_level: 2,
+                ..output
+            }
+        ));
+    }
+
+    #[test]
     fn cycling_wraps_in_both_directions() {
         let mut output = OutputSettings::default();
         assert_eq!(output.codec, Codec::Alac);
@@ -472,7 +583,7 @@ mod tests {
         output.cycle_codec(-2);
         assert_eq!(
             output.codec,
-            Codec::Aac,
+            Codec::Opus,
             "backward from the first wraps to the last"
         );
         output.cycle_codec(1);
@@ -624,10 +735,10 @@ mod tests {
         let mut strategy = StrategySettings::default();
         assert_eq!(strategy.where_text(), None);
         strategy.set_where_text("ignored".to_string());
-        assert_eq!(strategy.subfolder, "RangeForge");
+        assert_eq!(strategy.subfolder, "_forged");
 
         strategy.where_kind = WhereKind::Subfolder;
-        assert_eq!(strategy.where_text(), Some("RangeForge"));
+        assert_eq!(strategy.where_text(), Some("_forged"));
         strategy.set_where_text("Balanced".to_string());
         assert_eq!(strategy.subfolder, "Balanced");
 
@@ -795,6 +906,8 @@ mod tests {
             container: Container::Mka,
             sample_rate: SampleRate::Hz96000,
             mix: MixPlan::default(),
+            bitrate: Bitrate::Kbps(256),
+            flac_level: 5,
         };
 
         assert_eq!(
@@ -841,6 +954,8 @@ mod tests {
             sample_rate: SampleRate::Original,
             channels: Channels::Stereo,
             downmix: Downmix::FrontOnly,
+            bitrate: Bitrate::Kbps(256),
+            flac_level: 5,
             target_lufs: -22.0,
             peak_protection: true,
             peak_ceiling_dbtp: -0.6,

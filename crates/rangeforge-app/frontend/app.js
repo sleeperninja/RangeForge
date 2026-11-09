@@ -149,8 +149,15 @@
     fillSelect($('sampleRate'), s.options.sample_rates, s.output.sample_rate);
     fillSelect($('channels'), s.options.channels, s.output.channels);
     fillSelect($('downmix'), s.options.downmixes, s.output.downmix);
-    // The style only matters when the channels are mixed.
-    $('downmixRow').classList.toggle('hidden', s.output.channels === 'original');
+    // Controls that do nothing for this combination stay in place and are dimmed.
+    $('downmix').disabled = s.output.channels === 'original';
+    const lossy = s.options.bitrates.length > 0;
+    fillSelect($('bitrate'), lossy ? s.options.bitrates : [{ id: '', label: '—' }], s.output.bitrate);
+    $('bitrate').disabled = !lossy;
+    fillSelect($('flacLevel'), s.options.flac_levels, String(s.output.flac_level));
+    $('flacLevel').disabled = s.output.codec !== 'flac';
+    $('bitDepth').disabled = lossy;
+    $('sampleRate').disabled = s.options.sample_rates.length === 1;
     fillSelect($('dsdCodec'), s.options.dsd_codecs, s.dsd.codec);
     fillSelect($('dsdContainer'), s.options.dsd_containers, s.dsd.container);
     fillSelect($('dsdSampleRate'), s.options.dsd_sample_rates, s.dsd.sample_rate);
@@ -615,6 +622,8 @@
       call('set_confirm_destructive', { on: e.target.checked }),
     );
     $('sampleRate').addEventListener('change', (e) => call('set_sample_rate', { id: e.target.value }));
+    $('bitrate').addEventListener('change', (e) => call('set_bitrate', { id: e.target.value }));
+    $('flacLevel').addEventListener('change', (e) => call('set_flac_level', { id: e.target.value }));
     $('channels').addEventListener('change', (e) => call('set_channels', { id: e.target.value }));
     $('downmix').addEventListener('change', (e) => call('set_downmix', { id: e.target.value }));
 

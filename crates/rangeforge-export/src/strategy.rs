@@ -50,7 +50,7 @@ impl Strategy {
     /// The default suffix for renamed files.
     pub const DEFAULT_OLD: &'static str = "_old";
     /// The default name of the subfolder.
-    pub const DEFAULT_SUBFOLDER: &'static str = "RangeForge";
+    pub const DEFAULT_SUBFOLDER: &'static str = "_forged";
 
     /// Next to the original, numbering the new file if its name is taken. This is the safe
     /// starting choice: nothing existing is touched.

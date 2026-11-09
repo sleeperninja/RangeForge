@@ -196,6 +196,16 @@ async fn set_confirm_destructive(on: bool, state: Session<'_>) -> Result<Reply, 
 }
 
 #[tauri::command]
+async fn set_bitrate(id: String, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_bitrate(&state, &id))
+}
+
+#[tauri::command]
+async fn set_flac_level(id: String, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_flac_level(&state, &id))
+}
+
+#[tauri::command]
 async fn set_bit_depth(id: String, state: Session<'_>) -> Result<Reply, String> {
     Ok(ops::set_bit_depth(&state, &id))
 }
@@ -524,6 +534,8 @@ fn main() {
             set_sample_rate,
             set_channels,
             set_downmix,
+            set_bitrate,
+            set_flac_level,
             set_bit_depth,
             set_dsd_format,
             set_confirm_destructive,

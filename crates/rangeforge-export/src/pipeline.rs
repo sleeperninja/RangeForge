@@ -205,6 +205,14 @@ impl Run<'_> {
                 }
                 self.layout = Some("quad");
             }
+            let codec = self.options.format.codec;
+            if info.channels > codec.max_channels() {
+                return Err(ExportError::TooManyChannels {
+                    codec: codec.name(),
+                    most: codec.max_channels(),
+                    channels: info.channels,
+                });
+            }
             self.splitter = Some(Splitter::new(spans, info.channels));
             self.info = Some(*info);
         }

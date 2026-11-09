@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use clap::{Args, ValueEnum};
 use rangeforge_core::mix::{Channels, Downmix, MixPlan};
-use rangeforge_export::format::{BitDepth, Codec, Container, SampleRate};
+use rangeforge_export::format::{BitDepth, Bitrate, Codec, Container, SampleRate};
 use rangeforge_export::strategy::Strategy;
 
 use rangeforge_session::controls::{ConflictKind, OutputSettings, StrategySettings, WhereKind};
@@ -16,6 +16,8 @@ enum CodecArg {
     Flac,
     Wav,
     Aac,
+    Mp3,
+    Opus,
 }
 
 impl From<CodecArg> for Codec {
@@ -25,6 +27,8 @@ impl From<CodecArg> for Codec {
             CodecArg::Flac => Self::Flac,
             CodecArg::Wav => Self::Wav,
             CodecArg::Aac => Self::Aac,
+            CodecArg::Mp3 => Self::Mp3,
+            CodecArg::Opus => Self::Opus,
         }
     }
 }
@@ -158,6 +162,13 @@ pub struct OutputArgs {
     /// The format to write
     #[arg(long, value_enum, default_value = "alac")]
     codec: CodecArg,
+    /// The bitrate of a lossy format, in kbps (such as 320), or LAME's variable rate for MP3
+    /// (v0 to v4). Without it the format's usual one is used.
+    #[arg(long)]
+    bitrate: Option<String>,
+    /// FLAC's compression level, 0 (largest) to 8 (smallest)
+    #[arg(long, default_value_t = 5, value_parser = clap::value_parser!(u8).range(0..=8))]
+    flac_level: u8,
     /// How precisely to store each sample
     #[arg(long, value_enum, default_value = "source")]
     bit_depth: BitDepthArg,
@@ -199,8 +210,15 @@ pub struct OutputArgs {
 
 impl OutputArgs {
     pub fn output_settings(&self) -> OutputSettings {
+        let codec = Codec::from(self.codec);
         OutputSettings {
-            codec: self.codec.into(),
+            codec,
+            bitrate: self
+                .bitrate
+                .as_deref()
+                .and_then(Bitrate::from_name)
+                .unwrap_or_else(|| codec.default_bitrate()),
+            flac_level: self.flac_level,
             bit_depth: self.bit_depth.into(),
             container: self.container.into(),
             sample_rate: self.sample_rate.into(),
@@ -217,9 +235,26 @@ impl OutputArgs {
         let settings = self.output_settings();
         if !settings.can_write_mix() {
             return Some(format!(
-                "{} cannot hold quad (four-channel) audio: use flac, wav or aac, or another --channels",
+                "{} cannot hold quad (four-channel) audio: use flac, wav, aac or opus, or another --channels",
                 settings.codec.name()
             ));
+        }
+        if let Some(text) = &self.bitrate {
+            let offered = Bitrate::from_name(text)
+                .is_some_and(|rate| settings.codec.bitrates().contains(&rate));
+            if !offered {
+                let list: Vec<String> =
+                    settings.codec.bitrates().iter().map(|r| r.name()).collect();
+                return Some(if list.is_empty() {
+                    format!("{} has no bitrate setting", settings.codec.name())
+                } else {
+                    format!(
+                        "{} has no {text} bitrate: use one of {}",
+                        settings.codec.name(),
+                        list.join(", ")
+                    )
+                });
+            }
         }
         let hz = settings.sample_rate.hz()?;
         (!settings.codec.supports_rate(hz)).then(|| {
@@ -411,6 +446,45 @@ mod tests {
         assert_eq!(args.format_problem(), None);
         assert!(Wrapper::try_parse_from(["test", "--sample-rate", "22050"]).is_err());
         assert!(Wrapper::try_parse_from(["test", "--container", "ogg"]).is_err());
+    }
+
+    #[test]
+    fn mp3_and_opus_take_a_bitrate_and_a_bad_one_is_reported() {
+        let mp3 = parse(&["--codec", "mp3", "--bitrate", "V0"]);
+        assert_eq!(mp3.output_settings().codec, Codec::Mp3);
+        assert_eq!(mp3.output_settings().bitrate, Bitrate::Vbr(0));
+        assert_eq!(mp3.format_problem(), None);
+        assert_eq!(
+            parse(&["--codec", "opus"]).output_settings().bitrate,
+            Bitrate::Kbps(192),
+            "the usual one"
+        );
+        let problem = parse(&["--codec", "opus", "--bitrate", "v0"])
+            .format_problem()
+            .unwrap();
+        assert!(
+            problem.contains("opus") && problem.contains("192"),
+            "{problem}"
+        );
+        assert!(
+            parse(&["--codec", "flac", "--bitrate", "320"])
+                .format_problem()
+                .is_some()
+        );
+        assert!(
+            parse(&["--codec", "mp3", "--channels", "quad"])
+                .format_problem()
+                .is_some()
+        );
+        assert!(
+            parse(&["--codec", "opus", "--sample-rate", "96000"])
+                .format_problem()
+                .is_some()
+        );
+        assert_eq!(
+            parse(&["--flac-level", "8"]).output_settings().flac_level,
+            8
+        );
     }
 
     #[test]

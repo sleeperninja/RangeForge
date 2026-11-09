@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use rangeforge_audio::cache::Cache;
 use rangeforge_core::mix::{Channels, Downmix};
-use rangeforge_export::format::{BitDepth, Codec, Container, SampleRate};
+use rangeforge_export::format::{BitDepth, Bitrate, Codec, Container, SampleRate};
 use rangeforge_lookup::billboard::{self, Fetcher, Refresh};
 use rangeforge_lookup::lastfm::{LastFmError, ListedTrack, RawTag};
 use rangeforge_lookup::tagcache::{Subject, TagCache};
@@ -219,6 +219,23 @@ pub fn set_codec(shared: &Shared, id: &str) -> Reply {
     with_app(shared, |app| {
         let codec = Codec::from_name(id).ok_or_else(|| format!("Unknown format {id:?}"))?;
         app.set_codec(codec)
+    })
+}
+
+pub fn set_bitrate(shared: &Shared, id: &str) -> Reply {
+    with_app(shared, |app| {
+        let bitrate = Bitrate::from_name(id).ok_or_else(|| format!("Unknown bitrate {id:?}"))?;
+        app.set_bitrate(bitrate)
+    })
+}
+
+pub fn set_flac_level(shared: &Shared, id: &str) -> Reply {
+    with_app(shared, |app| {
+        let level: u8 = id
+            .trim()
+            .parse()
+            .map_err(|_| format!("Unknown FLAC level {id:?}"))?;
+        app.set_flac_level(level)
     })
 }
 
@@ -1676,7 +1693,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let shared = shared_with_presets(dir.path());
 
-        let reply = set_codec(&shared, "mp3");
+        let reply = set_codec(&shared, "ogg");
         assert!(reply.error.unwrap().contains("Unknown format"));
         assert_eq!(reply.state.output.codec, "alac");
 
@@ -2045,7 +2062,7 @@ mod tests {
                 .error
                 .is_some()
         );
-        assert!(set_dsd_format(&shared, "codec", "mp3").error.is_some());
+        assert!(set_dsd_format(&shared, "codec", "ogg").error.is_some());
         assert!(set_dsd_format(&shared, "volume", "11").error.is_some());
         let snapshot = state(&shared).state;
         assert_eq!(snapshot.dsd.sample_rate, "88200");

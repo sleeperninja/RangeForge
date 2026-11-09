@@ -96,6 +96,13 @@ pub fn build_args(spec: &EncodeSpec<'_>) -> Vec<OsString> {
     for argument in spec.tags.ffmpeg_args(spec.format) {
         push(&argument);
     }
+    // ID3 version 2.3 is the one every player, tagger and car stereo reads.
+    if spec.format.codec == crate::format::Codec::Mp3
+        && spec.format.container == crate::format::Container::Native
+    {
+        push("-id3v2_version");
+        push("3");
+    }
     push("-f");
     push(spec.format.muxer());
     args.push(spec.output.as_os_str().to_owned());

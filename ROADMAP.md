@@ -1,6 +1,6 @@
 # RangeForge Roadmap
 
-*The friendly version: what works, what's next, and what we've decided not to do. Updated 9 Nov 2026, at version 0.5.0.*
+*The friendly version: what works, what's next, and what we've decided not to do. Updated 9 Nov 2026, at version 0.6.0.*
 
 How it decides things, in plain words, is in [HOW-IT-WORKS.md](HOW-IT-WORKS.md). The detailed phase list, with the technical wording, lives in [docs/05-roadmap.md](docs/05-roadmap.md) and the reasons behind every decision are in [docs/04-decisions.md](docs/04-decisions.md). This page is the one to read over coffee.
 
@@ -14,7 +14,7 @@ RangeForge does its main job today. Drop in an album or a pile of files, and it 
 
 - **Measure once, show a table.** Loudness, true peak and range, cached on disk so dropping the same album again is instant.
 - **Change the target volume** and the table updates straight away.
-- **Split CUE albums** into songs, and write ALAC, FLAC, WAV or AAC (plus DSD handled through FFmpeg).
+- **Split CUE albums** into songs, and write ALAC, FLAC, WAV, AAC, MP3 or Opus (plus DSD handled through FFmpeg), with a bitrate picker for the lossy ones and FLAC compression 0 to 8.
 - **One gain per song, nothing else.** No compression or limiting, and never past the true-peak ceiling. (That rule is about dynamics: converting sample rate, bit depth or channels is a different thing, and the rules for it are written down, D-35.)
 - **File Strategy:** next to the original, in a subfolder you name, or all in one folder. Numbering, renaming the old file, or overwriting when a name is taken, and optionally deleting the original once everything is safely written.
 - **Mix the channels down** (Quad, Stereo or Mono, with a Downmix style: Standard, Standard + bass, Front pair only), measured on the mixed sound so the table shows the real loudness and peak. Quad is not offered for ALAC. Files with more than six channels stay as they are.

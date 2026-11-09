@@ -510,12 +510,12 @@ mod tests {
             "Sample Rate original",
             "Channels original",
             "Preset       [iTunes Lossless]",
-            "(\u{2022}) Next to the original",
-            "( ) In a subfolder of the original's folder",
+            "(\u{2022}) Next to original",
+            "( ) Subfolder of original folder",
             "( ) All in one folder",
-            "(\u{2022}) Add a number to the new file [_00]",
-            "( ) Rename the existing file",
-            "( ) Overwrite the existing file",
+            "(\u{2022}) Add number to new file [_00]",
+            "( ) Rename existing file",
+            "( ) Overwrite existing file",
             "Delete original [no]",
         ] {
             assert!(
@@ -556,13 +556,10 @@ mod tests {
         app.strategy.conflict_kind = ConflictKind::RenameExisting;
         let screen = render(&app);
         assert!(
-            screen.contains("(\u{2022}) Rename the existing file [_old]"),
+            screen.contains("(\u{2022}) Rename existing file [_old]"),
             "{screen}"
         );
-        assert!(
-            screen.contains("( ) Add a number to the new file"),
-            "{screen}"
-        );
+        assert!(screen.contains("( ) Add number to new file"), "{screen}");
 
         app.strategy.where_kind = WhereKind::Folder;
         assert!(render(&app).contains("[choose a folder]"));
@@ -570,16 +567,13 @@ mod tests {
         assert!(render(&app).contains("(\u{2022}) All in one folder [D:\\music\\out]"));
 
         app.strategy.where_kind = WhereKind::Subfolder;
-        assert!(
-            render(&app)
-                .contains("(\u{2022}) In a subfolder of the original's folder [RangeForge]")
-        );
+        assert!(render(&app).contains("(\u{2022}) Subfolder of original folder [_forged]"));
 
         app.strategy.conflict_kind = ConflictKind::Overwrite;
         app.strategy.delete_original = true;
         let screen = render(&app);
         assert!(
-            screen.contains("(\u{2022}) Overwrite the existing file"),
+            screen.contains("(\u{2022}) Overwrite existing file"),
             "{screen}"
         );
         assert!(screen.contains("Delete original [yes]"), "{screen}");

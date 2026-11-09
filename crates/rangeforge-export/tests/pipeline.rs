@@ -16,7 +16,7 @@ use rangeforge_core::cue;
 use rangeforge_core::mix::{Channels, Downmix, MINUS_3_DB, MixPlan};
 use rangeforge_export::ExportError;
 use rangeforge_export::ffmpeg::Ffmpeg;
-use rangeforge_export::format::{BitDepth, Codec, Container, OutputFormat, SampleRate};
+use rangeforge_export::format::{BitDepth, Bitrate, Codec, Container, OutputFormat, SampleRate};
 use rangeforge_export::naming::track_file_name;
 use rangeforge_export::pipeline::{Options, Progress, TrackPlan, Written, export_file, preview};
 use rangeforge_export::strategy::{Conflict, Destination, Strategy};
@@ -590,7 +590,8 @@ fn every_codec_can_be_written_at_a_new_rate_in_either_container() {
     let (dir, input) = with_source("in.wav", 2, 200);
     let source_loudness = loudness(&input);
 
-    for codec in Codec::ALL {
+    // (MP3 stops at 48 kHz and Opus is 48 kHz only: they have their own test below.)
+    for codec in Codec::ALL.into_iter().filter(|c| c.supports_rate(96_000)) {
         for container in Container::ALL {
             let format = OutputFormat::new(codec, BitDepth::TwentyFour)
                 .with_container(container)
@@ -622,6 +623,104 @@ fn every_codec_can_be_written_at_a_new_rate_in_either_container() {
                     "{name}: {source_loudness} -> {after}"
                 );
             }
+        }
+    }
+}
+
+#[test]
+fn mp3_and_opus_are_written_at_the_rates_they_can_hold_in_either_container() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let (dir, input) = with_source("in.wav", 2, 200);
+    // (The test source is 44.1 kHz.)
+    for (codec, expected) in [(Codec::Mp3, 44_100), (Codec::Opus, 48_000)] {
+        for container in Container::ALL {
+            let format = OutputFormat::new(codec, BitDepth::Source).with_container(container);
+            let name = format!(
+                "{}-{}.{}",
+                codec.name(),
+                container.name(),
+                format.extension()
+            );
+            let opts = Options {
+                format,
+                strategy: serialize(),
+                directory: dir.path().to_path_buf(),
+                copy_source_tags: false,
+                mix: rangeforge_core::mix::MixPlan::default(),
+            };
+            let written = export_whole(&ffmpeg, &input, plan(-3.0, &name), &opts).unwrap();
+            assert_eq!(probed_rate(&ffmpeg, &written[0].path), expected, "{name}");
+            assert_eq!(
+                written[0].path.extension().unwrap().to_string_lossy(),
+                format.extension()
+            );
+        }
+    }
+    // A variable-rate MP3 and FLAC at its smallest setting are written too.
+    for format in [
+        OutputFormat::new(Codec::Mp3, BitDepth::Source).with_bitrate(Bitrate::Vbr(2)),
+        OutputFormat::new(Codec::Flac, BitDepth::Source).with_flac_level(8),
+    ] {
+        let opts = Options {
+            format,
+            strategy: serialize(),
+            directory: dir.path().to_path_buf(),
+            copy_source_tags: false,
+            mix: rangeforge_core::mix::MixPlan::default(),
+        };
+        let written = export_whole(&ffmpeg, &input, plan(0.0, "other"), &opts).unwrap();
+        assert!(written[0].path.metadata().unwrap().len() > 0);
+    }
+}
+
+#[test]
+fn mp3_refuses_a_file_with_more_than_two_channels_and_says_what_to_do() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let dir = tempdir().unwrap();
+    let input = surround_source(dir.path());
+    let opts = Options {
+        format: OutputFormat::new(Codec::Mp3, BitDepth::Source),
+        strategy: serialize(),
+        directory: dir.path().to_path_buf(),
+        copy_source_tags: false,
+        mix: rangeforge_core::mix::MixPlan::default(),
+    };
+    let error = export_whole(&ffmpeg, &input, plan(0.0, "six"), &opts).unwrap_err();
+    assert!(error.to_string().contains("Stereo"), "{error}");
+    // Mixed to stereo first, it is written.
+    let mixed = Options {
+        mix: rangeforge_core::mix::MixPlan {
+            channels: rangeforge_core::mix::Channels::Stereo,
+            style: rangeforge_core::mix::Downmix::Standard,
+        },
+        ..opts
+    };
+    assert!(export_whole(&ffmpeg, &input, plan(0.0, "six"), &mixed).is_ok());
+}
+
+#[test]
+fn opus_and_aac_carry_five_point_one_and_quad() {
+    let Some(ffmpeg) = ffmpeg() else { return };
+    let dir = tempdir().unwrap();
+    let input = surround_source(dir.path());
+    for codec in [Codec::Opus, Codec::Aac] {
+        for channels in [
+            rangeforge_core::mix::Channels::Original,
+            rangeforge_core::mix::Channels::Quad,
+        ] {
+            let opts = Options {
+                format: OutputFormat::new(codec, BitDepth::Source),
+                strategy: serialize(),
+                directory: dir.path().to_path_buf(),
+                copy_source_tags: false,
+                mix: rangeforge_core::mix::MixPlan {
+                    channels,
+                    style: rangeforge_core::mix::Downmix::Standard,
+                },
+            };
+            let name = format!("{}-{}", codec.name(), channels.name());
+            let written = export_whole(&ffmpeg, &input, plan(0.0, &name), &opts);
+            assert!(written.is_ok(), "{name}: {:?}", written.err());
         }
     }
 }

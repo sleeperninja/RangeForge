@@ -14,7 +14,9 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use rangeforge_export::format::{BitDepth, Codec, Container, SampleRate};
+use rangeforge_export::format::{
+    BitDepth, Bitrate, Codec, Container, DEFAULT_FLAC_LEVEL, SampleRate,
+};
 
 use rangeforge_core::mix::{Channels, Downmix, MixPlan};
 
@@ -201,6 +203,19 @@ struct StoredOutput {
     channels: String,
     #[serde(default = "standard_downmix")]
     downmix: String,
+    /// Added later: the lossy bitrate (`default` is the codec's usual one) and FLAC's level.
+    #[serde(default = "usual_bitrate")]
+    bitrate: String,
+    #[serde(default = "usual_flac_level")]
+    flac_level: u8,
+}
+
+fn usual_bitrate() -> String {
+    "default".to_string()
+}
+
+fn usual_flac_level() -> u8 {
+    DEFAULT_FLAC_LEVEL
 }
 
 fn original_channels() -> String {
@@ -220,6 +235,8 @@ impl StoredOutput {
             bit_depth: output.bit_depth.name().to_string(),
             channels: output.mix.channels.name().to_string(),
             downmix: output.mix.style.name().to_string(),
+            bitrate: output.bitrate.name(),
+            flac_level: output.flac_level,
         }
     }
 
@@ -257,12 +274,24 @@ impl StoredOutput {
             note("downmix", &self.downmix);
             Downmix::Standard
         });
+        let bitrate = if self.bitrate == "default" {
+            codec.default_bitrate()
+        } else {
+            Bitrate::from_name(&self.bitrate)
+                .filter(|rate| codec.is_lossless() || codec.bitrates().contains(rate))
+                .unwrap_or_else(|| {
+                    note("bitrate", &self.bitrate);
+                    codec.default_bitrate()
+                })
+        };
         let mut output = OutputSettings {
             codec,
             bit_depth,
             container,
             sample_rate,
             mix: MixPlan { channels, style },
+            bitrate,
+            flac_level: self.flac_level.min(8),
         };
         if !output.can_write_mix() {
             output.mix.channels = Channels::Original;
@@ -486,9 +515,45 @@ mod tests {
                     channels: Channels::Stereo,
                     style: Downmix::WithBass,
                 },
+                bitrate: Bitrate::Kbps(256),
+                flac_level: 8,
             },
             volume: Settings::new(-18.5, false, -1.2),
         }
+    }
+
+    #[test]
+    fn the_bitrate_and_the_flac_level_are_kept_and_old_files_get_the_usual_ones() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let mut saved = SavedSettings::default();
+        saved.output.codec = Codec::Mp3;
+        saved.output.bitrate = Bitrate::Vbr(2);
+        saved.output.flac_level = 8;
+        save(&path, &saved).unwrap();
+        let loaded = load(&path).settings;
+        assert_eq!(loaded.output.bitrate, Bitrate::Vbr(2));
+        assert_eq!(loaded.output.flac_level, 8);
+
+        let file = |output: &str| {
+            format!(
+                r#"{{"version": 1, "album_name": "{{title}}", "single_name": "{{name}}", "output_format": {output}}}"#
+            )
+        };
+        // A file without them, and a bitrate the codec does not offer.
+        fs::write(&path, file(r#"{"codec": "opus", "container": "native", "sample_rate": "original", "bit_depth": "source"}"#)).unwrap();
+        let old = load(&path);
+        assert_eq!(old.settings.output.bitrate, Bitrate::Kbps(192));
+        assert_eq!(old.settings.output.flac_level, DEFAULT_FLAC_LEVEL);
+        fs::write(&path, file(r#"{"codec": "opus", "container": "native", "sample_rate": "original", "bit_depth": "source", "bitrate": "v0", "flac_level": 99}"#)).unwrap();
+        let odd = load(&path);
+        assert_eq!(odd.settings.output.bitrate, Bitrate::Kbps(192));
+        assert_eq!(odd.settings.output.flac_level, 8, "kept inside 0 to 8");
+        assert!(
+            odd.notes.iter().any(|n| n.contains("bitrate")),
+            "{:?}",
+            odd.notes
+        );
     }
 
     #[test]

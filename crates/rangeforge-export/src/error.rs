@@ -33,9 +33,17 @@ pub enum ExportError {
     #[error("{} already exists, so it was not overwritten", .0.display())]
     DestinationExists(PathBuf),
     #[error(
-        "{codec} cannot hold quad (four-channel) audio: FFmpeg would make it five channels with a silent centre. Write it as FLAC, WAV or AAC, or choose stereo"
+        "{codec} cannot hold quad (four-channel) audio: FFmpeg would make it five channels with a silent centre. Write it as FLAC, WAV, AAC or Opus, or choose stereo"
     )]
     QuadNeedsAnotherCodec { codec: &'static str },
+    #[error(
+        "{codec} holds at most {most} channels and this audio has {channels}. Set Channels to Stereo or Mono, or write another format"
+    )]
+    TooManyChannels {
+        codec: &'static str,
+        most: usize,
+        channels: usize,
+    },
     #[error("{expected} track(s) were planned but the file layout has {found}")]
     TrackCountMismatch { expected: usize, found: usize },
 }

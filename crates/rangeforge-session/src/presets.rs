@@ -12,7 +12,9 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use rangeforge_core::mix::{Channels, Downmix};
-use rangeforge_export::format::{BitDepth, Codec, Container, SampleRate};
+use rangeforge_export::format::{
+    BitDepth, Bitrate, Codec, Container, DEFAULT_FLAC_LEVEL, SampleRate,
+};
 use serde::{Deserialize, Serialize};
 
 /// Bump this if the file's layout changes in a way older versions cannot read. (A new field
@@ -30,6 +32,10 @@ pub struct Preset {
     /// How the channels that go away are treated; it only matters when `channels` is not
     /// original.
     pub downmix: Downmix,
+    /// What a lossy codec aims for; it only matters to AAC, MP3 and Opus.
+    pub bitrate: Bitrate,
+    /// FLAC's compression level; it only matters to FLAC.
+    pub flac_level: u8,
     pub target_lufs: f64,
     pub peak_protection: bool,
     pub peak_ceiling_dbtp: f64,
@@ -45,6 +51,8 @@ impl Preset {
             sample_rate: SampleRate::Original,
             channels: Channels::Original,
             downmix: Downmix::Standard,
+            bitrate: codec.default_bitrate(),
+            flac_level: DEFAULT_FLAC_LEVEL,
             target_lufs: -22.0,
             peak_protection: true,
             peak_ceiling_dbtp: -0.6,
@@ -94,6 +102,11 @@ struct StoredPreset {
     channels: String,
     #[serde(default = "default_downmix")]
     downmix: String,
+    /// Added later: a preset saved before then uses the codec's usual bitrate (`default`).
+    #[serde(default = "default_bitrate")]
+    bitrate: String,
+    #[serde(default = "default_flac_level")]
+    flac_level: u8,
     target_lufs: f64,
     peak_protection: bool,
     peak_ceiling_dbtp: f64,
@@ -111,6 +124,14 @@ fn default_channels() -> String {
     Channels::Original.name().to_string()
 }
 
+fn default_bitrate() -> String {
+    "default".to_string()
+}
+
+fn default_flac_level() -> u8 {
+    DEFAULT_FLAC_LEVEL
+}
+
 fn default_downmix() -> String {
     Downmix::Standard.name().to_string()
 }
@@ -125,6 +146,8 @@ impl From<&Preset> for StoredPreset {
             sample_rate: preset.sample_rate.name().to_string(),
             channels: preset.channels.name().to_string(),
             downmix: preset.downmix.name().to_string(),
+            bitrate: preset.bitrate.name(),
+            flac_level: preset.flac_level,
             target_lufs: preset.target_lufs,
             peak_protection: preset.peak_protection,
             peak_ceiling_dbtp: preset.peak_ceiling_dbtp,
@@ -142,7 +165,13 @@ impl StoredPreset {
         let channels = Channels::from_name(&self.channels)?;
         // A preset that asks a codec for what it cannot write (quad as ALAC) is skipped.
         (channels != Channels::Quad || codec.can_write_quad()).then_some(())?;
+        // "default" (an older file) and a bitrate the codec does not offer both mean the usual one.
+        let bitrate = Bitrate::from_name(&self.bitrate)
+            .filter(|rate| codec.is_lossless() || codec.bitrates().contains(rate))
+            .unwrap_or_else(|| codec.default_bitrate());
         Some(Preset {
+            bitrate,
+            flac_level: self.flac_level.min(8),
             name: self.name,
             codec,
             bit_depth: BitDepth::from_name(&self.bit_depth)?,
@@ -242,6 +271,8 @@ mod tests {
             sample_rate: SampleRate::Hz48000,
             channels: Channels::Stereo,
             downmix: Downmix::FrontOnly,
+            bitrate: Bitrate::Kbps(160),
+            flac_level: 7,
             target_lufs: -14.5,
             peak_protection: false,
             peak_ceiling_dbtp: -1.0,
@@ -393,7 +424,7 @@ mod tests {
             &path,
             br#"{"version": 1, "presets": [
                 {"name": "Good", "codec": "flac", "bit_depth": "24", "target_lufs": -20.0, "peak_protection": true, "peak_ceiling_dbtp": -0.6},
-                {"name": "Bad codec", "codec": "mp3", "bit_depth": "16", "target_lufs": -20.0, "peak_protection": true, "peak_ceiling_dbtp": -0.6},
+                {"name": "Bad codec", "codec": "ogg", "bit_depth": "16", "target_lufs": -20.0, "peak_protection": true, "peak_ceiling_dbtp": -0.6},
                 {"name": "  ", "codec": "alac", "bit_depth": "16", "target_lufs": -20.0, "peak_protection": true, "peak_ceiling_dbtp": -0.6}
             ]}"#,
         )

@@ -44,7 +44,7 @@ When you run, the app never changes an original until every new file has been wr
 2. Only after the whole source has been read and every song has encoded without error are the temporary files moved into place, following your File Strategy.
 3. If anything fails along the way, the temporary files are deleted and your originals are exactly as they were.
 
-The File Strategy is three separate choices. First, **where** the files go: next to the original, in a subfolder of the original's folder, or all in one folder. Second, **what to do if a file is already at the new file's path**, which is the only time a name is ever changed:
+The File Strategy is three separate choices. First, **where** the files go: next to the original, in a subfolder of the original's folder (`_forged` to begin with), or all in one folder. Second, **what to do if a file is already at the new file's path**, which is the only time a name is ever changed:
 
 | Choice | What happens | What it never does |
 | --- | --- | --- |
@@ -70,11 +70,11 @@ Third, an optional **delete the original**, off by default. It happens last, aft
 | Meter | Measures loudness, peak and range to the broadcast standard (EBU R128) | `ebur128` |
 | Planner | Works out the volume change per song, with peak protection | our own code |
 | Cache | Remembers measurements between sessions, per way of splitting a file | `serde_json`, `blake3`; one small JSON file per audio file in the app's cache folder |
-| Encoder | Writes ALAC, FLAC, WAV and AAC, one FFmpeg process per song, fed the already-decoded sound through a pipe | FFmpeg |
+| Encoder | Writes ALAC, FLAC, WAV, AAC, MP3 (LAME) and Opus (libopus), one FFmpeg process per song, fed the already-decoded sound through a pipe | FFmpeg |
 | Tagger | Writes tags as the file is encoded. Reading and editing tags in the app comes later. | FFmpeg now; `lofty` later |
 | Lookups | Last.fm: album tags from its API. Song tags are added by the user from the song's public tags page, which the program only opens in the user's browser and never fetches (D-31; the API returns none for songs, and the page has a bot check). Plus the Billboard Hot 100 history: a ~40 MB JSON file kept as a local copy and re-downloaded only when a newer version exists. Radio tags are then a local lookup. | `reqwest` |
 | Settings | Presets and keys. Keys are stored encrypted. | JSON file plus the system keychain |
-| Readiness check | Answers "do the settings all agree, and has all the asked-for work finished?" The screen uses it to allow Auto Mode, and the app uses it to start an automatic run. | our own code, heavily tested |
+| Readiness check | Answers "do the settings all agree, and has all the asked-for work finished?" The screen uses it to say whether Run can start (there is no Auto Mode, D-39). | our own code, heavily tested |
 
 FFmpeg stays for **writing** files because its ALAC and AAC encoders are mature. It is handed sound we already decoded, so there is no double work.
 

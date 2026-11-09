@@ -84,11 +84,20 @@ impl DsdFormat {
                 .find(|rate| rate.hz().is_some_and(|hz| codec.supports_rate(hz)))
                 .unwrap_or(SampleRate::Hz48000);
         }
+        // The bitrate carries over when the new codec offers it, and is the codec's usual one
+        // when it does not (a 320 kbps MP3 asked to be Opus is 320, an AAC 256 as MP3 is 256).
+        let bitrate = if codec.bitrates().contains(&main.bitrate) || codec.is_lossless() {
+            main.bitrate
+        } else {
+            codec.default_bitrate()
+        };
         OutputFormat {
             codec,
             bit_depth,
             container: self.container.unwrap_or(main.container),
             sample_rate,
+            bitrate,
+            flac_level: main.flac_level,
         }
     }
 

@@ -51,7 +51,6 @@
         <button id="run" class="run" type="button">Run (0)</button>
         <p id="statusLine" class="status-line"></p>
         <div class="toggles">
-          <label class="toggle disabled" title="Coming later"><input type="checkbox" disabled> Auto Mode</label>
           <label class="toggle" title="Look songs up online: the Radio tag, and Last.fm genres if you add a key in Settings"><input id="metadataToggle" type="checkbox"> Metadata API</label>
           <label class="toggle"><input id="showLogs" type="checkbox"> Show Logs</label>
           <button class="button small" id="settingsButton" type="button" title="File names, and more later">&#9881; Settings</button>
@@ -62,10 +61,12 @@
         <h3>Output Format</h3>
         <label>Codec <select id="codec"></select></label>
         <label>Container <select id="container"></select></label>
-        <label>Sample Rate <select id="sampleRate"></select></label>
-        <label>Bit Depth <select id="bitDepth"></select></label>
+        <label>Sample Rate <select id="sampleRate" title="Opus is always 48 kHz; MP3 stops at 48 kHz and AAC at 96 kHz"></select></label>
+        <label>Bit Depth <select id="bitDepth" title="Lossy formats (AAC, MP3, Opus) have no bit depth"></select></label>
+        <label>Bitrate <select id="bitrate" title="For AAC, MP3 and Opus. MP3 also offers LAME's variable rates, V0 to V4"></select></label>
+        <label>Compression <select id="flacLevel" title="FLAC only: 0 is the largest file, 8 the smallest. The sound is the same at every level"></select></label>
         <label>Channels <select id="channels"></select></label>
-        <label id="downmixRow" class="hidden">Downmix <select id="downmix" title="How the channels that go away are treated: Standard folds the centre and surrounds in at -3 dB and drops the LFE; Standard + bass adds the LFE; Front pair only uses left and right as they were mixed"></select></label>
+        <label id="downmixRow">Downmix <select id="downmix" title="How the channels that go away are treated: Standard folds the centre and surrounds in at -3 dB and drops the LFE; Standard + bass adds the LFE; Front pair only uses left and right as they were mixed"></select></label>
       </div>
 
       <div class="block preset-block">
@@ -95,17 +96,17 @@
         <h3>File Strategy</h3>
         <div class="strategy">
           <h4>Save to</h4>
-          <div class="row"><label class="radio"><input type="radio" name="place" value="next"> Next to the original</label></div>
-          <div class="row"><label class="radio"><input type="radio" name="place" value="subfolder"> In a subfolder of the original's folder</label><input id="subfolder" class="text" type="text" aria-label="Subfolder name"></div>
+          <div class="row"><label class="radio"><input type="radio" name="place" value="next"> Next to original</label></div>
+          <div class="row"><label class="radio"><input type="radio" name="place" value="subfolder"> Subfolder of original folder</label><input id="subfolder" class="text" type="text" aria-label="Subfolder name"></div>
           <div class="row"><label class="radio"><input type="radio" name="place" value="folder"> All in one folder</label><button id="browse" class="button small" type="button">Browse</button></div>
           <input id="folder" class="text wide" type="text" placeholder="Choose a folder" aria-label="Folder">
 
           <h4>If a file is already there</h4>
-          <div class="row"><label class="radio"><input type="radio" name="conflict" value="number"> Add a number to the new file</label><input id="numberSuffix" class="text" type="text" aria-label="Number suffix"></div>
-          <div class="row"><label class="radio"><input type="radio" name="conflict" value="rename_existing"> Rename the existing file</label><input id="oldSuffix" class="text" type="text" aria-label="Suffix for the renamed file"></div>
-          <div class="row"><label class="radio"><input type="radio" name="conflict" value="overwrite"> Overwrite the existing file</label></div>
+          <div class="row"><label class="radio"><input type="radio" name="conflict" value="number"> Add number to new file</label><input id="numberSuffix" class="text" type="text" aria-label="Number suffix"></div>
+          <div class="row"><label class="radio"><input type="radio" name="conflict" value="rename_existing"> Rename existing file</label><input id="oldSuffix" class="text" type="text" aria-label="Suffix for the renamed file"></div>
+          <div class="row"><label class="radio"><input type="radio" name="conflict" value="overwrite"> Overwrite existing file</label></div>
 
-          <div class="row"><label class="check"><input id="deleteOriginal" type="checkbox"> Delete the original after it is written</label></div>
+          <div class="row"><label class="check"><input id="deleteOriginal" type="checkbox"> Delete original after conversion</label></div>
           <p id="strategyProblem" class="problem hidden"></p>
         </div>
       </div>

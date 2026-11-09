@@ -12,7 +12,7 @@ use std::time::Duration;
 use rangeforge_core::identify::Identity;
 use rangeforge_core::mix::{Channels, Downmix, MixPlan};
 use rangeforge_core::planner::{self, GainPlan, Measurement, PlanError, Target};
-use rangeforge_export::format::{BitDepth, Codec, Container, OutputFormat, SampleRate};
+use rangeforge_export::format::{BitDepth, Bitrate, Codec, Container, OutputFormat, SampleRate};
 use rangeforge_export::pipeline::TrackPlan;
 use rangeforge_export::strategy::Strategy;
 use rangeforge_export::template::NameValues;
@@ -1299,7 +1299,7 @@ impl App {
     pub fn set_codec(&mut self, codec: Codec) -> Result<(), String> {
         if self.output.mix.channels == Channels::Quad && !codec.can_write_quad() {
             return Err(format!(
-                "{} cannot hold quad (four-channel) audio. Choose another channel layout first, or keep FLAC, WAV or AAC",
+                "{} cannot hold quad (four-channel) audio. Choose another channel layout first, or keep FLAC, WAV, AAC or Opus",
                 codec.name()
             ));
         }
@@ -1325,7 +1325,7 @@ impl App {
         }
         if channels == Channels::Quad && !self.output.codec.can_write_quad() {
             return Err(format!(
-                "{} cannot hold quad (four-channel) audio. Choose FLAC, WAV or AAC for quad, or another channel layout",
+                "{} cannot hold quad (four-channel) audio. Choose FLAC, WAV, AAC or Opus for quad, or another channel layout",
                 self.output.codec.name()
             ));
         }
@@ -1366,6 +1366,28 @@ impl App {
             }
         }
         self.jobs.clone()
+    }
+
+    /// Chooses the bitrate of a lossy codec, or says why it cannot.
+    pub fn set_bitrate(&mut self, bitrate: Bitrate) -> Result<(), String> {
+        if !self.output.codec.bitrates().contains(&bitrate) {
+            return Err(format!(
+                "{} has no {} setting",
+                self.output.codec.name(),
+                bitrate.label()
+            ));
+        }
+        self.output.bitrate = bitrate;
+        Ok(())
+    }
+
+    /// Chooses FLAC's compression level, 0 to 8.
+    pub fn set_flac_level(&mut self, level: u8) -> Result<(), String> {
+        if level > 8 {
+            return Err("FLAC's compression levels go from 0 to 8".to_string());
+        }
+        self.output.flac_level = level;
+        Ok(())
     }
 
     pub fn set_bit_depth(&mut self, depth: BitDepth) {
