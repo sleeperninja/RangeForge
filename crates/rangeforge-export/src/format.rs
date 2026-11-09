@@ -323,7 +323,7 @@ impl SampleRate {
     /// The name shown on screen.
     pub fn label(self) -> &'static str {
         match self {
-            Self::Original => "original",
+            Self::Original => "source",
             Self::Hz44100 => "44.1 kHz",
             Self::Hz48000 => "48 kHz",
             Self::Hz88200 => "88.2 kHz",

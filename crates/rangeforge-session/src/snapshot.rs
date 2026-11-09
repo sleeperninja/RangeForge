@@ -986,7 +986,7 @@ FILE \"in.flac\" WAVE
         assert_eq!(ids(&options.containers), ["native", "mka"]);
         assert_eq!(labels(&options.containers), ["m4a", "mka"]);
         assert_eq!(options.sample_rates.len(), 7);
-        assert_eq!(options.sample_rates[0].label, "original");
+        assert_eq!(options.sample_rates[0].label, "source");
         assert_eq!(options.sample_rates[3].label, "88.2 kHz");
 
         app.set_codec(Codec::Flac).unwrap();

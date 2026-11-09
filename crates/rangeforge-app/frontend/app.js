@@ -144,18 +144,22 @@
     run.title = s.run_blocker || 'Write the finished files';
 
     fillSelect($('codec'), s.options.codecs, s.output.codec);
-    fillSelect($('bitDepth'), s.options.bit_depths, s.output.bit_depth);
     fillSelect($('container'), s.options.containers, s.output.container);
     fillSelect($('sampleRate'), s.options.sample_rates, s.output.sample_rate);
     fillSelect($('channels'), s.options.channels, s.output.channels);
-    fillSelect($('downmix'), s.options.downmixes, s.output.downmix);
-    // Controls that do nothing for this combination stay in place and are dimmed.
-    $('downmix').disabled = s.output.channels === 'original';
+    // A control with nothing to offer for this combination keeps its place, shows no value and
+    // is dimmed.
+    const nothing = [{ id: '', label: '' }];
     const lossy = s.options.bitrates.length > 0;
-    fillSelect($('bitrate'), lossy ? s.options.bitrates : [{ id: '', label: '—' }], s.output.bitrate);
+    const mixing = s.output.channels !== 'original';
+    const flac = s.output.codec === 'flac';
+    fillSelect($('downmix'), mixing ? s.options.downmixes : nothing, mixing ? s.output.downmix : '');
+    $('downmix').disabled = !mixing;
+    fillSelect($('bitrate'), lossy ? s.options.bitrates : nothing, lossy ? s.output.bitrate : '');
     $('bitrate').disabled = !lossy;
-    fillSelect($('flacLevel'), s.options.flac_levels, String(s.output.flac_level));
-    $('flacLevel').disabled = s.output.codec !== 'flac';
+    fillSelect($('flacLevel'), flac ? s.options.flac_levels : nothing, flac ? String(s.output.flac_level) : '');
+    $('flacLevel').disabled = !flac;
+    fillSelect($('bitDepth'), lossy ? nothing : s.options.bit_depths, lossy ? '' : s.output.bit_depth);
     $('bitDepth').disabled = lossy;
     $('sampleRate').disabled = s.options.sample_rates.length === 1;
     fillSelect($('dsdCodec'), s.options.dsd_codecs, s.dsd.codec);

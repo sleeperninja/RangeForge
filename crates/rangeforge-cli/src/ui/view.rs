@@ -507,7 +507,7 @@ mod tests {
             "Codec [alac]",
             "Container m4a",
             "Bit Depth [source]",
-            "Sample Rate original",
+            "Sample Rate source",
             "Channels original",
             "Preset       [iTunes Lossless]",
             "(\u{2022}) Next to original",
