@@ -1,6 +1,6 @@
 # RangeForge manual
 
-*For version 0.6.7. This is the plain-words manual: how to use the program, and how it decides things. Questions people ask often are in [FAQ.md](FAQ.md). What is planned is in [ROADMAP.md](ROADMAP.md).*
+*For version 0.6.8. This is the plain-words manual: how to use the program, and how it decides things. Questions people ask often are in [FAQ.md](FAQ.md). What is planned is in [ROADMAP.md](ROADMAP.md).*
 
 ---
 
@@ -157,10 +157,10 @@ It splits, measures, plans, tags and names as well as it can from what it has, a
 
 Everything online starts **off**. Turn on **Metadata API** (in Settings) to let RangeForge look things up.
 
-- **Radio tag:** a blue tag on songs that charted on the Billboard Hot 100. It needs no key. RangeForge keeps a local copy of the chart history and only downloads it again when a newer one exists.
+- **Radio tag:** a blue tag on songs that charted on the Billboard Hot 100. It needs no key. In **Settings** you can switch it off, give it another name (Radio is the default), and set how high a song must have charted: a position from 1 to 100, where 100 (the default) means anything that charted and 1 means only number ones. RangeForge keeps a local copy of the chart history and only downloads it again when a newer one exists.
 - **Last.fm album genres:** need a Last.fm key. RangeForge does not come with one, and does not use anyone else's. Getting your own is free: create one for an app on Last.fm (**Settings** has a link), paste it into **Settings**, and tick **Use Last.fm**. The key is kept in the computer's own credential store, never in a file. Tags are filtered to the useful ones (opinions, habits, places, decades and the artist's name are dropped), up to three per album, and each album is asked about once and remembered for weeks.
 - **Song-level tags:** Last.fm does not give these to programs. Right-click a song → **Open song tags page on Last.fm**, and add the ones you want with **Add a tag…**. It takes one tag or a list separated by commas, semicolons or line breaks. Tags you add are green.
-- When you press Run, the genre tag is written as the plain tags, comma separated, with Radio last, for example `Classic Rock, Hard Rock, Funk Rock, Radio`. Each tag chip has a **×** to remove it.
+- When you press Run, the genre tag is written as the plain tags, comma separated, with the Hot 100 tag last, for example `Classic Rock, Hard Rock, Funk Rock, Radio`. Each tag chip has a **×** to remove it.
 
 ---
 

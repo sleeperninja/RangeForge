@@ -220,12 +220,12 @@ pub fn song_genres(identity: &Identity, answers: &Answers) -> SongGenres {
 /// The text for the genre tag: the genres in order, then Radio if the song charted, joined with
 /// a comma and a space. `None` when there is nothing to say, so an existing tag is left alone.
 #[must_use]
-pub fn genre_tag(genres: &SongGenres, radio: bool) -> Option<String> {
+pub fn genre_tag(genres: &SongGenres, radio: Option<&str>) -> Option<String> {
     let mut all = genres.album.clone();
     add_new(&mut all, genres.song.clone());
     add_new(&mut all, genres.mine.clone());
-    if radio {
-        add_new(&mut all, ["Radio".to_string()]);
+    if let Some(tag) = radio {
+        add_new(&mut all, [tag.to_string()]);
     }
     (!all.is_empty()).then(|| all.join(", "))
 }
@@ -305,11 +305,11 @@ mod tests {
     fn the_genre_tag_is_comma_separated_with_radio_last() {
         let genres = song_genres(&identity(), &answers());
         assert_eq!(
-            genre_tag(&genres, true).as_deref(),
+            genre_tag(&genres, Some("Radio")).as_deref(),
             Some("Classic Rock, Hard Rock, Funk Rock, Radio")
         );
         assert_eq!(
-            genre_tag(&genres, false).as_deref(),
+            genre_tag(&genres, None).as_deref(),
             Some("Classic Rock, Hard Rock, Funk Rock")
         );
     }
@@ -317,10 +317,10 @@ mod tests {
     #[test]
     fn radio_alone_is_a_genre_and_nothing_at_all_leaves_the_tag_alone() {
         assert_eq!(
-            genre_tag(&SongGenres::default(), true).as_deref(),
+            genre_tag(&SongGenres::default(), Some("Radio")).as_deref(),
             Some("Radio")
         );
-        assert_eq!(genre_tag(&SongGenres::default(), false), None);
+        assert_eq!(genre_tag(&SongGenres::default(), None), None);
     }
 
     #[test]
@@ -330,7 +330,10 @@ mod tests {
             song: Vec::new(),
             mine: Vec::new(),
         };
-        assert_eq!(genre_tag(&genres, true).as_deref(), Some("Rock, radio"));
+        assert_eq!(
+            genre_tag(&genres, Some("Radio")).as_deref(),
+            Some("Rock, radio")
+        );
     }
 
     #[test]
@@ -349,7 +352,7 @@ mod tests {
         assert_eq!(shown.song, ["Epic"]);
         assert_eq!(shown.mine, ["Favourite"]);
         assert_eq!(
-            genre_tag(&shown, false).as_deref(),
+            genre_tag(&shown, None).as_deref(),
             Some("Rock, Epic, Favourite")
         );
 

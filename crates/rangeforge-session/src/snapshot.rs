@@ -211,6 +211,10 @@ pub struct MetadataView {
     pub lastfm_key: &'static str,
     /// How many songs the Hot 100 index holds, once it has loaded.
     pub radio_songs: Option<usize>,
+    /// The Hot 100 tag: on or off, its text, and the best chart position that still earns it.
+    pub radio_enabled: bool,
+    pub radio_tag: String,
+    pub radio_threshold: u16,
 }
 
 /// The lists of choices a window offers.
@@ -319,7 +323,7 @@ fn chips(app: &App, track: &TrackRow) -> Vec<TagChip> {
     }));
     if let Some(hit) = track.radio.filter(|_| app.shows_radio(track)) {
         chips.push(TagChip {
-            text: "Radio".to_string(),
+            text: app.radio_tag.tag.clone(),
             kind: "radio",
             title: format!(
                 "Reached #{} on the Billboard Hot 100 ({})",
@@ -617,6 +621,9 @@ impl App {
                     KeySource::None => "none",
                 },
                 radio_songs: self.radio_songs(),
+                radio_enabled: self.radio_tag.enabled,
+                radio_tag: self.radio_tag.tag.clone(),
+                radio_threshold: self.radio_tag.threshold,
             },
             options: options(self.output),
             running: self.running,

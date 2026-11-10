@@ -145,6 +145,21 @@ async fn set_target(value: f64, state: Session<'_>) -> Result<Reply, String> {
 }
 
 #[tauri::command]
+async fn set_radio_enabled(on: bool, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_radio_enabled(&state, on))
+}
+
+#[tauri::command]
+async fn set_radio_tag(text: String, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_radio_tag(&state, &text))
+}
+
+#[tauri::command]
+async fn set_radio_threshold(value: f64, state: Session<'_>) -> Result<Reply, String> {
+    Ok(ops::set_radio_threshold(&state, value))
+}
+
+#[tauri::command]
 async fn set_ceiling(value: f64, state: Session<'_>) -> Result<Reply, String> {
     Ok(ops::set_ceiling(&state, value))
 }
@@ -565,6 +580,9 @@ fn main() {
             preview_naming,
             set_metadata,
             set_lastfm_enabled,
+            set_radio_enabled,
+            set_radio_tag,
+            set_radio_threshold,
             set_lastfm_key,
             clear_completed,
             remove_group,

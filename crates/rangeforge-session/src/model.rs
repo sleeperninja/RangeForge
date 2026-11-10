@@ -20,7 +20,7 @@ use rangeforge_lookup::billboard::Hot100;
 use rangeforge_lookup::lastfm::{self, ListedTrack, RawTag};
 use rangeforge_lookup::tagcache::Subject;
 
-use crate::appsettings::{MetadataSettings, SavedSettings};
+use crate::appsettings::{MetadataSettings, RadioSettings, SavedSettings};
 use crate::controls::{
     ConflictKind, Focus, Mode, OutputSettings, PresetList, Saved, StrategySettings, WhereKind,
     apply_preset,
@@ -360,6 +360,8 @@ pub struct App {
     settings_changed: bool,
     /// Which outside lookups are switched on.
     pub metadata: MetadataSettings,
+    /// The Hot 100 tag: on or off, its text, and how high a song must have charted.
+    pub radio_tag: RadioSettings,
     /// What DSD files are written as.
     pub dsd: DsdFormat,
     /// Ask before a run that overwrites files or deletes originals.
@@ -400,6 +402,7 @@ impl App {
             presets_changed: false,
             settings_changed: false,
             metadata: MetadataSettings::default(),
+            radio_tag: RadioSettings::default(),
             dsd: DsdFormat::default(),
             confirm_destructive: true,
             saved_baseline: SavedSettings::default(),
@@ -416,6 +419,7 @@ impl App {
         SavedSettings {
             naming: self.naming.clone(),
             metadata: self.metadata,
+            radio: self.radio_tag.clone(),
             strategy: self.strategy.clone(),
             confirm_destructive: self.confirm_destructive,
             dsd: self.dsd,
@@ -431,6 +435,7 @@ impl App {
         self.confirm_destructive = saved.confirm_destructive;
         self.dsd = saved.dsd;
         self.metadata = saved.metadata;
+        self.radio_tag = saved.radio;
         self.output = saved.output;
         self.settings = saved.volume;
         self.saved_baseline = self.saved_settings();
@@ -536,9 +541,40 @@ impl App {
         Some(stem).filter(|stem| !stem.is_empty() && *stem != track.label)
     }
 
-    /// Whether the song carries the Radio tag: it charted, and nobody took the tag away.
+    /// Whether the song carries the Hot 100 tag: the tag is on, the song charted at or above
+    /// the threshold, and nobody took the tag away.
     pub fn shows_radio(&self, track: &TrackRow) -> bool {
-        track.radio.is_some() && !track.edits.hides("Radio")
+        self.radio_tag.enabled
+            && track
+                .radio
+                .is_some_and(|hit| hit.peak <= self.radio_tag.threshold)
+            && !track.edits.hides(&self.radio_tag.tag)
+    }
+
+    /// Turns the Hot 100 tag on or off.
+    pub fn set_radio_enabled(&mut self, on: bool) {
+        if self.radio_tag.enabled != on {
+            self.radio_tag.enabled = on;
+            self.settings_changed = true;
+        }
+    }
+
+    /// Sets the Hot 100 tag's text (see `RadioSettings::clean_tag`).
+    pub fn set_radio_tag(&mut self, text: &str) {
+        let tag = RadioSettings::clean_tag(text);
+        if self.radio_tag.tag != tag {
+            self.radio_tag.tag = tag;
+            self.settings_changed = true;
+        }
+    }
+
+    /// Sets how high a song must have charted to get the tag, kept inside 1 to 100.
+    pub fn set_radio_threshold(&mut self, value: i64) {
+        let value = RadioSettings::clamp_threshold(value);
+        if self.radio_tag.threshold != value {
+            self.radio_tag.threshold = value;
+            self.settings_changed = true;
+        }
     }
 
     /// The text to write in a song's genre tag, or `None` to leave the tag as it is. If every
@@ -547,7 +583,10 @@ impl App {
         if !self.metadata.enabled {
             return None;
         }
-        genres::genre_tag(&self.song_genres(track), self.shows_radio(track))
+        let radio = self
+            .shows_radio(track)
+            .then_some(self.radio_tag.tag.as_str());
+        genres::genre_tag(&self.song_genres(track), radio)
             .or_else(|| (!track.edits.removed.is_empty()).then(String::new))
     }
 
@@ -2651,6 +2690,48 @@ mod tests {
         app.set_radio(None);
         assert_eq!(app.groups[0].tracks[0].radio, None);
         assert_eq!(app.radio_songs(), None);
+    }
+
+    #[test]
+    fn the_hot_100_tag_can_be_switched_off_renamed_and_limited_by_position() {
+        let mut app = ready_app();
+        app.set_metadata_enabled(true);
+        app.set_radio(Some(Arc::new(Hot100::from_songs(vec![charted(
+            "Led Zeppelin",
+            "The Rain Song",
+            14,
+            1973,
+        )]))));
+        let shown = |app: &App| app.shows_radio(&app.groups[0].tracks[0]);
+        let genre = |app: &App| app.genre_tag(&app.groups[0].tracks[0]);
+        assert!(shown(&app), "on by default, for any position");
+        assert_eq!(genre(&app).as_deref(), Some("Radio"));
+
+        app.set_radio_tag("  Top, 40 ");
+        assert_eq!(app.snapshot().metadata.radio_tag, "Top 40");
+        assert_eq!(genre(&app).as_deref(), Some("Top 40"));
+        app.set_radio_tag("");
+        assert_eq!(app.snapshot().metadata.radio_tag, "Radio");
+
+        // The song peaked at 14: a threshold of 10 leaves it out, 14 keeps it.
+        app.set_radio_threshold(10);
+        assert!(!shown(&app));
+        assert_eq!(genre(&app), None);
+        app.set_radio_threshold(14);
+        assert!(shown(&app));
+        app.set_radio_threshold(0);
+        assert_eq!(app.snapshot().metadata.radio_threshold, 1);
+        app.set_radio_threshold(500);
+        assert_eq!(app.snapshot().metadata.radio_threshold, 100);
+
+        app.set_radio_enabled(false);
+        assert!(!shown(&app));
+        assert!(
+            app.snapshot().groups[0].tracks[0]
+                .tags
+                .iter()
+                .all(|t| t.kind != "radio")
+        );
     }
 
     #[test]

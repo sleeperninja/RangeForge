@@ -385,6 +385,32 @@ pub fn set_metadata(shared: &Shared, on: bool) -> Reply {
     })
 }
 
+/// The Hot 100 tag's switch in Settings.
+pub fn set_radio_enabled(shared: &Shared, on: bool) -> Reply {
+    with_app(shared, |app| {
+        app.set_radio_enabled(on);
+        Ok(())
+    })
+}
+
+/// The Hot 100 tag's text.
+pub fn set_radio_tag(shared: &Shared, text: &str) -> Reply {
+    with_app(shared, |app| {
+        app.set_radio_tag(text);
+        Ok(())
+    })
+}
+
+/// How high a song must have charted to get the tag (1 to 100).
+pub fn set_radio_threshold(shared: &Shared, value: f64) -> Reply {
+    with_app(shared, |app| {
+        #[allow(clippy::cast_possible_truncation)]
+        let position = finite(value, "The chart position")?.round() as i64;
+        app.set_radio_threshold(position);
+        Ok(())
+    })
+}
+
 /// "Use Last.fm", beside its key.
 pub fn set_lastfm_enabled(shared: &Shared, on: bool) -> Reply {
     with_app(shared, |app| {

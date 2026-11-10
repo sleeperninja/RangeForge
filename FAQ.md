@@ -74,7 +74,7 @@ Yes. It was checked on real hi-res music against a very-high-precision reference
 No. Everything online starts off. Turn on **Metadata API** in Settings to let it look things up.
 
 **What is the blue "Radio" tag?**
-It marks songs that charted on the Billboard Hot 100. It needs no key. RangeForge keeps a local copy of the chart history and downloads it again only when a newer one exists.
+It marks songs that charted on the Billboard Hot 100. It needs no key. In Settings you can turn it off, rename it, or only tag songs that reached a position you choose (1 to 100; 100 means any song that charted). RangeForge keeps a local copy of the chart history and downloads it again only when a newer one exists.
 
 **Do I need a Last.fm key?**
 Only for album genres from Last.fm. RangeForge does not come with a key. Getting your own is free (Settings has a link: create one for an app on Last.fm). The key stays on your computer, in its credential store.

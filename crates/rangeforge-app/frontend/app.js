@@ -205,6 +205,11 @@
     $('deleteOriginal').checked = s.strategy.delete_original;
     $('metadataToggle').checked = s.metadata.enabled;
     $('lastfmEnabled').checked = s.metadata.lastfm_enabled;
+    $('radioEnabled').checked = s.metadata.radio_enabled;
+    setValue($('radioTag'), s.metadata.radio_tag);
+    setValue($('radioThreshold'), s.metadata.radio_threshold);
+    $('radioTag').disabled = !s.metadata.radio_enabled;
+    $('radioThreshold').disabled = !s.metadata.radio_enabled;
     $('lastfmStatus').textContent = Render.lastfmStatusText(s.metadata);
     $('lastfmForget').disabled = s.metadata.lastfm_key !== 'saved';
     const problem = $('strategyProblem');
@@ -607,8 +612,12 @@
         await call('add_paths', { paths: [folder] });
       }
     });
-    $('showLogs').addEventListener('change', (e) => {
-      $('logPanel').classList.toggle('hidden', !e.target.checked);
+    $('showLogs').addEventListener('click', (e) => {
+      const button = e.currentTarget;
+      const on = button.getAttribute('aria-pressed') !== 'true';
+      button.setAttribute('aria-pressed', String(on));
+      button.querySelector('.state').textContent = on ? 'on' : 'off';
+      $('logPanel').classList.toggle('hidden', !on);
     });
 
     // A number box is sent when typing pauses, and when the box is left. An empty or half-typed
@@ -682,6 +691,16 @@
       }
     });
 
+    $('radioEnabled').addEventListener('change', (e) => call('set_radio_enabled', { on: e.target.checked }));
+    onEdited($('radioTag'), (text) => call('set_radio_tag', { text }));
+    onEdited($('radioThreshold'), (text, leaving) => {
+      const value = Number(text);
+      if (text.trim() !== '' && Number.isFinite(value)) {
+        call('set_radio_threshold', { value });
+      } else if (leaving) {
+        call('get_state');
+      }
+    });
     $('metadataToggle').addEventListener('change', (e) => call('set_metadata', { on: e.target.checked }));
     $('lastfmEnabled').addEventListener('change', (e) => call('set_lastfm_enabled', { on: e.target.checked }));
     $('lastfmSave').addEventListener('click', async () => {

@@ -51,7 +51,7 @@
   },
   "dsd": {"sample_rate": "88200", "bit_depth": "24"},
   "presets": {"names": ["iTunes Lossy", "iTunes Lossless", "CD Quality", "Flac HD Multi", "ALAC Multi"], "selected": 1, "modified": false, "can_save": false, "can_delete": true},
-  "metadata": {"enabled": true, "lastfm_enabled": false, "lastfm_key": "saved", "radio_songs": 32763},
+  "metadata": {"enabled": true, "lastfm_enabled": false, "lastfm_key": "saved", "radio_songs": 32763, "radio_enabled": true, "radio_tag": "Radio", "radio_threshold": 100},
   "naming": {
     "album": "{track:02} - {title}",
     "single": "{name}",

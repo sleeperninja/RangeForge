@@ -53,10 +53,10 @@
         </div>
         <div class="spacer"></div>
         <div class="toggles">
-          <label class="toggle"><input id="showLogs" type="checkbox"> Show Logs</label>
+          <button id="showLogs" class="button switch" type="button" aria-pressed="false" title="Show or hide the log panel"><span>Show Logs</span><span class="state">off</span></button>
           <div class="bottom-buttons">
-            <button class="button small" id="settingsButton" type="button" title="File names, online lookups, DSD and more">&#9881; Settings</button>
-            <button class="button small" id="aboutButton" type="button" title="Version, the manual, and how to support RangeForge">About</button>
+            <button class="button" id="settingsButton" type="button" title="File names, online lookups, DSD and more">&#9881; Settings</button>
+            <button class="button" id="aboutButton" type="button" title="Version, the manual, and how to support RangeForge">About</button>
           </div>
         </div>
       </div>
@@ -154,7 +154,7 @@
     <ul id="variableList" class="variables"></ul>
 
     <h4 class="section">DSD Format</h4>
-    <p class="hint">DSD files cannot be written as they are. They are written in the Output Format you chose (codec, container, bitrate, compression, channels and downmix). Only these two are kept here: the sample rate and bit depth to use where the Output Format says source. Each is used on its own, and an Output Format that names one keeps it. These apply as soon as you change them.</p>
+    <p class="hint">RangeForge cannot write DSD files, and the sample rates and bit depths DSD uses are fundamentally different from those of common formats. These two settings keep you from accidentally transcoding DSD at its <em>source</em> sample rate and bit depth. Everything else (codec, container, bitrate, compression, channels and downmix) comes from the Output Format on the main screen. Each setting is used only where the Output Format says source, and on its own: an Output Format that names a sample rate or bit depth keeps it. Changes apply immediately.</p>
     <div class="dsd-grid">
       <label>Sample Rate <select id="dsdSampleRate"></select></label>
       <label>Bit Depth <select id="dsdBitDepth"></select></label>
@@ -178,6 +178,18 @@
       <button id="lastfmClear" class="button small" type="button">Clear saved Last.fm answers</button>
       <span class="hint">Last.fm answers are kept for weeks so they are not asked twice. Clear them to pull every genre fresh.</span>
     </div>
+    <h4 class="section">Hot 100 tag</h4>
+    <p class="hint">Songs that charted on the Billboard Hot 100 get this tag (needs the Metadata API switch above; no key). The position is the song's best ever: 1 means only number ones, 100 means anything that charted.</p>
+    <div class="row">
+      <label class="check"><input id="radioEnabled" type="checkbox"> Add the tag</label>
+      <input id="radioTag" class="text" type="text" maxlength="30" spellcheck="false" autocomplete="off" aria-label="Hot 100 tag text" placeholder="Radio">
+    </div>
+    <div class="row">
+      <span class="label">Reached position</span>
+      <input id="radioThreshold" class="number" type="number" step="1" min="1" max="100" aria-label="Best chart position">
+      <span class="suffix">or better</span>
+    </div>
+
     <div class="dialog-buttons">
       <button id="settingsCancel" class="button" type="button">Cancel</button>
       <button id="settingsSave" class="button primary" type="button">Save</button>

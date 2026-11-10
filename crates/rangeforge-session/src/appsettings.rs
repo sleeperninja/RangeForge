@@ -40,11 +40,59 @@ pub struct MetadataSettings {
     pub lastfm_enabled: bool,
 }
 
+/// The tag for songs that charted on the Billboard Hot 100.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RadioSettings {
+    /// Whether charted songs get the tag at all.
+    pub enabled: bool,
+    /// The tag's text. `Radio` unless the user chose another.
+    pub tag: String,
+    /// A song gets the tag when its best chart position is this or better (1 to 100).
+    pub threshold: u16,
+}
+
+impl RadioSettings {
+    pub const DEFAULT_TAG: &'static str = "Radio";
+    pub const MAX_TAG_LEN: usize = 30;
+
+    /// Tidies a typed tag: commas and semicolons would split it in the genre tag, so they
+    /// become spaces; blanks collapse; an empty result is the default tag.
+    #[must_use]
+    pub fn clean_tag(text: &str) -> String {
+        let spaced = text.replace([',', ';'], " ");
+        let tidy = spaced.split_whitespace().collect::<Vec<_>>().join(" ");
+        let tidy: String = tidy.chars().take(Self::MAX_TAG_LEN).collect();
+        if tidy.is_empty() {
+            Self::DEFAULT_TAG.to_string()
+        } else {
+            tidy
+        }
+    }
+
+    /// Keeps a threshold inside 1 to 100.
+    #[must_use]
+    pub fn clamp_threshold(value: i64) -> u16 {
+        u16::try_from(value.clamp(1, 100)).unwrap_or(100)
+    }
+}
+
+impl Default for RadioSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            tag: Self::DEFAULT_TAG.to_string(),
+            threshold: 100,
+        }
+    }
+}
+
 /// Everything this file keeps.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SavedSettings {
     pub naming: NameSettings,
     pub metadata: MetadataSettings,
+    /// The Hot 100 tag: on or off, its text, and how high a song must have charted.
+    pub radio: RadioSettings,
     /// The File Strategy panel: where files go, what to do about a clash, deleting originals.
     pub strategy: StrategySettings,
     /// Ask before a run that overwrites files or deletes originals. On until the user ticks
@@ -63,6 +111,7 @@ impl Default for SavedSettings {
         Self {
             naming: NameSettings::default(),
             metadata: MetadataSettings::default(),
+            radio: RadioSettings::default(),
             strategy: StrategySettings::default(),
             confirm_destructive: true,
             dsd: DsdFormat::default(),
@@ -322,6 +371,7 @@ fn yes() -> bool {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 struct Stored {
     version: u32,
     album_name: String,
@@ -330,6 +380,12 @@ struct Stored {
     metadata_enabled: bool,
     #[serde(default)]
     lastfm_enabled: bool,
+    #[serde(default = "yes")]
+    radio_enabled: bool,
+    #[serde(default)]
+    radio_tag: Option<String>,
+    #[serde(default)]
+    radio_threshold: Option<i64>,
     #[serde(default)]
     file_strategy: Option<StoredStrategy>,
     #[serde(default = "yes")]
@@ -377,6 +433,16 @@ pub fn load(path: &Path) -> Loaded {
                 metadata: MetadataSettings {
                     enabled: stored.metadata_enabled,
                     lastfm_enabled: stored.lastfm_enabled,
+                },
+                radio: RadioSettings {
+                    enabled: stored.radio_enabled,
+                    tag: stored.radio_tag.map_or_else(
+                        || RadioSettings::DEFAULT_TAG.to_string(),
+                        |t| RadioSettings::clean_tag(&t),
+                    ),
+                    threshold: stored
+                        .radio_threshold
+                        .map_or(100, RadioSettings::clamp_threshold),
                 },
                 strategy: stored
                     .file_strategy
@@ -442,6 +508,9 @@ pub fn save(path: &Path, settings: &SavedSettings) -> Result<()> {
         single_name: settings.naming.single.clone(),
         metadata_enabled: settings.metadata.enabled,
         lastfm_enabled: settings.metadata.lastfm_enabled,
+        radio_enabled: settings.radio.enabled,
+        radio_tag: Some(settings.radio.tag.clone()),
+        radio_threshold: Some(i64::from(settings.radio.threshold)),
         file_strategy: Some(StoredStrategy::from(&settings.strategy)),
         confirm_destructive: settings.confirm_destructive,
         dsd_format: Some(StoredDsd::from(settings.dsd)),
@@ -471,6 +540,11 @@ mod tests {
                 enabled: true,
                 lastfm_enabled: false,
             },
+            radio: RadioSettings {
+                enabled: false,
+                tag: "Hit".to_string(),
+                threshold: 40,
+            },
             strategy: StrategySettings {
                 where_kind: WhereKind::Subfolder,
                 subfolder: "Balanced".to_string(),
@@ -498,6 +572,20 @@ mod tests {
             },
             volume: Settings::new(-18.5, false, -1.2),
         }
+    }
+
+    #[test]
+    fn the_radio_tag_text_and_threshold_are_tidied_and_kept_in_range() {
+        assert_eq!(RadioSettings::clean_tag("  Top,  40;hit "), "Top 40 hit");
+        assert_eq!(RadioSettings::clean_tag(" , ; "), "Radio");
+        assert_eq!(RadioSettings::clean_tag(&"x".repeat(80)).len(), 30);
+        assert_eq!(RadioSettings::clamp_threshold(0), 1);
+        assert_eq!(RadioSettings::clamp_threshold(-5), 1);
+        assert_eq!(RadioSettings::clamp_threshold(101), 100);
+        assert_eq!(RadioSettings::clamp_threshold(40), 40);
+        let defaults = RadioSettings::default();
+        assert!(defaults.enabled);
+        assert_eq!((defaults.tag.as_str(), defaults.threshold), ("Radio", 100));
     }
 
     #[test]
