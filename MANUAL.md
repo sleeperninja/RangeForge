@@ -1,6 +1,6 @@
 # RangeForge manual
 
-*For version 0.6.10. This is the plain-words manual: how to use the program, and how it decides things. Questions people ask often are in [FAQ.md](FAQ.md). What is planned is in [ROADMAP.md](ROADMAP.md).*
+*For version 0.6.11. This is the plain-words manual: how to use the program, and how it decides things. Questions people ask often are in [FAQ.md](FAQ.md). What is planned is in [ROADMAP.md](ROADMAP.md).*
 
 ---
 

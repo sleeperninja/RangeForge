@@ -203,13 +203,13 @@ tr.message.error td { color: var(--error); text-align: left; }
 .combo-list li:hover, .combo-list li.current { background: var(--selected); }
 
 /* A plain switch: the on/off pill to the left of its text, no box. */
-.switch.plain, .strategy label.check { display: flex; align-items: center; justify-content: flex-start; gap: 8px; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
+.switch.plain, label.check.pill { display: flex; align-items: center; justify-content: flex-start; gap: 8px; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
 .switch.plain:hover:not(:disabled) { border: 0; }
 .switch.plain[aria-pressed="true"] { background: none; }
-.strategy label.check { position: relative; }
-.strategy label.check input, .strategy label.radio input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
-.strategy label.check::before { content: 'off'; font-size: 11px; color: var(--muted); border: 1px solid var(--button-edge); border-radius: 9px; padding: 0 8px; }
-.strategy label.check:has(input:checked)::before { content: 'on'; color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+label.check.pill { position: relative; }
+label.check.pill input, .strategy label.radio input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+label.check.pill::before { content: 'off'; font-size: 11px; color: var(--muted); border: 1px solid var(--button-edge); border-radius: 9px; padding: 0 8px; }
+label.check.pill:has(input:checked)::before { content: 'on'; color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
 
 /* The choices of a radio group sit in one outline; the chosen one shows an on pill after its text. */
 .choice-group { border: 1px solid var(--button-edge); border-radius: 4px; padding: 6px 8px 4px; margin-bottom: 8px; }
@@ -360,3 +360,22 @@ dialog h4 { margin: 0 0 4px; font-size: 12px; color: var(--muted); }
 .dsd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin-bottom: 4px; }
 .dsd-grid label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .dsd-grid select { min-width: 150px; }
+
+/* Settings: two columns of outlined panels. */
+dialog.settings-dialog { width: min(1040px, 94vw); max-width: none; max-height: 92vh; overflow: auto; }
+.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.settings-grid .col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel { border: 1px solid var(--panel-edge); border-radius: 4px; padding: 8px 12px 10px; }
+.panel h4 { margin: 0 0 6px; }
+.panel .hint:last-child { margin-bottom: 0; }
+.panel .key-row { margin-bottom: 4px; }
+.panel .variables { margin-top: 8px; }
+.dsd-panel { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; align-items: center; }
+.dsd-panel .hint { margin: 0; }
+.dsd-panel .dsd-grid { grid-template-columns: 1fr; margin: 0; }
+.hot-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hot-row .label { margin-left: 8px; }
+@media (max-width: 900px) {
+  .settings-grid { grid-template-columns: 1fr; }
+  .dsd-panel { grid-template-columns: 1fr; }
+}

@@ -114,7 +114,7 @@
           <div class="row"><label class="radio"><input type="radio" name="conflict" value="overwrite"> Overwrite existing file</label></div>
           </div>
 
-          <div class="row"><label class="check"><input id="deleteOriginal" type="checkbox"> Delete original after conversion</label></div>
+          <div class="row"><label class="check pill"><input id="deleteOriginal" type="checkbox"> Delete original after conversion</label></div>
           <p id="strategyProblem" class="problem hidden"></p>
         </div>
       </div>
@@ -145,57 +145,72 @@
     </form>
   </dialog>
 
-  <dialog id="settingsDialog" class="wide-dialog">
+  <dialog id="settingsDialog" class="settings-dialog">
     <h3>Settings</h3>
-    <h4>File names</h4>
-    <p class="hint">Use variables in braces. A missing value, and the separator beside it, is left out.</p>
-    <label class="field">Songs cut from a CUE album
-      <input id="nameAlbum" class="text wide" type="text" spellcheck="false" autocomplete="off">
-    </label>
-    <p class="example">Example: <span id="exampleAlbum"></span></p>
-    <p id="problemAlbum" class="problem hidden"></p>
-    <label class="field">Single files
-      <input id="nameSingle" class="text wide" type="text" spellcheck="false" autocomplete="off">
-    </label>
-    <p class="example">Example: <span id="exampleSingle"></span></p>
-    <p id="problemSingle" class="problem hidden"></p>
-    <ul id="variableList" class="variables"></ul>
+    <div class="settings-grid">
+      <div class="col">
+        <div class="panel">
+          <h4>File names</h4>
+          <p class="hint">Use variables in braces. A missing value, and the separator beside it, is left out.</p>
+          <label class="field">Songs cut from a CUE album
+            <input id="nameAlbum" class="text wide" type="text" spellcheck="false" autocomplete="off">
+          </label>
+          <p class="example">Example: <span id="exampleAlbum"></span></p>
+          <p id="problemAlbum" class="problem hidden"></p>
+          <label class="field">Single files
+            <input id="nameSingle" class="text wide" type="text" spellcheck="false" autocomplete="off">
+          </label>
+          <p class="example">Example: <span id="exampleSingle"></span></p>
+          <p id="problemSingle" class="problem hidden"></p>
+          <ul id="variableList" class="variables"></ul>
+        </div>
 
-    <h4 class="section">DSD Format</h4>
-    <p class="hint">RangeForge cannot write DSD files, and the sample rates and bit depths DSD uses are fundamentally different from those of common formats. These two settings keep you from accidentally transcoding DSD at its <em>source</em> sample rate and bit depth. Everything else (codec, container, bitrate, compression, channels and downmix) comes from the Output Format on the main screen. Each setting is used only where the Output Format says source, and on its own: an Output Format that names a sample rate or bit depth keeps it. Changes apply immediately.</p>
-    <div class="dsd-grid">
-      <label>Sample Rate <select id="dsdSampleRate"></select></label>
-      <label>Bit Depth <select id="dsdBitDepth"></select></label>
-    </div>
+        <div class="panel">
+          <h4>DSD Format</h4>
+          <div class="dsd-panel">
+            <p class="hint">RangeForge cannot write DSD files, and the sample rates and bit depths DSD uses are fundamentally different from those of common formats. These two settings keep you from accidentally transcoding DSD at its <em>source</em> sample rate and bit depth. Each is used only where the Output Format says source. Changes apply immediately.</p>
+            <div class="dsd-grid">
+              <label>Sample Rate <select id="dsdSampleRate"></select></label>
+              <label>Bit Depth <select id="dsdBitDepth"></select></label>
+            </div>
+          </div>
+        </div>
+      </div>
 
-    <h4 class="section">Before changing files</h4>
-    <div class="row"><label class="check"><input id="confirmFirst" type="checkbox"> Ask before a run that overwrites files or deletes originals</label></div>
+      <div class="col">
+        <div class="panel">
+          <h4>Online lookups</h4>
+          <label class="check pill" title="Look songs up online: the Hot 100 tag, and Last.fm genres if you add a key below"><input id="metadataToggle" type="checkbox"> Metadata API: allow online lookups</label>
+          <p class="hint">Off by default. Nothing goes online unless this is on.</p>
+          <div class="key-row">
+            <label class="check pill"><input id="lastfmEnabled" type="checkbox"> Use Last.fm</label>
+            <input id="lastfmKey" class="text key-input" type="password" autocomplete="off" spellcheck="false" placeholder="Last.fm API key" aria-label="Last.fm API key">
+            <button id="lastfmSave" class="button small" type="button">Save key</button>
+            <button id="lastfmForget" class="button small" type="button">Forget</button>
+          </div>
+          <p class="hint"><span id="lastfmStatus"></span> RangeForge comes with no Last.fm key. <a href="#" data-about="lastfm_key">Create your own for an app on Last.fm</a> (free) and paste it here. It is kept in this computer's credential store, not in a file.</p>
+          <div class="key-row">
+            <button id="lastfmClear" class="button small" type="button" title="Last.fm answers are kept for weeks so they are not asked twice. Clear them to pull every genre fresh.">Clear saved Last.fm answers</button>
+          </div>
+        </div>
 
-    <h4 class="section">Online lookups</h4>
-    <div class="row"><label class="check" title="Look songs up online: the Radio tag, and Last.fm genres if you add a key below"><input id="metadataToggle" type="checkbox"> Metadata API: allow online lookups</label></div>
-    <p class="hint">Off by default. Nothing goes online unless this is on. Keys are kept in this computer's own credential store, not in a file, and each can be switched off without forgetting it.</p>
-    <div class="key-row">
-      <label class="check"><input id="lastfmEnabled" type="checkbox"> Use Last.fm</label>
-      <input id="lastfmKey" class="text key-input" type="password" autocomplete="off" spellcheck="false" placeholder="Last.fm API key" aria-label="Last.fm API key">
-      <button id="lastfmSave" class="button small" type="button">Save key</button>
-      <button id="lastfmForget" class="button small" type="button">Forget</button>
-    </div>
-    <p id="lastfmStatus" class="hint"></p>
-    <p class="hint">RangeForge does not come with a Last.fm key. Getting your own is free: <a href="#" data-about="lastfm_key">create one for an app on Last.fm</a>, then paste it here. The key stays on this computer.</p>
-    <div class="key-row">
-      <button id="lastfmClear" class="button small" type="button">Clear saved Last.fm answers</button>
-      <span class="hint">Last.fm answers are kept for weeks so they are not asked twice. Clear them to pull every genre fresh.</span>
-    </div>
-    <h4 class="section">Hot 100 tag</h4>
-    <p class="hint">Songs that charted on the Billboard Hot 100 get this tag (needs the Metadata API switch above; no key). The position is the song's best ever: 1 means only number ones, 100 means anything that charted.</p>
-    <div class="row">
-      <label class="check"><input id="radioEnabled" type="checkbox"> Add the tag</label>
-      <input id="radioTag" class="text" type="text" maxlength="30" spellcheck="false" autocomplete="off" aria-label="Hot 100 tag text" placeholder="Radio">
-    </div>
-    <div class="row">
-      <span class="label">Reached position</span>
-      <input id="radioThreshold" class="number" type="number" step="1" min="1" max="100" aria-label="Best chart position">
-      <span class="suffix">or better</span>
+        <div class="panel">
+          <h4>Hot 100 tag</h4>
+          <p class="hint">Songs that charted on the Billboard Hot 100 get this tag (needs Metadata API; no key). The position is the song's best ever: 1 means only number ones, 100 means anything that charted.</p>
+          <div class="hot-row">
+            <label class="check pill"><input id="radioEnabled" type="checkbox"> Add the tag</label>
+            <input id="radioTag" class="text" type="text" maxlength="30" spellcheck="false" autocomplete="off" aria-label="Hot 100 tag text" placeholder="Radio">
+            <span class="label">Position</span>
+            <input id="radioThreshold" class="number" type="number" step="1" min="1" max="100" aria-label="Best chart position">
+            <span class="suffix">or better</span>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h4>Before changing files</h4>
+          <label class="check pill"><input id="confirmFirst" type="checkbox"> Ask before a run that overwrites files or deletes originals</label>
+        </div>
+      </div>
     </div>
 
     <div class="dialog-buttons">
