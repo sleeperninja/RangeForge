@@ -1,8 +1,8 @@
 # RangeForge
 
-**Drop in albums and audio files. RangeForge measures their loudness once, shows you what it would change, then splits CUE albums, evens out the volume, tags, names and writes clean files.**
+**Drop in albums and audio files. RangeForge measures their loudness once, shows you what it would change, splits CUE albums, evens out volume, pulls album tags and lets you add custom tags, customizes output filenames based on last.fm metadata, writes clean volume-leveled files.**
 
-It is free to use. If it saves you time, you can support it on Ko-fi: [ko-fi.com/sleeperninja42](https://ko-fi.com/sleeperninja42).
+It is free to use. If it saves you time, you can support me on Ko-fi: [ko-fi.com/sleeperninja42](https://ko-fi.com/sleeperninja42).
 
 - **Measure once.** Loudness, true peak and range, cached so the same album is instant the second time.
 - **One gain per song.** Volume only: no compression, no limiting, never past your peak ceiling.
