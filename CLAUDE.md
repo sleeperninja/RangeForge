@@ -55,7 +55,7 @@ It replaces about seven tools (MediaHuman, an FFmpeg GUI, Adobe Audition, a Powe
 ## Working in this repo
 
 - The folder is on a network share (`\\yggdrasil.local\...`). Git needs `safe.directory` set for it, and `cargo` should use a **local** target directory: set `CARGO_TARGET_DIR` to something like `C:\Local\rangeforge-target`. Details in [docs/04-development.md](docs/04-development.md).
-- Two GitHub SSH identities exist on this machine. Check which one `origin` uses before pushing.
+- This machine has one GitHub identity (it used to have two), so `origin` needs no checking before a push.
 
 ## Resuming after a long session or a context reset (for the AI)
 

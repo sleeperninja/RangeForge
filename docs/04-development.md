@@ -145,7 +145,7 @@ The repo lives at `\\yggdrasil.local\...`.
 
 ## Git and GitHub
 
-- Remote: `origin` on GitHub. This machine has two SSH identities, so confirm which one `origin` uses before pushing.
+- Remote: `origin` on GitHub. This machine has one GitHub identity, so there is nothing to confirm before pushing.
 - Work happens on `dev`.
 
 ## Quality gates
