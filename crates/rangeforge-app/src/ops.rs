@@ -100,7 +100,8 @@ impl Shared {
             app.log(note);
         }
         app.presets = PresetList::new(stored.presets);
-        app.presets.select_matching(&app.settings, app.output);
+        app.presets
+            .select_matching_with(&app.settings, app.output, Some(&app.strategy));
         Self {
             app: Mutex::new(app),
             presets_path,

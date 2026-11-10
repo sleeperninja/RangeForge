@@ -213,6 +213,25 @@ impl Default for StrategySettings {
 }
 
 impl StrategySettings {
+    /// True if both make the same choices. Text that the chosen place or way of handling a
+    /// clash does not use (the folder when saving next to the original) is not compared.
+    #[must_use]
+    pub fn same_choice(&self, other: &Self) -> bool {
+        self.where_kind == other.where_kind
+            && match self.where_kind {
+                WhereKind::NextToOriginal => true,
+                WhereKind::Subfolder => self.subfolder == other.subfolder,
+                WhereKind::Folder => self.folder == other.folder,
+            }
+            && self.conflict_kind == other.conflict_kind
+            && match self.conflict_kind {
+                ConflictKind::Number => self.number_suffix == other.number_suffix,
+                ConflictKind::RenameExisting => self.old_suffix == other.old_suffix,
+                ConflictKind::Overwrite => true,
+            }
+            && self.delete_original == other.delete_original
+    }
+
     pub fn cycle_where(&mut self, steps: i32) {
         self.where_kind = cycle(&WhereKind::ALL, self.where_kind, steps);
     }
@@ -410,16 +429,36 @@ impl PresetList {
 
     /// Picks the preset that matches the current settings exactly, if any.
     pub fn select_matching(&mut self, volume: &Settings, output: OutputSettings) {
+        self.select_matching_with(volume, output, None);
+    }
+
+    /// As `select_matching`, and a preset that has a File Strategy must match `strategy` too.
+    pub fn select_matching_with(
+        &mut self,
+        volume: &Settings,
+        output: OutputSettings,
+        strategy: Option<&StrategySettings>,
+    ) {
         self.selected = self
             .items
             .iter()
-            .position(|preset| matches(preset, volume, output));
+            .position(|preset| matches(preset, volume, output, strategy));
     }
 
     /// True if a preset is selected and the settings have been changed from it.
     pub fn is_modified(&self, volume: &Settings, output: OutputSettings) -> bool {
+        self.is_modified_with(volume, output, None)
+    }
+
+    /// As `is_modified`, counting the File Strategy when the selected preset has one.
+    pub fn is_modified_with(
+        &self,
+        volume: &Settings,
+        output: OutputSettings,
+        strategy: Option<&StrategySettings>,
+    ) -> bool {
         self.selected_preset()
-            .is_some_and(|preset| !matches(preset, volume, output))
+            .is_some_and(|preset| !matches(preset, volume, output, strategy))
     }
 
     /// Moves the selection and returns the preset now selected. From "no preset", forward
@@ -438,6 +477,17 @@ impl PresetList {
 
     /// Saves the current settings under `name`, replacing a preset of the same name.
     pub fn save_as(&mut self, name: &str, volume: &Settings, output: OutputSettings) -> Saved {
+        self.save_with(name, volume, output, None)
+    }
+
+    /// As `save_as`, and the preset keeps the File Strategy too.
+    pub fn save_with(
+        &mut self,
+        name: &str,
+        volume: &Settings,
+        output: OutputSettings,
+        strategy: Option<StrategySettings>,
+    ) -> Saved {
         let preset = Preset {
             name: name.trim().to_string(),
             codec: output.codec,
@@ -451,6 +501,7 @@ impl PresetList {
             target_lufs: volume.target_lufs,
             peak_protection: volume.peak_protection,
             peak_ceiling_dbtp: volume.peak_ceiling_dbtp,
+            strategy,
         };
         if let Some(index) = self.items.iter().position(|p| p.name == preset.name) {
             self.items[index] = preset;
@@ -492,8 +543,19 @@ pub fn apply_preset(preset: &Preset, volume: &mut Settings, output: &mut OutputS
     output.fit_to_codec();
 }
 
-fn matches(preset: &Preset, volume: &Settings, output: OutputSettings) -> bool {
-    preset.codec == output.codec
+fn matches(
+    preset: &Preset,
+    volume: &Settings,
+    output: OutputSettings,
+    strategy: Option<&StrategySettings>,
+) -> bool {
+    // A preset with no File Strategy has no opinion about it.
+    let strategy_matches = match (&preset.strategy, strategy) {
+        (Some(wanted), Some(actual)) => wanted.same_choice(actual),
+        _ => true,
+    };
+    strategy_matches
+        && preset.codec == output.codec
         && preset.bit_depth == output.bit_depth
         && preset.container == output.container
         && preset.sample_rate == output.sample_rate
@@ -512,6 +574,36 @@ fn matches(preset: &Preset, volume: &Settings, output: OutputSettings) -> bool {
 mod tests {
     use super::*;
     use crate::presets::built_in;
+
+    #[test]
+    fn a_presets_file_strategy_counts_for_matching_only_when_it_has_one() {
+        let (volume, output) = (Settings::default(), OutputSettings::default());
+        let next = StrategySettings::default();
+        let sub = StrategySettings {
+            where_kind: WhereKind::Subfolder,
+            subfolder: "_a".to_string(),
+            ..StrategySettings::default()
+        };
+        let mut presets = PresetList::new(Vec::new());
+        presets.save_with("A", &volume, output, Some(sub.clone()));
+        presets.save_with("Plain", &volume, output, None);
+        presets.selected = None;
+        presets.select_matching_with(&volume, output, Some(&sub));
+        assert_eq!(presets.selected_preset().unwrap().name, "A");
+        presets.select_matching_with(&volume, output, Some(&next));
+        assert_eq!(presets.selected_preset().unwrap().name, "Plain");
+        // A preset without a strategy is not modified by changing the strategy.
+        assert!(!presets.is_modified_with(&volume, output, Some(&sub)));
+        presets.selected = Some(0);
+        assert!(presets.is_modified_with(&volume, output, Some(&next)));
+        // Text the chosen place does not use is not compared.
+        let other_folder = StrategySettings {
+            folder: "elsewhere".to_string(),
+            ..next.clone()
+        };
+        assert!(next.same_choice(&other_folder));
+        assert!(!sub.same_choice(&next));
+    }
 
     #[test]
     fn the_bitrate_follows_the_codec_and_opus_has_one_rate() {
@@ -967,6 +1059,7 @@ mod tests {
             target_lufs: -22.0,
             peak_protection: true,
             peak_ceiling_dbtp: -0.6,
+            strategy: None,
         };
         let (mut volume, mut output) = (Settings::default(), OutputSettings::default());
         apply_preset(&preset, &mut volume, &mut output);

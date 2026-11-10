@@ -1,7 +1,9 @@
 //! Presets: saved sets of output and volume settings, kept in a small JSON file.
 //!
-//! A preset stores the codec, bit depth and volume settings. It does not store the File
-//! Strategy, which is about what is on disk right now and not about the sound.
+//! A preset stores the output format and the volume settings, and may also store a File
+//! Strategy (where the files go, what to do about a taken name, deleting the original). The
+//! built-in presets have none, and applying a preset without one leaves the File Strategy as
+//! it is.
 //!
 //! Loading never fails. A missing file means the built-in presets, and a file that cannot be
 //! read is set aside as `presets.json.bad` and replaced by the built-ins, with a note saying
@@ -10,6 +12,8 @@
 use std::fs;
 use std::path::Path;
 
+use crate::appsettings::StoredStrategy;
+use crate::controls::StrategySettings;
 use anyhow::{Context, Result};
 use rangeforge_core::mix::{Channels, Downmix};
 use rangeforge_export::format::{
@@ -39,6 +43,9 @@ pub struct Preset {
     pub target_lufs: f64,
     pub peak_protection: bool,
     pub peak_ceiling_dbtp: f64,
+    /// Where the files go and what happens to names that are taken. `None` means the preset
+    /// has no opinion, and the File Strategy is left as it is.
+    pub strategy: Option<StrategySettings>,
 }
 
 impl Preset {
@@ -56,6 +63,7 @@ impl Preset {
             target_lufs: -22.0,
             peak_protection: true,
             peak_ceiling_dbtp: -0.6,
+            strategy: None,
         }
     }
 }
@@ -110,6 +118,9 @@ struct StoredPreset {
     target_lufs: f64,
     peak_protection: bool,
     peak_ceiling_dbtp: f64,
+    /// Added later: a preset saved before then has no File Strategy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    file_strategy: Option<StoredStrategy>,
 }
 
 fn default_container() -> String {
@@ -151,12 +162,13 @@ impl From<&Preset> for StoredPreset {
             target_lufs: preset.target_lufs,
             peak_protection: preset.peak_protection,
             peak_ceiling_dbtp: preset.peak_ceiling_dbtp,
+            file_strategy: preset.strategy.as_ref().map(StoredStrategy::from),
         }
     }
 }
 
 impl StoredPreset {
-    fn into_preset(self) -> Option<Preset> {
+    fn into_preset(self, notes: &mut Vec<String>) -> Option<Preset> {
         let valid = !self.name.trim().is_empty()
             && self.target_lufs.is_finite()
             && self.peak_ceiling_dbtp.is_finite();
@@ -182,6 +194,9 @@ impl StoredPreset {
             target_lufs: self.target_lufs,
             peak_protection: self.peak_protection,
             peak_ceiling_dbtp: self.peak_ceiling_dbtp,
+            strategy: self
+                .file_strategy
+                .map(|strategy| strategy.into_strategy(notes)),
         })
     }
 }
@@ -206,12 +221,12 @@ pub fn load(path: &Path) -> Loaded {
     match serde_json::from_slice::<Stored>(&bytes) {
         Ok(stored) if stored.version == VERSION => {
             let total = stored.presets.len();
+            let mut notes = Vec::new();
             let presets: Vec<Preset> = stored
                 .presets
                 .into_iter()
-                .filter_map(StoredPreset::into_preset)
+                .filter_map(|preset| preset.into_preset(&mut notes))
                 .collect();
-            let mut notes = Vec::new();
             if presets.len() < total {
                 notes.push(format!(
                     "Skipped {} preset(s) in {} that could not be understood",
@@ -276,7 +291,38 @@ mod tests {
             target_lufs: -14.5,
             peak_protection: false,
             peak_ceiling_dbtp: -1.0,
+            strategy: Some(StrategySettings {
+                where_kind: crate::controls::WhereKind::Subfolder,
+                subfolder: "_WAV32".to_string(),
+                conflict_kind: crate::controls::ConflictKind::Overwrite,
+                delete_original: true,
+                ..StrategySettings::default()
+            }),
         }
+    }
+
+    #[test]
+    fn a_preset_keeps_its_file_strategy_through_the_file_and_an_old_one_has_none() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("presets.json");
+        save(
+            &path,
+            &[
+                custom(),
+                Preset::built_in("Plain", Codec::Alac, BitDepth::Source),
+            ],
+        )
+        .unwrap();
+        let loaded = load(&path);
+        assert_eq!(loaded.presets[0], custom());
+        assert_eq!(loaded.presets[1].strategy, None);
+        assert_eq!(loaded.notes, Vec::<String>::new());
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            text.matches("file_strategy").count(),
+            1,
+            "none is not written"
+        );
     }
 
     #[test]

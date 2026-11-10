@@ -121,6 +121,22 @@
     input.addEventListener('change', () => run(true));
   }
 
+  // A switch button: pressed and "on", or not and "off".
+  function setSwitch(button, on) {
+    button.setAttribute('aria-pressed', String(on));
+    button.querySelector('.state').textContent = on ? 'on' : 'off';
+  }
+
+  // The loudness targets the dropdown offers. Anything else can be typed.
+  const TARGETS = [
+    [-14, 'Spotify, YouTube, Tidal'],
+    [-16, 'Apple Music, podcasts'],
+    [-18, 'Music with room to breathe'],
+    [-22, 'Video and film editing'],
+    [-23, 'EBU R128 broadcast'],
+    [-24, 'US television (ATSC A/85)'],
+  ];
+
   // Sets a field unless the user is typing in it, so a refresh never fights the keyboard.
   function setValue(input, value) {
     const text = String(value);
@@ -183,7 +199,7 @@
     setValue($('target'), s.volume.target_lufs.toFixed(1));
     // 32-bit float needs no protection: the box shows unticked and dimmed, with the setting kept.
     const protects = s.volume.protection_applies;
-    $('peakProtection').checked = protects && s.volume.peak_protection;
+    setSwitch($('peakProtection'), protects && s.volume.peak_protection);
     $('peakProtection').disabled = !protects;
     setValue($('ceiling'), protects ? s.volume.ceiling_dbtp.toFixed(1) : '');
     $('ceiling').disabled = !protects || !s.volume.peak_protection;
@@ -615,8 +631,7 @@
     $('showLogs').addEventListener('click', (e) => {
       const button = e.currentTarget;
       const on = button.getAttribute('aria-pressed') !== 'true';
-      button.setAttribute('aria-pressed', String(on));
-      button.querySelector('.state').textContent = on ? 'on' : 'off';
+      setSwitch(button, on);
       $('logPanel').classList.toggle('hidden', !on);
     });
 
@@ -632,9 +647,51 @@
           call('get_state');
         }
       });
-    numberBox('target', 'set_target');
+    // The target takes a number with or without its minus sign: a positive number is made
+    // negative when the box is left.
+    onEdited($('target'), (text, leaving) => {
+      const value = Number(text.replace(',', '.'));
+      if (text.trim() === '' || !Number.isFinite(value)) {
+        if (leaving) call('get_state');
+      } else if (value > 0) {
+        if (leaving) {
+          $('target').value = (-value).toFixed(1);
+          call('set_target', { value: -value });
+        }
+      } else {
+        call('set_target', { value });
+      }
+    });
+    const targetList = $('targetList');
+    const closeTargets = () => targetList.classList.add('hidden');
+    $('targetMenu').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!targetList.classList.contains('hidden')) {
+        closeTargets();
+        return;
+      }
+      const now = Number($('target').value);
+      targetList.innerHTML = TARGETS.map(
+        ([value, note]) =>
+          `<li role="option" data-value="${value}"${value === now ? ' class="current"' : ''}><b>${value}</b><span>${note}</span></li>`,
+      ).join('');
+      targetList.classList.remove('hidden');
+    });
+    targetList.addEventListener('click', (e) => {
+      const item = e.target.closest('li');
+      if (item) {
+        $('target').value = Number(item.dataset.value).toFixed(1);
+        call('set_target', { value: Number(item.dataset.value) });
+      }
+      closeTargets();
+    });
+    document.addEventListener('click', closeTargets);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeTargets();
+    });
     numberBox('ceiling', 'set_ceiling');
-    $('peakProtection').addEventListener('change', (e) => call('set_peak_protection', { on: e.target.checked }));
+    $('peakProtection').addEventListener('click', (e) =>
+      call('set_peak_protection', { on: e.currentTarget.getAttribute('aria-pressed') !== 'true' }));
     $('codec').addEventListener('change', (e) => call('set_codec', { id: e.target.value }));
     $('bitDepth').addEventListener('change', (e) => call('set_bit_depth', { id: e.target.value }));
     $('container').addEventListener('change', (e) => call('set_container', { id: e.target.value }));

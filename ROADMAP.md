@@ -1,6 +1,6 @@
 # RangeForge Roadmap
 
-*What works, what's next, and what we've set aside. Updated 9 Nov 2026, at version 0.6.8.*
+*What works, what's next, and what we've set aside. Updated 9 Nov 2026, at version 0.6.9.*
 
 How to use the program, and how it decides things, is in the [manual](MANUAL.md). Common questions are in the [FAQ](FAQ.md).
 

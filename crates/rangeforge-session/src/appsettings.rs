@@ -123,7 +123,7 @@ impl Default for SavedSettings {
 
 /// The File Strategy as written in the file.
 #[derive(Debug, Serialize, Deserialize)]
-struct StoredStrategy {
+pub(crate) struct StoredStrategy {
     place: String,
     subfolder: String,
     folder: String,
@@ -134,7 +134,7 @@ struct StoredStrategy {
 }
 
 impl StoredStrategy {
-    fn from(strategy: &StrategySettings) -> Self {
+    pub(crate) fn from(strategy: &StrategySettings) -> Self {
         Self {
             place: place_id(strategy.where_kind).to_string(),
             subfolder: strategy.subfolder.clone(),
@@ -148,7 +148,7 @@ impl StoredStrategy {
 
     /// The strategy, with a plain-words note for anything that was not understood. A value
     /// that is not understood falls back to the safe default for that one setting.
-    fn into_strategy(self, notes: &mut Vec<String>) -> StrategySettings {
+    pub(crate) fn into_strategy(self, notes: &mut Vec<String>) -> StrategySettings {
         let defaults = StrategySettings::default();
         let where_kind = place_from_id(&self.place).unwrap_or_else(|| {
             notes.push(format!(

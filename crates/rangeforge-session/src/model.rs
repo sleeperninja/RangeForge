@@ -1022,13 +1022,21 @@ impl App {
 
     /// True if the settings have been changed from the selected preset.
     pub fn preset_modified(&self) -> bool {
-        self.presets.is_modified(&self.settings, self.output)
+        self.presets
+            .is_modified_with(&self.settings, self.output, Some(&self.strategy))
     }
 
     /// True when there is something worth saving as a preset: the settings match no preset
-    /// yet, or have been changed from the selected one. The mockup greys Save out otherwise.
+    /// yet, or have been changed from the selected one, or the selected one has no File
+    /// Strategy and the current one is not the starting choice. The mockup greys Save out
+    /// otherwise.
     pub fn can_save_preset(&self) -> bool {
-        self.presets.selected.is_none() || self.preset_modified()
+        self.presets.selected.is_none()
+            || self.preset_modified()
+            || self.presets.selected_preset().is_some_and(|preset| {
+                preset.strategy.is_none()
+                    && !self.strategy.same_choice(&StrategySettings::default())
+            })
     }
 
     /// Adds a line to the log.
@@ -1471,6 +1479,9 @@ impl App {
         if let Some(preset) = self.presets.items.get(index).cloned() {
             self.presets.selected = Some(index);
             apply_preset(&preset, &mut self.settings, &mut self.output);
+            if let Some(strategy) = preset.strategy {
+                self.strategy = strategy;
+            }
         }
     }
 
@@ -1486,7 +1497,12 @@ impl App {
                 "Nothing has changed from this preset, so there is nothing to save".to_string(),
             );
         }
-        let saved = self.presets.save_as(name, &self.settings, self.output);
+        let saved = self.presets.save_with(
+            name,
+            &self.settings,
+            self.output,
+            Some(self.strategy.clone()),
+        );
         self.presets_changed = true;
         self.log(match saved {
             Saved::Added => format!("Saved preset {name}"),
@@ -1676,6 +1692,9 @@ impl App {
             Focus::Preset => {
                 if let Some(preset) = self.presets.cycle(steps) {
                     apply_preset(&preset, &mut self.settings, &mut self.output);
+                    if let Some(strategy) = preset.strategy {
+                        self.strategy = strategy;
+                    }
                 }
             }
             Focus::Where => self.strategy.cycle_where(steps),
@@ -1787,7 +1806,12 @@ impl App {
                     self.log("A preset needs a name");
                     return;
                 }
-                let saved = self.presets.save_as(&name, &self.settings, self.output);
+                let saved = self.presets.save_with(
+                    &name,
+                    &self.settings,
+                    self.output,
+                    Some(self.strategy.clone()),
+                );
                 self.presets_changed = true;
                 self.log(match saved {
                     Saved::Added => format!("Saved preset {name}"),
@@ -2690,6 +2714,42 @@ mod tests {
         app.set_radio(None);
         assert_eq!(app.groups[0].tracks[0].radio, None);
         assert_eq!(app.radio_songs(), None);
+    }
+
+    #[test]
+    fn a_preset_brings_its_file_strategy_back_and_a_built_in_one_leaves_it_alone() {
+        let mut app = ready_app();
+        app.set_where(WhereKind::Subfolder);
+        app.set_where_text("_WAV32".to_string());
+        app.save_preset("Big WAV").unwrap();
+        assert!(!app.preset_modified());
+
+        app.set_where(WhereKind::NextToOriginal);
+        assert!(
+            app.preset_modified(),
+            "changing the strategy changes the preset"
+        );
+        let index = app
+            .presets
+            .items
+            .iter()
+            .position(|p| p.name == "Big WAV")
+            .unwrap();
+        app.select_preset(index);
+        assert_eq!(app.strategy.where_kind, WhereKind::Subfolder);
+        assert_eq!(app.strategy.subfolder, "_WAV32");
+
+        let built_in = app
+            .presets
+            .items
+            .iter()
+            .position(|p| p.name == "iTunes Lossless")
+            .unwrap();
+        app.select_preset(built_in);
+        assert_eq!(
+            app.strategy.subfolder, "_WAV32",
+            "a built-in preset has no strategy"
+        );
     }
 
     #[test]

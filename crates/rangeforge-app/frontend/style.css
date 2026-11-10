@@ -191,6 +191,27 @@ tr.message.error td { color: var(--error); text-align: left; }
 .spacer { flex: 1; }
 .toggles { display: flex; flex-direction: column; gap: 2px; }
 .bottom-buttons { display: flex; gap: 6px; }
+.row .switch { flex: 1; }
+.combo { position: relative; display: flex; }
+.combo input.number { width: 58px; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.combo-button { background: var(--button); border: 1px solid var(--button-edge); border-left: 0; border-radius: 0 3px 3px 0; padding: 0 6px; cursor: pointer; color: inherit; }
+.combo-button:hover { border-color: var(--accent); }
+.combo-list { position: absolute; top: 100%; left: 0; z-index: 20; margin: 2px 0 0; padding: 2px 0; list-style: none; min-width: 270px; background: var(--input); border: 1px solid var(--button-edge); border-radius: 3px; box-shadow: 0 4px 12px var(--shadow); }
+.combo-list li { display: flex; gap: 10px; padding: 3px 10px; cursor: pointer; white-space: nowrap; }
+.combo-list li b { width: 34px; text-align: right; font-weight: 600; }
+.combo-list li span { color: var(--muted); }
+.combo-list li:hover, .combo-list li.current { background: var(--selected); }
+
+/* File Strategy choices look like the switches: a bordered row that lights up when chosen. */
+.strategy label.radio, .strategy label.check { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 10px; background: var(--button); border: 1px solid var(--button-edge); border-radius: 3px; cursor: pointer; }
+.strategy label.radio input, .strategy label.check input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+.strategy label.radio::after, .strategy label.check::after { content: ''; font-size: 11px; color: var(--muted); border: 1px solid var(--button-edge); border-radius: 9px; padding: 0 8px; visibility: hidden; }
+.strategy label.radio::after { content: 'on'; }
+.strategy label.check::after { content: 'off'; visibility: visible; }
+.strategy label:hover { border-color: var(--accent); }
+.strategy label:has(input:checked) { border-color: var(--accent); background: var(--selected); }
+.strategy label:has(input:checked)::after { content: 'on'; visibility: visible; color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.strategy label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
 .bottom-buttons .button, .toggles .switch { flex: 1; }
 .toggles { gap: 6px; }
 .switch { display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left; }

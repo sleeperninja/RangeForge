@@ -73,24 +73,19 @@
         <label id="downmixRow">Downmix <select id="downmix" title="How the channels that go away are treated: Standard folds the centre and surrounds in at -3 dB and drops the LFE; Standard + bass adds the LFE; Front pair only uses left and right as they were mixed"></select></label>
       </div>
 
-      <div class="block preset-block">
-        <h3>Format Presets</h3>
-        <ul id="presetList" class="preset-list" role="listbox"></ul>
-        <div class="preset-buttons">
-          <button id="deletePreset" class="button" type="button">Delete Preset</button>
-          <button id="savePreset" class="button" type="button">Save Preset</button>
-        </div>
-      </div>
-
       <div class="block volume-block">
         <h3>Volume Adjustment</h3>
         <div class="row">
           <span class="label">Target Loudness</span>
-          <input id="target" class="number" type="number" step="0.5" min="-60" max="0">
+          <div class="combo">
+            <input id="target" class="number" type="text" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Target loudness" title="Type a number (the minus sign is added for you) or pick a common one">
+            <button id="targetMenu" class="combo-button" type="button" aria-label="Common targets" tabindex="-1">&#9662;</button>
+            <ul id="targetList" class="combo-list hidden" role="listbox"></ul>
+          </div>
           <span class="suffix">LUFS</span>
         </div>
         <div class="row">
-          <label class="check"><input id="peakProtection" type="checkbox"> Peak Protection</label>
+          <button id="peakProtection" class="button switch" type="button" aria-pressed="false" title="Never boost a song past the ceiling"><span>Peak Protection</span><span class="state">off</span></button>
           <input id="ceiling" class="number" type="number" step="0.1" min="-6" max="0">
           <span class="suffix">dBTP</span>
         </div>
@@ -117,6 +112,15 @@
 
           <div class="row"><label class="check"><input id="deleteOriginal" type="checkbox"> Delete original after conversion</label></div>
           <p id="strategyProblem" class="problem hidden"></p>
+        </div>
+      </div>
+
+      <div class="block preset-block">
+        <h3>Format Presets</h3>
+        <ul id="presetList" class="preset-list" role="listbox"></ul>
+        <div class="preset-buttons">
+          <button id="deletePreset" class="button" type="button">Delete Preset</button>
+          <button id="savePreset" class="button" type="button">Save Preset</button>
         </div>
       </div>
     </section>

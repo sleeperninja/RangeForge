@@ -1,6 +1,6 @@
 # RangeForge manual
 
-*For version 0.6.8. This is the plain-words manual: how to use the program, and how it decides things. Questions people ask often are in [FAQ.md](FAQ.md). What is planned is in [ROADMAP.md](ROADMAP.md).*
+*For version 0.6.9. This is the plain-words manual: how to use the program, and how it decides things. Questions people ask often are in [FAQ.md](FAQ.md). What is planned is in [ROADMAP.md](ROADMAP.md).*
 
 ---
 
@@ -48,9 +48,9 @@ Click a song to pick it, Ctrl-click to add or drop one, Shift-click for a range.
 
 **Output Format.** What the new files will be: **Codec**, **Container**, **Sample Rate**, **Bit Depth**, **Bitrate**, **Compression**, **Channels** and **Downmix**. "Source" means "keep what the file has". A control that does nothing for the combination you chose stays in place, shows nothing, and is dimmed.
 
-**Format Presets.** Saved sets of output and volume settings. Pick one to fill them in; **Save Preset** keeps what you have now under a name.
+**Format Presets** (the last column). Saved sets of output, volume and File Strategy settings. Pick one to fill them in; **Save Preset** keeps what you have now under a name, including where the files go and what happens to a name that is taken. So a preset can mean "write 32-bit float WAV into a `_WAV32` subfolder" or "write ALAC over the originals and delete them". The built-in presets have no File Strategy, and choosing one leaves yours alone. Choosing a preset that deletes originals still asks first when you press Run.
 
-**Volume Adjustment.** **Target Loudness** (for example −22 LUFS), and **Peak Protection** with its ceiling (−0.6 dBTP to start with). Under them is a key to the colours in the Adjust column: **green** means the new peak goes above 0 dB and 32-bit float WAV keeps it; **yellow** means the volume increase was limited to prevent clipping; **red** means the song will clip, because protection is off and the format cannot hold the peak.
+**Volume Adjustment.** **Target Loudness** (for example −22 LUFS; type a number, or open the drop-down for common ones such as −16, −18, −22 and the broadcast standards; a positive number you type is made negative when you leave the box), and **Peak Protection** (a switch, with its ceiling beside it (−0.6 dBTP to start with)). Under them is a key to the colours in the Adjust column: **green** means the new peak goes above 0 dB and 32-bit float WAV keeps it; **yellow** means the volume increase was limited to prevent clipping; **red** means the song will clip, because protection is off and the format cannot hold the peak.
 
 **File Strategy.** Where the files go, what to do when a name is taken, and whether to delete the original. See *What happens when you press Run*.
 
