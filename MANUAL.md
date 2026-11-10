@@ -1,6 +1,6 @@
 # RangeForge manual
 
-*For version 0.6.6. This is the plain-words manual: how to use the program, and how it decides things. Questions people ask often are in [FAQ.md](FAQ.md). What is planned is in [ROADMAP.md](ROADMAP.md).*
+*For version 0.6.7. This is the plain-words manual: how to use the program, and how it decides things. Questions people ask often are in [FAQ.md](FAQ.md). What is planned is in [ROADMAP.md](ROADMAP.md).*
 
 ---
 
@@ -17,7 +17,7 @@ RangeForge changes how loud each song is, and nothing else about the music. It n
 ## Quick start
 
 1. **Drop** files, folders or CUE sheets onto the window (or use **Add files…** / **Add folder…**). Each album is measured once. A folder is searched down a few levels, and the folder you write into is skipped, so what you already wrote is not added again.
-2. **Look** at the table. **Loudness** is how loud a song is now, **Adjust** is what RangeForge would do to reach your target, and a `*` means the song ran out of headroom and stays a little quieter than the target.
+2. **Look** at the table. **Loudness** is how loud a song is now, **Adjust** is what RangeForge would do to reach your target, and a `*` with a colour means something about the song's peak (see *Volume Adjustment* below).
 3. **Choose** a target volume, an output format, and where the files go. Changing the target updates the table instantly.
 4. **Fix names** if needed: right-click a song or album and choose **Album & track names…**.
 5. **Run.** Your originals stay as they were, unless you chose to delete them.
@@ -44,17 +44,17 @@ Click a song to pick it, Ctrl-click to add or drop one, Shift-click for a range.
 
 ### The controls
 
-**Run area (left).** **Run (n)** writes the files; the number is your selection, or everything if nothing is picked. Under it are **Clear completed** (removes the albums that have been written) and **Clear all**. Further down: **Metadata API** (turns online lookups on; it starts off), **Show Logs**, **Settings** and **About**.
+**Run area (left).** **Run (n)** writes the files; the number is your selection, or everything if nothing is picked. Under it are **Clear completed** (removes the albums that have been written) and **Clear all**. Further down: **Show Logs**, and **Settings** and **About** side by side.
 
 **Output Format.** What the new files will be: **Codec**, **Container**, **Sample Rate**, **Bit Depth**, **Bitrate**, **Compression**, **Channels** and **Downmix**. "Source" means "keep what the file has". A control that does nothing for the combination you chose stays in place, shows nothing, and is dimmed.
 
 **Format Presets.** Saved sets of output and volume settings. Pick one to fill them in; **Save Preset** keeps what you have now under a name.
 
-**Volume Adjustment.** **Target Loudness** (for example −22 LUFS), and **Peak Protection** with its ceiling (−0.6 dBTP to start with).
+**Volume Adjustment.** **Target Loudness** (for example −22 LUFS), and **Peak Protection** with its ceiling (−0.6 dBTP to start with). Under them is a key to the colours in the Adjust column: **green** means the new peak goes above 0 dB and 32-bit float WAV keeps it; **yellow** means the volume increase was limited to prevent clipping; **red** means the song will clip, because protection is off and the format cannot hold the peak.
 
 **File Strategy.** Where the files go, what to do when a name is taken, and whether to delete the original. See *What happens when you press Run*.
 
-**Settings** has the file name patterns, the Last.fm key, and the DSD fallback. **About** has the version, the manual, the downloads page and the Ko-fi link.
+**Settings** has the file name patterns, the DSD fallback, the **Metadata API** switch (online lookups, off to start with) and the Last.fm key. **About** has the version, the manual, the downloads page and the Ko-fi link.
 
 ---
 
@@ -155,7 +155,7 @@ It splits, measures, plans, tags and names as well as it can from what it has, a
 
 ## Genres and tags
 
-Everything online starts **off**. Turn on **Metadata API** (left of the controls) to let RangeForge look things up.
+Everything online starts **off**. Turn on **Metadata API** (in Settings) to let RangeForge look things up.
 
 - **Radio tag:** a blue tag on songs that charted on the Billboard Hot 100. It needs no key. RangeForge keeps a local copy of the chart history and only downloads it again when a newer one exists.
 - **Last.fm album genres:** need a Last.fm key. RangeForge does not come with one, and does not use anyone else's. Getting your own is free: create one for an app on Last.fm (**Settings** has a link), paste it into **Settings**, and tick **Use Last.fm**. The key is kept in the computer's own credential store, never in a file. Tags are filtered to the useful ones (opinions, habits, places, decades and the artist's name are dropped), up to three per album, and each album is asked about once and remembered for weeks.

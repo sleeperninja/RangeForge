@@ -71,7 +71,7 @@ Yes. It was checked on real hi-res music against a very-high-precision reference
 ## Names, tags and the internet
 
 **Does it go online by itself?**
-No. Everything online starts off. Turn on **Metadata API** to let it look things up.
+No. Everything online starts off. Turn on **Metadata API** in Settings to let it look things up.
 
 **What is the blue "Radio" tag?**
 It marks songs that charted on the Billboard Hot 100. It needs no key. RangeForge keeps a local copy of the chart history and downloads it again only when a newer one exists.

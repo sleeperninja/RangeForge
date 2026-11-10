@@ -36,6 +36,11 @@ pub struct TrackView {
     pub adjust_db: Option<f64>,
     /// Peak protection held the gain back, so the song stays below the target.
     pub limited: bool,
+    /// What the new peak does, for the colour of the Adjust cell: `""` (nothing to flag),
+    /// `kept` (above full scale, and the output can hold it), `limited` (peak protection held
+    /// the gain back) or `clips` (above full scale, protection is off, and the output cannot
+    /// hold it).
+    pub peak: &'static str,
     /// The song is measured but cannot be adjusted, such as silence.
     pub unadjustable: bool,
     /// Its output file has been written.
@@ -337,6 +342,22 @@ fn track_view(
         Some(Err(_)) => (None, false, true),
         None => (None, false, false),
     };
+    let over_full_scale = match (
+        track.measurement.and_then(|m| finite(m.true_peak_dbtp)),
+        adjust_db,
+    ) {
+        (Some(peak), Some(gain)) => peak + gain > 0.005,
+        _ => false,
+    };
+    let peak = if app.output.format().keeps_overs() {
+        if over_full_scale { "kept" } else { "" }
+    } else if limited {
+        "limited"
+    } else if over_full_scale && !app.settings.peak_protection {
+        "clips"
+    } else {
+        ""
+    };
     let output_name = app.output_stem(group_index, group, track_index, track);
     let output_guessed = output_name.is_some()
         && track
@@ -352,6 +373,7 @@ fn track_view(
         range_lu: track.measurement.and_then(|m| finite(m.loudness_range_lu)),
         adjust_db,
         limited,
+        peak,
         unadjustable,
         saved: track.saved,
         included: track.included,
@@ -684,6 +706,24 @@ mod tests {
         assert!(rain.limited);
         assert!((rain.adjust_db.unwrap() - 1.31).abs() < 1e-9);
         assert!(snapshot.any_limited);
+    }
+
+    #[test]
+    fn the_adjust_cell_says_what_the_new_peak_does() {
+        let mut app = sample_app();
+        // Target -16: the Rain Song is held back; nothing is flagged red or green.
+        app.set_target(-16.0);
+        let rain = |app: &App| app.snapshot().groups[0].tracks[1].peak;
+        assert_eq!(rain(&app), "limited");
+        // Protection off: it gets its full +4.66 dB, which puts the peak over full scale.
+        app.set_peak_protection(false);
+        assert_eq!(rain(&app), "clips");
+        // 32-bit float WAV keeps the overs: green, and protection is not involved.
+        app.set_codec(Codec::Wav).unwrap();
+        app.set_bit_depth(BitDepth::Float32).unwrap();
+        assert_eq!(rain(&app), "kept");
+        app.set_peak_protection(true);
+        assert_eq!(rain(&app), "kept");
     }
 
     #[test]

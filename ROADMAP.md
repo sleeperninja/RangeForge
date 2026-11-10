@@ -1,6 +1,6 @@
 # RangeForge Roadmap
 
-*What works, what's next, and what we've set aside. Updated 9 Nov 2026, at version 0.6.6.*
+*What works, what's next, and what we've set aside. Updated 9 Nov 2026, at version 0.6.7.*
 
 How to use the program, and how it decides things, is in the [manual](MANUAL.md). Common questions are in the [FAQ](FAQ.md).
 
@@ -36,7 +36,7 @@ These need a person with the window open:
    - Clear completed / Clear all under the Run button, the About window and its links, the Last.fm key link in Settings
 2. **Run it on real music:** a CUE album, vinyl-download singles, a 5.1 FLAC, a DSD file. Play the results in two players, and check tags and track numbers.
 3. **Build the installers on GitHub** (set up, never run), and install on a clean Windows machine. macOS and Linux are untested.
-4. **Add a licence file** and decide how the source is licensed.
+4. ~~Add a licence file~~ Done: MIT, in [LICENSE](LICENSE).
 5. **Attach the manual as a PDF** to each release (the About window already links to the downloads page).
 
 ---

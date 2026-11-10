@@ -33,9 +33,16 @@
     if (track.adjust_db === null || track.adjust_db === undefined) {
       return '<td class="num adjust">-</td>';
     }
-    const star = track.limited ? '*' : '';
-    const cls = track.limited ? 'num adjust limited' : 'num adjust';
-    const title = track.limited ? ' title="Peak protection held this song back from the target"' : '';
+    // `peak` says what the new peak does; older data only has `limited`.
+    const peak = track.peak !== undefined ? track.peak : track.limited ? 'limited' : '';
+    const titles = {
+      kept: 'Above 0 dB, and kept: 32-bit float WAV holds it',
+      limited: 'Peak protection held this song back from the target',
+      clips: 'Peak protection is off: this song will clip',
+    };
+    const star = peak ? '*' : '';
+    const cls = peak ? `num adjust peak-${peak}` : 'num adjust';
+    const title = peak ? ` title="${titles[peak]}"` : '';
     return `<td class="${cls}"${title}>${signed(track.adjust_db, 2)}${star}</td>`;
   }
 

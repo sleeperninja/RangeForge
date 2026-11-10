@@ -15,6 +15,10 @@
   --input-off: #e8ecee;
   --limited-bg: #fff3b8;
   --limited-ink: #6b5200;
+  --kept-bg: #cdeccf;
+  --kept-ink: #14572a;
+  --clips-bg: #f8c9c4;
+  --clips-ink: #8c1d14;
   --error: #b3261e;
   --saved: #1d7a3a;
   --selected: #cfe9ec;
@@ -38,6 +42,10 @@
     --input-off: #232b2e;
     --limited-bg: #4a3d0a;
     --limited-ink: #ffd95a;
+    --kept-bg: #17402a;
+    --kept-ink: #8be0a4;
+    --clips-bg: #5a1c18;
+    --clips-ink: #ffaaa2;
     --error: #ff8a80;
     --saved: #6fd08a;
     --selected: #234a50;
@@ -140,7 +148,13 @@ tr.track.excluded td { opacity: 0.45; }
 tr.track:hover td { background: var(--selected); }
 input.include { margin: 0 6px 0 2px; vertical-align: middle; }
 tr.track td.name { padding-left: 22px; }
-td.adjust.limited { color: var(--limited-ink); background: var(--limited-bg); }
+td.adjust.peak-limited, .peak-key .swatch.peak-limited { color: var(--limited-ink); background: var(--limited-bg); }
+td.adjust.peak-kept, .peak-key .swatch.peak-kept { color: var(--kept-ink); background: var(--kept-bg); }
+td.adjust.peak-clips, .peak-key .swatch.peak-clips { color: var(--clips-ink); background: var(--clips-bg); }
+.peak-key { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; font-size: 11px; color: var(--muted); }
+.peak-key .item { display: flex; align-items: center; gap: 8px; }
+.peak-key .swatch { flex: 0 0 64px; text-align: center; padding: 2px 0; font-variant-numeric: tabular-nums; font-size: 12px; }
+
 td.status { font-weight: 400; color: var(--muted); }
 td.status.saved { color: var(--saved); }
 tr.message.error td { color: var(--error); text-align: left; }
@@ -176,7 +190,7 @@ tr.message.error td { color: var(--error); text-align: left; }
 .clear-buttons .button { flex: 1; padding-left: 4px; padding-right: 4px; }
 .spacer { flex: 1; }
 .toggles { display: flex; flex-direction: column; gap: 2px; }
-.toggles .button { align-self: flex-start; }
+.bottom-buttons { display: flex; gap: 6px; }
 .about-links { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
 dialog a { color: var(--accent); }
 .toggle.disabled { color: var(--muted); }
