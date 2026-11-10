@@ -472,9 +472,12 @@ impl OutputFormat {
     }
 
     /// True when the file can hold sound above full scale, so there is nothing to protect:
-    /// 32-bit float WAV (decision D-41).
+    /// 32-bit float WAV (decision D-41) and MP3 (D-52). MP3's encoder takes floating-point
+    /// sound and keeps the peaks in the file (measured: +3.7 dB). AAC and Opus do too, but
+    /// AAC keeps noticeably less, so they are not treated this way.
     pub fn keeps_overs(self) -> bool {
-        self.codec == Codec::Wav && self.bit_depth == BitDepth::Float32
+        (self.codec == Codec::Wav && self.bit_depth == BitDepth::Float32)
+            || self.codec == Codec::Mp3
     }
 
     /// The bit depth actually written (16 or 24), given what the source reports. A source with

@@ -198,7 +198,7 @@
     }
 
     setValue($('target'), s.volume.target_lufs.toFixed(1));
-    // 32-bit float needs no protection: the box shows unticked and dimmed, with the setting kept.
+    // 32-bit float WAV and MP3 need no protection: the box shows unticked and dimmed, with the setting kept.
     const protects = s.volume.protection_applies;
     setSwitch($('peakProtection'), protects && s.volume.peak_protection);
     $('peakProtection').disabled = !protects;

@@ -36,7 +36,7 @@
     // `peak` says what the new peak does; older data only has `limited`.
     const peak = track.peak !== undefined ? track.peak : track.limited ? 'limited' : '';
     const titles = {
-      kept: 'Above 0 dB, and kept: 32-bit float WAV holds it',
+      kept: 'Above 0 dB, and kept: 32-bit float WAV and MP3 hold it',
       limited: 'Peak protection held this song back from the target',
       clips: 'Peak protection is off: this song will clip',
     };

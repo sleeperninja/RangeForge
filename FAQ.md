@@ -37,14 +37,14 @@ No. It applies one gain to each song (a single volume change) and stops short of
 Its loudest moment would have gone over your peak ceiling if it were raised any more. The ceiling wins, so the song stays a little quieter. That is the setting doing its job. If you do not mind the risk, turn Peak Protection off.
 
 **What happens to peaks above 0 dB when Peak Protection is off?**
-It depends on the format. 16-bit and 24-bit WAV, FLAC and ALAC clip them flat. **32-bit float WAV keeps them exactly**, so you can lower the volume later and find them intact. MP3, AAC and Opus hold them in the file, but many players clip them on playback. When 32-bit float WAV is chosen, Peak Protection switches itself off for that output, since there is nothing to protect. The manual has the details.
+It depends on the format. 16-bit and 24-bit WAV, FLAC and ALAC clip them flat. **32-bit float WAV keeps them exactly**, so you can lower the volume later and find them intact. MP3 keeps them too, about as well as the float WAV in our listening tests. AAC and Opus hold some in the file, but many players clip them on playback. When 32-bit float WAV or MP3 is chosen, Peak Protection switches itself off for that output, since there is nothing to protect. The manual has the details.
 
 ## Formats
 
 **Which format should I choose?**
 - **ALAC:** the main choice for an iTunes or Apple library.
 - **FLAC:** for surround, for Plex, and for archives. Compression 0 to 8 only changes size and time, never the sound.
-- **WAV:** for editing. 32-bit float WAV is the one that can keep peaks above 0 dB.
+- **WAV:** for editing. 32-bit float WAV keeps peaks above 0 dB exactly. MP3 keeps them too, in a much smaller file.
 - **AAC, MP3, Opus:** lossy, for small files. They throw away a lot of data permanently. Prefer ALAC or FLAC when you can.
 
 **What do V0 to V4 mean for MP3?**

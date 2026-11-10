@@ -731,6 +731,13 @@ mod tests {
         assert_eq!(rain(&app), "kept");
         app.set_peak_protection(true);
         assert_eq!(rain(&app), "kept");
+        // MP3 is treated the same way (D-52); AAC is not.
+        app.set_codec(Codec::Mp3).unwrap();
+        assert_eq!(rain(&app), "kept");
+        assert!(!app.snapshot().volume.protection_applies);
+        app.set_codec(Codec::Aac).unwrap();
+        assert!(app.snapshot().volume.protection_applies);
+        assert_eq!(rain(&app), "limited");
     }
 
     #[test]
