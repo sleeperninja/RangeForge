@@ -192,9 +192,10 @@
     fillSelect($('bitDepth'), lossy ? nothing : s.options.bit_depths, lossy ? '' : s.output.bit_depth);
     $('bitDepth').disabled = lossy;
     $('sampleRate').disabled = s.options.sample_rates.length === 1;
-    fillSelect($('dsdSampleRate'), s.options.dsd_sample_rates, s.dsd.sample_rate);
-    fillSelect($('dsdBitDepth'), s.options.dsd_bit_depths, s.dsd.bit_depth);
-    $('confirmFirst').checked = s.strategy.confirm_first;
+    // The Settings window holds a draft until Save, so a refresh must not overwrite it.
+    if (!$('settingsDialog').open) {
+      fillSettingsControls(s);
+    }
 
     setValue($('target'), s.volume.target_lufs.toFixed(1));
     // 32-bit float needs no protection: the box shows unticked and dimmed, with the setting kept.
@@ -219,13 +220,6 @@
     setValue($('numberSuffix'), s.strategy.number_suffix);
     setValue($('oldSuffix'), s.strategy.old_suffix);
     $('deleteOriginal').checked = s.strategy.delete_original;
-    $('metadataToggle').checked = s.metadata.enabled;
-    $('lastfmEnabled').checked = s.metadata.lastfm_enabled;
-    $('radioEnabled').checked = s.metadata.radio_enabled;
-    setValue($('radioTag'), s.metadata.radio_tag);
-    setValue($('radioThreshold'), s.metadata.radio_threshold);
-    $('radioTag').disabled = !s.metadata.radio_enabled;
-    $('radioThreshold').disabled = !s.metadata.radio_enabled;
     $('lastfmStatus').textContent = Render.lastfmStatusText(s.metadata);
     $('lastfmForget').disabled = s.metadata.lastfm_key !== 'saved';
     const problem = $('strategyProblem');
@@ -374,10 +368,25 @@
     }, 120);
   }
 
+  // Puts what the program has into the Settings window's controls (its draft).
+  function fillSettingsControls(s) {
+    fillSelect($('dsdSampleRate'), s.options.dsd_sample_rates, s.dsd.sample_rate);
+    fillSelect($('dsdBitDepth'), s.options.dsd_bit_depths, s.dsd.bit_depth);
+    $('confirmFirst').checked = s.strategy.confirm_first;
+    $('metadataToggle').checked = s.metadata.enabled;
+    $('lastfmEnabled').checked = s.metadata.lastfm_enabled;
+    $('radioEnabled').checked = s.metadata.radio_enabled;
+    $('radioTag').value = s.metadata.radio_tag;
+    $('radioThreshold').value = s.metadata.radio_threshold;
+    $('radioTag').disabled = !s.metadata.radio_enabled;
+    $('radioThreshold').disabled = !s.metadata.radio_enabled;
+  }
+
   function openSettings() {
     if (!state) {
       return;
     }
+    fillSettingsControls(state);
     $('nameAlbum').value = state.naming.album;
     $('nameSingle').value = state.naming.single;
     $('variableList').innerHTML = Render.variablesHtml(state.naming.variables);
@@ -386,15 +395,41 @@
     $('settingsDialog').showModal();
   }
 
+  // Save applies everything in the window except the API key buttons, which act at once.
   async function saveSettings() {
     const reply = await call('set_naming', {
       album: $('nameAlbum').value,
       single: $('nameSingle').value,
     });
     // A refusal stays on screen as the toast; the dialog stays open to be fixed.
-    if (!reply || !reply.error) {
-      $('settingsDialog').close();
+    if (reply && reply.error) {
+      return;
     }
+    const s = state;
+    const jobs = [];
+    const change = (changed, command, args) => {
+      if (changed) jobs.push([command, args]);
+    };
+    // The lookup switch goes first, so the Hot 100 tag is judged with it in place.
+    change($('metadataToggle').checked !== s.metadata.enabled, 'set_metadata', { on: $('metadataToggle').checked });
+    change($('lastfmEnabled').checked !== s.metadata.lastfm_enabled, 'set_lastfm_enabled', { on: $('lastfmEnabled').checked });
+    change($('radioEnabled').checked !== s.metadata.radio_enabled, 'set_radio_enabled', { on: $('radioEnabled').checked });
+    change($('radioTag').value !== s.metadata.radio_tag, 'set_radio_tag', { text: $('radioTag').value });
+    const position = Number($('radioThreshold').value);
+    change(
+      $('radioThreshold').value.trim() !== '' && Number.isFinite(position) && position !== s.metadata.radio_threshold,
+      'set_radio_threshold',
+      { value: position },
+    );
+    change($('dsdSampleRate').value !== s.dsd.sample_rate, 'set_dsd_format', { field: 'sample_rate', id: $('dsdSampleRate').value });
+    change($('dsdBitDepth').value !== s.dsd.bit_depth, 'set_dsd_format', { field: 'bit_depth', id: $('dsdBitDepth').value });
+    change($('confirmFirst').checked !== s.strategy.confirm_first, 'set_confirm_destructive', { on: $('confirmFirst').checked });
+    for (const [command, args] of jobs) {
+      await call(command, args);
+    }
+    $('settingsDialog').close();
+    // The window's controls were skipped while the dialog was open; show what the program now has.
+    draw();
   }
 
   function askForPresetName() {
@@ -695,15 +730,6 @@
     $('codec').addEventListener('change', (e) => call('set_codec', { id: e.target.value }));
     $('bitDepth').addEventListener('change', (e) => call('set_bit_depth', { id: e.target.value }));
     $('container').addEventListener('change', (e) => call('set_container', { id: e.target.value }));
-    for (const [id, field] of [
-      ['dsdSampleRate', 'sample_rate'],
-      ['dsdBitDepth', 'bit_depth'],
-    ]) {
-      $(id).addEventListener('change', (e) => call('set_dsd_format', { field, id: e.target.value }));
-    }
-    $('confirmFirst').addEventListener('change', (e) =>
-      call('set_confirm_destructive', { on: e.target.checked }),
-    );
     $('sampleRate').addEventListener('change', (e) => call('set_sample_rate', { id: e.target.value }));
     $('bitrate').addEventListener('change', (e) => call('set_bitrate', { id: e.target.value }));
     $('flacLevel').addEventListener('change', (e) => call('set_flac_level', { id: e.target.value }));
@@ -748,18 +774,11 @@
       }
     });
 
-    $('radioEnabled').addEventListener('change', (e) => call('set_radio_enabled', { on: e.target.checked }));
-    onEdited($('radioTag'), (text) => call('set_radio_tag', { text }));
-    onEdited($('radioThreshold'), (text, leaving) => {
-      const value = Number(text);
-      if (text.trim() !== '' && Number.isFinite(value)) {
-        call('set_radio_threshold', { value });
-      } else if (leaving) {
-        call('get_state');
-      }
+    // The Settings switches only change the window's draft; Save applies them.
+    $('radioEnabled').addEventListener('change', (e) => {
+      $('radioTag').disabled = !e.target.checked;
+      $('radioThreshold').disabled = !e.target.checked;
     });
-    $('metadataToggle').addEventListener('change', (e) => call('set_metadata', { on: e.target.checked }));
-    $('lastfmEnabled').addEventListener('change', (e) => call('set_lastfm_enabled', { on: e.target.checked }));
     $('lastfmSave').addEventListener('click', async () => {
       const key = $('lastfmKey').value.trim();
       if (!key) {

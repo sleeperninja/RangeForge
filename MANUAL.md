@@ -1,6 +1,6 @@
 # RangeForge manual
 
-*For version 0.6.11. This is the plain-words manual: how to use the program, and how it decides things. Questions people ask often are in [FAQ.md](FAQ.md). What is planned is in [ROADMAP.md](ROADMAP.md).*
+*For version 0.6.12. This is the plain-words manual: how to use the program, and how it decides things. Questions people ask often are in [FAQ.md](FAQ.md). What is planned is in [ROADMAP.md](ROADMAP.md).*
 
 ---
 
@@ -54,7 +54,7 @@ Click a song to pick it, Ctrl-click to add or drop one, Shift-click for a range.
 
 **File Strategy.** Where the files go, what to do when a name is taken, and whether to delete the original. See *What happens when you press Run*.
 
-**Settings** has the file name patterns, the DSD fallback, the **Metadata API** switch (online lookups, off to start with) and the Last.fm key. **About** has the version, the manual, the downloads page and the Ko-fi link.
+**Settings** has the file name patterns, the DSD fallback, the **Metadata API** switch (online lookups, off to start with) and the Last.fm key. **About** has the version, the manual, the downloads page and the Ko-fi link. Changes in Settings take effect when you press **Save**; **Cancel** drops them. Only the Last.fm key buttons (Save key, Forget) and Clear saved answers act at once.
 
 ---
 
