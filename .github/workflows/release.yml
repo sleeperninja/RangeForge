@@ -1,8 +1,8 @@
 name: Release
 
 # Builds the installers: an MSI for Windows, and a DMG holding RangeForge.app for macOS.
-# Runs when something is merged into main, and puts the installers on a draft pre-release named
-# after the version in Cargo.toml (so raise the version before merging). It can also be started by
+# Runs when something is merged into main, and puts the installers on a draft release (a pre-release while the version starts
+# with 0) named after the version in Cargo.toml (so raise the version before merging). It can also be started by
 # hand from the Actions tab, which builds the installers without making a release.
 on:
   push:
@@ -108,7 +108,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Read the version
         id: version
-        run: echo "tag=v$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
+        run: |
+          version="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          # Everything before 1.0 is a pre-release.
+          case "$version" in 0.*) echo "pre=true" >> "$GITHUB_OUTPUT" ;; *) echo "pre=false" >> "$GITHUB_OUTPUT" ;; esac
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -118,7 +122,6 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           target_commitish: ${{ github.sha }}
           draft: true
-          # Everything before 1.0 is a pre-release.
-          prerelease: true
+          prerelease: ${{ steps.version.outputs.pre }}
           generate_release_notes: true
           files: dist/*

@@ -1,6 +1,6 @@
 # RangeForge Roadmap
 
-*What works, what's next, and what we've set aside. Updated 9 Nov 2026, at version 0.6.13.*
+*What works, what's next, and what we've set aside. Updated 10 Nov 2026, at version 1.0.0.*
 
 How to use the program, and how it decides things, is in the [manual](MANUAL.md). Common questions are in the [FAQ](FAQ.md).
 
@@ -14,7 +14,7 @@ RangeForge does its main job today. Drop in an album or a pile of files, and it 
 
 - **Measure once, show a table.** Loudness, true peak and range, cached on disk so dropping the same album again is instant. Changing the target updates the table straight away.
 - **Split CUE albums** into songs, and write **ALAC, FLAC, WAV, AAC, MP3 or Opus** (plus DSD, converted through FFmpeg). Bitrate pickers for the lossy ones (MP3 includes V0 to V4), FLAC compression 0 to 8, and 32-bit float WAV.
-- **One gain per song, nothing else.** No compression or limiting, and never past the true-peak ceiling. With 32-bit float WAV, peaks above 0 dB are kept.
+- **One gain per song, nothing else.** No compression or limiting, and never past the true-peak ceiling. With 32-bit float WAV and MP3, peaks above 0 dB are kept.
 - **Convert the sound** when you ask: sample rate, bit depth (with dither), and channels (Quad, Stereo or Mono, with three downmix styles), always measured on the sound that is actually written.
 - **File Strategy:** next to the original, in a subfolder you name (`_forged` to start), or all in one folder. Numbering, renaming the old file, or overwriting when a name is taken, and optionally deleting the original once everything is safely written.
 - **Names from patterns,** for CUE tracks and single files. **Album & track names…** fixes the artist, album and each title in one dialog, from the album's track list on Last.fm or pasted from a store page. It copes with long vinyl-download names, and shows its guesses in italics.
@@ -29,7 +29,7 @@ RangeForge does its main job today. Drop in an album or a pile of files, and it 
 These need a person with the window open:
 
 1. **Click through the newest build.** Everything below is covered by tests, but nobody has used it by hand yet:
-   - every codec in the Output Format panel: Bitrate, Compression, Bit Depth and Sample Rate go empty and dimmed when they do nothing; Opus shows 48 kHz; 32-bit float appears for WAV only and Peak Protection dims with it
+   - every codec in the Output Format panel: Bitrate, Compression, Bit Depth and Sample Rate go empty and dimmed when they do nothing; Opus shows 48 kHz; 32-bit float appears for WAV only, and Peak Protection dims with it (and with MP3)
    - Channels and Downmix on a real 5.1 album; Quad refused for ALAC and MP3; MP3 with 5.1 refuses and says why
    - File Strategy labels fit, the `_forged` default, and settings survive closing mid-edit
    - Album & track names, song tags page and Add a tag

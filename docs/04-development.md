@@ -162,7 +162,7 @@ Also planned: `cargo deny` (licences, advisories), `criterion` benchmarks, and a
 
 ## Releases
 
-Installers are built by the **Release** workflow (`.github/workflows/release.yml`). It runs when something is merged into `main`, and puts the installers on a draft pre-release named after the version in `Cargo.toml` (so raise the version before merging). Start it by hand from the Actions tab to build without making a release. It makes:
+Installers are built by the **Release** workflow (`.github/workflows/release.yml`). It runs when something is merged into `main`, and puts the installers on a draft release (a pre-release while the version starts with 0) named after the version in `Cargo.toml` (so raise the version before merging). Start it by hand from the Actions tab to build without making a release. It makes:
 
 | Platform | What you get |
 | --- | --- |
@@ -188,4 +188,4 @@ The extra `--config` file is what adds FFmpeg and the notices, so an ordinary `c
 
 - API keys go in the app's Settings (stored encrypted) or a git-ignored `.env`.
 - Never in docs, code, screenshots or mockups.
-- **A Last.fm key and secret were committed in the old `PROJECT_PLAN.md`.** They are no longer in the tree but remain in git history (commit `01c53ea` and earlier). Rotate them on the Last.fm account.
+- **A Last.fm key and secret were committed in the old `PROJECT_PLAN.md`.** They are no longer in the tree but remain in git history (commit `01c53ea` and earlier). They were revoked on the Last.fm account on 2026-11-10 and replaced with a new set, so what remains in history opens nothing. History was not rewritten.

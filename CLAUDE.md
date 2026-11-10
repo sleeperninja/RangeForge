@@ -13,7 +13,7 @@ It replaces about seven tools (MediaHuman, an FFmpeg GUI, Adobe Audition, a Powe
 
 ## Where things stand
 
-- The project is **rebuilt in Rust** (the old Electron/React version is in git history, commit `01c53ea`). It is **free to use**, with an optional Ko-fi link in the About window (D-42). Pre-1.0, version in `Cargo.toml`.
+- The project is **rebuilt in Rust** (the old Electron/React version is in git history, commit `01c53ea`). It is **free to use**, with an optional Ko-fi link in the About window (D-42). Version 1.0.0 (D-53), in `Cargo.toml`.
 - The UI mockups in `docs/mockups/` are the source of truth for how the app looks and behaves.
 - Built: measure once, CUE splitting, ALAC/FLAC/WAV(+32-bit float)/AAC/MP3/Opus output, conversions (rate, depth, channel mix), File Strategy, presets, names and tags, Last.fm album genres, Radio tag, About window. Not yet done: a hand click-through of the newest window, the first CI installer build, a licence file. The list is in [ROADMAP.md](ROADMAP.md) under *Before the first release*.
 
