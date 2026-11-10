@@ -19,7 +19,7 @@ It is free to use. If it saves you time, you can support me on Ko-fi: [ko-fi.com
 - [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md): FFmpeg, LAME, Opus and the other libraries inside.
 - [LICENSE](LICENSE): RangeForge is MIT licensed.
 
-RangeForge is version 0.6.9 and pre-1.0. Windows is the main target. Installers are built by the project's GitHub workflow and will appear on the [releases page](https://github.com/sleeperninja/RangeForge/releases) when the first release is published.
+RangeForge is version 0.6.10 and pre-1.0. Windows is the main target. Installers are built by the project's GitHub workflow and will appear on the [releases page](https://github.com/sleeperninja/RangeForge/releases) when the first release is published.
 
 ## Building it yourself
 

@@ -85,7 +85,7 @@
           <span class="suffix">LUFS</span>
         </div>
         <div class="row">
-          <button id="peakProtection" class="button switch" type="button" aria-pressed="false" title="Never boost a song past the ceiling"><span>Peak Protection</span><span class="state">off</span></button>
+          <button id="peakProtection" class="switch plain" type="button" aria-pressed="false" title="Never boost a song past the ceiling"><span class="state">off</span><span>Peak Protection</span></button>
           <input id="ceiling" class="number" type="number" step="0.1" min="-6" max="0">
           <span class="suffix">dBTP</span>
         </div>
@@ -100,15 +100,19 @@
         <h3>File Strategy</h3>
         <div class="strategy">
           <h4>Save to</h4>
+          <div class="choice-group">
           <div class="row"><label class="radio"><input type="radio" name="place" value="next"> Next to original</label></div>
           <div class="row"><label class="radio"><input type="radio" name="place" value="subfolder"> Subfolder of original folder</label><input id="subfolder" class="text" type="text" aria-label="Subfolder name"></div>
           <div class="row"><label class="radio"><input type="radio" name="place" value="folder"> All in one folder</label><button id="browse" class="button small" type="button">Browse</button></div>
           <input id="folder" class="text wide" type="text" placeholder="Choose a folder" aria-label="Folder">
+          </div>
 
           <h4>If a file is already there</h4>
+          <div class="choice-group">
           <div class="row"><label class="radio"><input type="radio" name="conflict" value="number"> Add number to new file</label><input id="numberSuffix" class="text" type="text" aria-label="Number suffix"></div>
           <div class="row"><label class="radio"><input type="radio" name="conflict" value="rename_existing"> Rename existing file</label><input id="oldSuffix" class="text" type="text" aria-label="Suffix for the renamed file"></div>
           <div class="row"><label class="radio"><input type="radio" name="conflict" value="overwrite"> Overwrite existing file</label></div>
+          </div>
 
           <div class="row"><label class="check"><input id="deleteOriginal" type="checkbox"> Delete original after conversion</label></div>
           <p id="strategyProblem" class="problem hidden"></p>

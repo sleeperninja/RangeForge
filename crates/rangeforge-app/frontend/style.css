@@ -202,15 +202,21 @@ tr.message.error td { color: var(--error); text-align: left; }
 .combo-list li span { color: var(--muted); }
 .combo-list li:hover, .combo-list li.current { background: var(--selected); }
 
-/* File Strategy choices look like the switches: a bordered row that lights up when chosen. */
-.strategy label.radio, .strategy label.check { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 10px; background: var(--button); border: 1px solid var(--button-edge); border-radius: 3px; cursor: pointer; }
-.strategy label.radio input, .strategy label.check input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
-.strategy label.radio::after, .strategy label.check::after { content: ''; font-size: 11px; color: var(--muted); border: 1px solid var(--button-edge); border-radius: 9px; padding: 0 8px; visibility: hidden; }
-.strategy label.radio::after { content: 'on'; }
-.strategy label.check::after { content: 'off'; visibility: visible; }
-.strategy label:hover { border-color: var(--accent); }
-.strategy label:has(input:checked) { border-color: var(--accent); background: var(--selected); }
-.strategy label:has(input:checked)::after { content: 'on'; visibility: visible; color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+/* A plain switch: the on/off pill to the left of its text, no box. */
+.switch.plain, .strategy label.check { display: flex; align-items: center; justify-content: flex-start; gap: 8px; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
+.switch.plain:hover:not(:disabled) { border: 0; }
+.switch.plain[aria-pressed="true"] { background: none; }
+.strategy label.check { position: relative; }
+.strategy label.check input, .strategy label.radio input { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+.strategy label.check::before { content: 'off'; font-size: 11px; color: var(--muted); border: 1px solid var(--button-edge); border-radius: 9px; padding: 0 8px; }
+.strategy label.check:has(input:checked)::before { content: 'on'; color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+
+/* The choices of a radio group sit in one outline; the chosen one shows an on pill after its text. */
+.choice-group { border: 1px solid var(--button-edge); border-radius: 4px; padding: 6px 8px 4px; margin-bottom: 8px; }
+.choice-group .row:last-child { margin-bottom: 0; }
+.strategy label.radio { position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 8px; cursor: pointer; }
+.strategy label.radio::after { content: 'on'; font-size: 11px; color: var(--accent-ink); background: var(--accent); border: 1px solid var(--accent); border-radius: 9px; padding: 0 8px; visibility: hidden; }
+.strategy label.radio:has(input:checked)::after { visibility: visible; }
 .strategy label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
 .bottom-buttons .button, .toggles .switch { flex: 1; }
 .toggles { gap: 6px; }
