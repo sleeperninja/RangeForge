@@ -22,7 +22,9 @@ No, not unless you tell it to. New files are written first, to hidden temporary 
 Making songs play at the same *perceived* loudness, without distorting them. It is based on loudness standards (LUFS), not on peak level.
 
 **Why not just "normalize"?**
-Peak normalization makes each song's loudest instant hit the same level, so two songs can still sound very different in volume. Loudness balancing targets how loud a song *sounds*.
+Peak normalization makes each song's loudest instant hit the same level, so two songs can still sound very different in volume. Loudness balancing targets how loud a song *sounds*. The loudest instant is only a limit RangeForge will not go past.
+
+> **>>> ATTENTION: IMAGE: the same two-waveform picture as in the manual (same peak, different loudness), if you add it there. <<<**
 
 **Does it change the dynamics of my music?**
 No. It applies one gain to each song (a single volume change) and stops short of your peak ceiling. It never compresses or limits the sound.
@@ -35,6 +37,11 @@ No. It applies one gain to each song (a single volume change) and stops short of
 
 **Why is a song quieter than my target, with a `*`?**
 Its loudest moment would have gone over your peak ceiling if it were raised any more. The ceiling wins, so the song stays a little quieter. That is the setting doing its job. If you do not mind the risk, turn Peak Protection off.
+
+**Why do MP3 and 32-bit float WAV turn Peak Protection off?**
+Because they can hold a sound louder than 0 dB without damaging it, so there is nothing to protect. 16-bit and 24-bit files, FLAC and ALAC cannot: they flatten anything above 0 dB, for good. MP3 got the same treatment as 32-bit float after listening tests showed it keeping its peaks about as well. Your own Peak Protection setting is not changed; it comes back when you pick another format.
+
+> **>>> ATTENTION: CONTEXT: this is the question people will ask most, because everywhere else "peaks over 0 dB" means "distortion." Consider linking the manual's DaVinci screenshots here. <<<**
 
 **What happens to peaks above 0 dB when Peak Protection is off?**
 It depends on the format. 16-bit and 24-bit WAV, FLAC and ALAC clip them flat. **32-bit float WAV keeps them exactly**, so you can lower the volume later and find them intact. MP3 keeps them too, about as well as the float WAV in our listening tests. AAC and Opus hold some in the file, but many players clip them on playback. When 32-bit float WAV or MP3 is chosen, Peak Protection switches itself off for that output, since there is nothing to protect. The manual has the details.
@@ -62,6 +69,9 @@ MP3 holds two channels. Set Channels to Stereo or Mono and it works.
 **Which surround downmix should I use?**
 **Standard** for most music. **Standard + bass** adds the LFE channel, which on some albums gives a slightly denser low end. **Front pair only** is for discs where the front left and right already are the stereo mix. There is no centre boost on purpose.
 
+**I chose "source" for a DSD file and got 88.2 kHz. Why?**
+DSD is not sampled like normal audio: it is a very fast stream of single bits, so it has no ordinary sample rate or bit depth to keep. "Source" falls back to the two values in Settings, 88.2 kHz and 24-bit to start with. Change them there if you want a different result.
+
 **What about DSD?**
 It is converted, because DSD cannot be written back out as it is. It is written in your Output Format. Only the sample rate (88.2 kHz to start with) and bit depth (24-bit) have a fallback in Settings, and each applies only where your Output Format says "source".
 
@@ -74,7 +84,10 @@ Yes. It was checked on real hi-res music against a very-high-precision reference
 No. Everything online starts off. Turn on **Metadata API** in Settings to let it look things up.
 
 **What is the blue "Radio" tag?**
-It marks songs that charted on the Billboard Hot 100. It needs no key. In Settings you can turn it off, rename it, or only tag songs that reached a position you choose (1 to 100; 100 means any song that charted). RangeForge keeps a local copy of the chart history and downloads it again only when a newer one exists.
+It marks songs that charted on the Billboard Hot 100 (it is called Radio because a song that charted was a song people heard on the radio). It needs no key. In Settings you can turn it off, rename it, or only tag songs that reached a position you choose (1 to 100; 100 means any song that charted). RangeForge keeps a local copy of the chart history and downloads it again only when a newer one exists.
+
+**Why do I need my own Last.fm key?**
+A key put inside a program can be copied by anyone, and Last.fm can then cancel it for everybody. Your own key is free, takes a minute, and is used only by you.
 
 **Do I need a Last.fm key?**
 Only for album genres from Last.fm. RangeForge does not come with a key. Getting your own is free (Settings has a link: create one for an app on Last.fm). The key stays on your computer, in its credential store.

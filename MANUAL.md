@@ -8,6 +8,8 @@
 
 You drop in albums and songs. RangeForge measures how loud each one is, **once**, and shows you what it would change. You pick a target volume and an output format. Then you press **Run**, and it splits CUE albums into songs, sets each song's volume, tags it, names it, and writes clean files. Nothing is written until you press Run.
 
+> **>>> ATTENTION: IMAGE: one screenshot of the whole window with a few songs loaded, the table showing, nothing run yet. This is the picture a new reader needs first. <<<**
+
 ### The one promise
 
 RangeForge changes how loud each song is, and nothing else about the music. It never squashes the dynamics, never limits the peaks, and never touches an original until every new file has been written safely.
@@ -21,6 +23,8 @@ RangeForge changes how loud each song is, and nothing else about the music. It n
 3. **Choose** a target volume, an output format, and where the files go. Changing the target updates the table instantly.
 4. **Fix names** if needed: right-click a song or album and choose **Album & track names…**.
 5. **Run.** Your originals stay as they were, unless you chose to delete them.
+
+> **>>> ATTENTION: IMAGE: a close-up of the Adjust column showing all three colours (green, yellow, red) with their `*`, next to the key under Peak Protection. Readers will see that `*` before they read any text about it. <<<**
 
 ---
 
@@ -50,7 +54,7 @@ Click a song to pick it, Ctrl-click to add or drop one, Shift-click for a range.
 
 **Format Presets** (the last column). Saved sets of output, volume and File Strategy settings. Pick one to fill them in; **Save Preset** keeps what you have now under a name, including where the files go and what happens to a name that is taken. So a preset can mean "write 32-bit float WAV into a `_WAV32` subfolder" or "write ALAC over the originals and delete them". The built-in presets have no File Strategy, and choosing one leaves yours alone. Choosing a preset that deletes originals still asks first when you press Run.
 
-**Volume Adjustment.** **Target Loudness** (for example −22 LUFS; type a number, or open the drop-down for common ones such as −16, −18, −22 and the broadcast standards; a positive number you type is made negative when you leave the box), and **Peak Protection** (a switch, with its ceiling beside it (−0.6 dBTP to start with)). Under them is a key to the colours in the Adjust column: **green** means the new peak goes above 0 dB and the format (32-bit float WAV or MP3) keeps it; **yellow** means the volume increase was limited to prevent clipping; **red** means the song will clip, because protection is off and the format cannot hold the peak.
+**Volume Adjustment.** **Target Loudness** (for example −22 LUFS; type a number, or open the drop-down for common ones such as −16, −18, −22 and the broadcast standards; a positive number you type is made negative when you leave the box), and **Peak Protection** (a switch, with its ceiling beside it, −0.6 dBTP to start with). Under them is a key to the colours in the Adjust column: **green** means the new peak goes above 0 dB and the format (32-bit float WAV or MP3) keeps it; **yellow** means the volume increase was limited to prevent clipping; **red** means the song will clip, because protection is off and the format cannot hold the peak.
 
 **File Strategy.** Where the files go, what to do when a name is taken, and whether to delete the original. See *What happens when you press Run*.
 
@@ -59,6 +63,10 @@ Click a song to pick it, Ctrl-click to add or drop one, Shift-click for a range.
 ---
 
 ## How a song's volume is set
+
+**Adjusting, not normalizing.** Most tools that "normalize" push each song until its single loudest instant reaches the same level. Two songs can do that and still sound very different in volume, because one has a few sharp peaks and the other is loud all the way through. RangeForge sets how loud each song *sounds* (its LUFS) and treats the loudest instant only as a limit it will not cross. That is why the column says **Adjust**, and why the program talks about a *target*, not a normal.
+
+> **>>> ATTENTION: IMAGE (optional but worth it): two waveforms, same peak height, one spiky and quiet, one dense and loud. Caption: "same peak, different loudness." This is the one idea in the manual most readers have wrong going in. <<<**
 
 **It listens once.** When you drop files in, each one is decoded and measured a single time: its loudness (LUFS), its true peak, and its loudness range. The result is saved on disk against what the file *contains*, not its name or date, so a renamed or moved copy of the same album costs nothing the second time.
 
@@ -118,10 +126,14 @@ AAC, MP3 and Opus have a **Bitrate** picker. For MP3 it includes LAME's variable
 
 With Peak Protection on, nothing is pushed past the ceiling. With it **off**, a gain can carry the loudest moments past full scale (0 dB). What happens to them depends on the file. This was measured, not assumed: a tone at +4 dB was written in every format and read back.
 
+> **>>> ATTENTION: IMAGE: your DaVinci Resolve screenshots, the same tracks before and after lowering the volume ~5 dB. They show it better than any sentence: WAV32 and MP3 get their peaks back, the clipped formats do not. Add a line saying the display itself clips at 0 dB until you turn the volume down, so no one concludes the file is broken. <<<**
+
 - **16-bit and 24-bit WAV, FLAC and ALAC: clipped.** These store whole numbers, and the largest is full scale. Anything above it is flattened to 0 dB, permanently.
-- **32-bit float WAV: kept exactly.** Floating-point samples have no ceiling at 0 dB, so the peak read back at +4.0 dB, as written. This is the one format where the whole waveform survives. Lower the volume later, in any editor that reads float, and the peaks are still there, which is what makes it useful for soundtrack assets and anything that will be mixed again. It is WAV's alone. Choose it with **Bit Depth: 32-bit float**. With it chosen, **Peak Protection switches itself off for that output**: the box shows unticked and dimmed, and songs are gained to the target with no ceiling, since there is nothing to clip. Your setting is not changed, so it is back as it was when you choose another depth.
+- **32-bit float WAV: kept exactly.** Floating-point samples have no ceiling at 0 dB, so the peak read back at +4.0 dB, as written. This is the one format where the whole waveform survives. Lower the volume later, in any editor that reads float, and the peaks are still there, which is what makes it useful for soundtrack assets and anything that will be mixed again. It is WAV's alone. Choose it with **Bit Depth: 32-bit float**. With it chosen, **Peak Protection switches itself off for that output**: the switch shows off and dimmed, and songs are gained to the target with no ceiling, since there is nothing to clip. Your setting is not changed, so it is back as it was when you choose another depth.
 - **MP3: kept, and treated like 32-bit float WAV.** The MP3 encoder takes floating-point sound, nothing is clipped on the way in, and the file reads back with its peaks (+3.7 dB in the test). Listening and looking at the waveforms showed MP3 keeping as much of the peak shape as the float WAV does. So with MP3 chosen, **Peak Protection switches itself off for that output**, the same way it does for 32-bit float WAV, and songs are gained to the target with no ceiling. Your setting is not changed, so it is back when you choose another format. As with any lossy file, what you hear depends on the player: one that decodes to 16-bit whole numbers will clip them flat.
 - **AAC and Opus: the file holds some of them, but nobody can promise the player does.** These encoders also take floating-point sound, and the files read back with peaks of +4.1 dB (AAC) and +4.2 dB (Opus), but in listening AAC kept visibly less of the peak shape. Peak Protection stays on for them, because the benefit is not clear enough. That is a fact about the file, not a feature to rely on. A lossy format has already thrown away a large share of the original data, so keeping a few peaks above 0 dB preserves very little that was not already gone, and the encoder adds a little overshoot of its own. What you hear depends on the player: one that decodes to floating point and applies its volume control before output plays them; one that decodes to 16-bit whole numbers clips them flat. There is no way to know which is in use, so assume it will clip.
+
+> **>>> ATTENTION: WORDING: the AAC and Opus bullet is the longest thing in this manual. Consider keeping its first two sentences and the last one, and moving the rest to the FAQ. Also decide whether to keep the measured numbers (+3.7, +4.1, +4.2 dB) in a manual for ordinary readers. <<<**
 
 In short: if peaks above 0 dB matter, write 32-bit float WAV (or MP3 if you need a small file). For anything else, leave Peak Protection on.
 
@@ -158,7 +170,7 @@ It splits, measures, plans, tags and names as well as it can from what it has, a
 
 Everything online starts **off**. Turn on **Metadata API** (in Settings) to let RangeForge look things up.
 
-- **Radio tag:** a blue tag on songs that charted on the Billboard Hot 100. It needs no key. In **Settings** you can switch it off, give it another name (Radio is the default), and set how high a song must have charted: a position from 1 to 100, where 100 (the default) means anything that charted and 1 means only number ones. RangeForge keeps a local copy of the chart history and only downloads it again when a newer one exists.
+- **Radio tag:** a blue tag on songs that charted on the Billboard Hot 100 ("Radio" because a song that charted was a song people heard on the radio). It needs no key. In **Settings** you can switch it off, give it another name (Radio is the default), and set how high a song must have charted: a position from 1 to 100, where 100 (the default) means anything that charted and 1 means only number ones. RangeForge keeps a local copy of the chart history and only downloads it again when a newer one exists.
 - **Last.fm album genres:** need a Last.fm key. RangeForge does not come with one, and does not use anyone else's. Getting your own is free: create one for an app on Last.fm (**Settings** has a link), paste it into **Settings**, and tick **Use Last.fm**. The key is kept in the computer's own credential store, never in a file. Tags are filtered to the useful ones (opinions, habits, places, decades and the artist's name are dropped), up to three per album, and each album is asked about once and remembered for weeks.
 - **Song-level tags:** Last.fm does not give these to programs. Right-click a song → **Open song tags page on Last.fm**, and add the ones you want with **Add a tag…**. It takes one tag or a list separated by commas, semicolons or line breaks. Tags you add are green.
 - When you press Run, the genre tag is written as the plain tags, comma separated, with the Hot 100 tag last, for example `Classic Rock, Hard Rock, Funk Rock, Radio`. Each tag chip has a **×** to remove it.
@@ -170,6 +182,8 @@ Everything online starts **off**. Turn on **Metadata API** (in Settings) to let 
 1. Each song is encoded to a hidden temporary file next to where it will end up.
 2. Only after every song from a source has been written without a single error are the temporary files moved into place.
 3. If anything fails, the temporary files are deleted and your originals are exactly as they were.
+
+> **>>> ATTENTION: IMAGE: the File Strategy panel with the switch and the two radio groups, so "on" next to the chosen option is clear. WORDING: check that `_forged` (the default subfolder name) and the "source" setting on Output Format read naturally to someone new. <<<**
 
 The **File Strategy** is three separate choices:
 
