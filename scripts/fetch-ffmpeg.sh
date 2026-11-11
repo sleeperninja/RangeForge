@@ -92,9 +92,18 @@ case "$triple" in
     curl -fL --retry 3 ${CURL_OPTIONS:-} -o "$work/opus.tar.gz" "$OPUS_URL"
     verify "$OPUS_SHA256" "$work/opus.tar.gz"
     tar -xzf "$work/lame.tar.gz" -C "$work"
-    ( cd "$work/lame-3.100"       && ./configure --prefix="$prefix" --disable-shared --enable-static --disable-frontend --disable-decoder --disable-gtktest       && make -j"$jobs" && make install ) > /dev/null
+    # A failed build shows the end of its own log, instead of a bare exit code.
+    if ! ( cd "$work/lame-3.100" && ./configure --prefix="$prefix" --disable-shared --enable-static --disable-frontend --disable-decoder --disable-gtktest && make -j"$jobs" && make install ) > "$work/lame.log" 2>&1; then
+      tail -n 80 "$work/lame.log" >&2
+      echo "LAME failed to build (log above)" >&2
+      exit 1
+    fi
     tar -xzf "$work/opus.tar.gz" -C "$work"
-    ( cd "$work/opus-1.5.2"       && ./configure --prefix="$prefix" --disable-shared --enable-static --disable-doc --disable-extra-programs       && make -j"$jobs" && make install ) > /dev/null
+    if ! ( cd "$work/opus-1.5.2" && ./configure --prefix="$prefix" --disable-shared --enable-static --disable-doc --disable-extra-programs && make -j"$jobs" && make install ) > "$work/opus.log" 2>&1; then
+      tail -n 80 "$work/opus.log" >&2
+      echo "Opus failed to build (log above)" >&2
+      exit 1
+    fi
     export PKG_CONFIG_PATH="$prefix/lib/pkgconfig"
 
     echo "Building FFmpeg $TAG from source"
@@ -117,8 +126,17 @@ case "$triple" in
       *-apple-darwin)
         flags+=(--extra-cflags=-mmacosx-version-min=11.0 --extra-ldflags=-mmacosx-version-min=11.0)
         ;;
+      *-linux-*)
+        # libopus.a needs the math library (-lm) to link. pkg-config only reports that for a
+        # static link, and FFmpeg does not ask for one unless told to. A Mac links it anyway.
+        flags+=(--pkg-config-flags=--static)
+        ;;
     esac
-    ./configure "${flags[@]}"
+    if ! ./configure "${flags[@]}"; then
+      echo "FFmpeg's configure failed. The end of its log:" >&2
+      tail -n 80 ffbuild/config.log >&2
+      exit 1
+    fi
     make -j"$jobs"
     case "$triple" in
       *-apple-darwin) strip -x ffmpeg ;;

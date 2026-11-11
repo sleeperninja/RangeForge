@@ -1,9 +1,11 @@
 name: Release
 
-# Builds the installers: an MSI for Windows, and a DMG holding RangeForge.app for macOS.
-# Runs when something is merged into main, and puts the installers on a draft release (a pre-release while the version starts
-# with 0) named after the version in Cargo.toml (so raise the version before merging). It can also be started by
-# hand from the Actions tab, which builds the installers without making a release.
+# Builds the installers (an MSI for Windows, and a DMG holding RangeForge.app for macOS) and one
+# Manual PDF (manual, FAQ and third-party notices together).
+# Runs when something is merged into main, and puts them on a draft release (a pre-release while
+# the version starts with 0) named after the version in Cargo.toml, so raise the version before
+# merging. It can also be started by hand from the Actions tab, which builds everything without
+# making a release.
 on:
   push:
     branches: [main]
@@ -99,9 +101,35 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  # The manual, the FAQ and the third-party notices as one PDF. It is quick (no FFmpeg, no
+  # compiling), and runs even when an installer build fails, so a problem in one is not hidden by
+  # the other. See scripts/build-manual-pdf.sh.
+  manual:
+    name: Manual PDF
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # pandoc comes from the pypandoc_binary package (pinned), which bundles a recent pandoc.
+      # Chrome, which prints the page to PDF, is already on the runner.
+      - name: Install pandoc
+        run: |
+          python3 -m venv "$RUNNER_TEMP/pandoc"
+          "$RUNNER_TEMP/pandoc/bin/pip" install --quiet pypandoc_binary==1.17
+          dir="$("$RUNNER_TEMP/pandoc/bin/python" -c 'import os, pypandoc; print(os.path.dirname(pypandoc.get_pandoc_path()))')"
+          echo "$dir" >> "$GITHUB_PATH"
+      - name: Build the PDF
+        run: |
+          pandoc --version | head -n 1
+          bash scripts/build-manual-pdf.sh dist-manual/RangeForge-Manual.pdf
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RangeForge-Manual
+          path: dist-manual/RangeForge-Manual.pdf
+          if-no-files-found: error
+
   publish:
     name: Draft release
-    needs: package
+    needs: [package, manual]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:

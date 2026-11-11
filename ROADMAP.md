@@ -1,6 +1,6 @@
 # RangeForge Roadmap
 
-*What works, what's next, and what we've set aside. Updated 10 Nov 2026, at version 1.0.0.*
+*What works, what's next, and what we've set aside. Updated 11 Nov 2026, at version 1.0.0.*
 
 How to use the program, and how it decides things, is in the [manual](MANUAL.md). Common questions are in the [FAQ](FAQ.md).
 
@@ -37,12 +37,15 @@ These need a person with the window open:
 2. **Run it on real music:** a CUE album, vinyl-download singles, a 5.1 FLAC, a DSD file. Play the results in two players, and check tags and track numbers.
 3. **Build the installers on GitHub** (set up, never run), and install on a clean Windows machine. macOS and Linux are untested.
 4. ~~Add a licence file~~ Done: MIT, in [LICENSE](LICENSE).
-5. **Attach the manual as a PDF** to each release (the About window already links to the downloads page).
+5. ~~Attach the manual as a PDF~~ Done: the release workflow builds one `RangeForge-Manual.pdf` (manual, FAQ and notices) and attaches it.
 
 ---
 
 ## Later, when it gets in the way
 
+- **A disc number in file names.** For albums on several discs, a `{disc}` variable that is empty on a one-disc album. Because a missing value already takes its neighbouring separator with it, `{disc:02}-{track:02} - {title}` would give `02-07 - Title` on a three-disc set and `07 - Title` on a single disc, with no IF syntax. It needs the disc number read from the file's tags (and from a CUE sheet or a folder called "Disc 2"), and the disc count from the tags or from the albums loaded together.
+- **Say more on an album's row** about where it came from, such as the source codec and channel count, or its folder. Today a stereo and a surround copy of one album look alike until you open them.
+- **A different preset per album in one run,** for processing a whole library for several targets in a single pass. Not before the single-preset run has had its bugs shaken out.
 - **Rename from the tags,** as a File Strategy choice next to *keep the original name*. To decide: it should warn rather than produce names worse than the originals when a name is only a guess.
 - **Remember hand edits between sessions.** Names and tags you edit are kept only until you close the program.
 - **A "will clip" mark** on songs that a whole-number format (16/24-bit, FLAC, ALAC) would clip when Peak Protection is off.

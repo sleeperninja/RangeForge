@@ -32,6 +32,18 @@ FFmpeg is a trademark of Fabrice Bellard, originator of the FFmpeg project.
   `scripts/fetch-ffmpeg.sh`. On Windows they are part of the FFmpeg build above.
 - MP3 patents have expired, so no licence fee applies to writing MP3 files.
 
+## Data and services
+
+These are not part of the installer. RangeForge downloads from them only when you turn on **Metadata API**.
+
+- **Billboard Hot 100 history** for the Radio tag comes from the community project
+  [billboard-hot-100](https://github.com/mhollingshead/billboard-hot-100) by mhollingshead, a
+  public archive of the weekly chart. RangeForge downloads one file and keeps a local copy. Thank
+  you to everyone who keeps it up to date. It is a convenience, not an official source. Billboard
+  and Hot 100 are trademarks of their owners, and RangeForge is not affiliated with them.
+- **Last.fm** supplies album genres and track lists, through the Last.fm API with a key you create
+  yourself. Last.fm is a trademark of its owner, and RangeForge is not affiliated with it.
+
 ## Rust libraries and the web view
 
 RangeForge is built from Rust libraries (Tauri, Symphonia, ebur128 and others) under MIT,

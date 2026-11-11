@@ -89,7 +89,7 @@
           <input id="ceiling" class="number" type="number" step="0.1" min="-6" max="0">
           <span class="suffix">dBTP</span>
         </div>
-        <div class="peak-key" aria-label="What the colours in the Adjust column mean">
+        <div class="peak-key" aria-label="What the colors in the Adjust column mean">
           <div class="item"><span class="swatch peak-kept">+1.69*</span><span>32-bit float WAV and MP3 keep peaks above 0 dB: protection is not needed.</span></div>
           <div class="item"><span class="swatch peak-limited">+1.69*</span><span>Volume increase limited to prevent clipping.</span></div>
           <div class="item"><span class="swatch peak-clips">+1.69*</span><span>Will clip. Lower the target, or turn protection on.</span></div>
@@ -168,7 +168,7 @@
         <div class="panel">
           <h4>DSD Format</h4>
           <div class="dsd-panel">
-            <p class="hint">RangeForge cannot write DSD files, and the sample rates and bit depths DSD uses are fundamentally different from those of common formats. These two settings keep you from accidentally transcoding DSD at its <em>source</em> sample rate and bit depth. Each is used only where the Output Format says source.</p>
+            <p class="hint">DSD is converted, not copied. These are used only where Output Format says <em>source</em>.</p>
             <div class="dsd-grid">
               <label>Sample Rate <select id="dsdSampleRate"></select></label>
               <label>Bit Depth <select id="dsdBitDepth"></select></label>
