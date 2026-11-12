@@ -2,14 +2,18 @@ name: Release
 
 # Builds the installers (an MSI for Windows, and a DMG holding RangeForge.app for macOS) and one
 # Manual PDF (manual, FAQ and third-party notices together).
-# Runs when something is merged into main, and puts them on a draft release (a pre-release while
-# the version starts with 0) named after the version in Cargo.toml, so raise the version before
-# merging. It can also be started by hand from the Actions tab, which builds everything without
-# making a release.
+# It is started by hand (Actions tab, or `gh workflow run release.yml --ref main -f publish=true`),
+# never by a push, so documents and fixes can reach main without a 30-minute build. With
+# "publish" ticked it also puts everything on a draft release (a pre-release while the version
+# starts with 0) named after the version in Cargo.toml, so raise the version first. It refuses
+# to touch a release that is already published. Without "publish" it only builds.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Also draft a GitHub release (main only). Leave off to only build."
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -130,7 +134,7 @@ jobs:
   publish:
     name: Draft release
     needs: [package, manual]
-    if: github.event_name == 'push'
+    if: inputs.publish && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -141,6 +145,18 @@ jobs:
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
           # Everything before 1.0 is a pre-release.
           case "$version" in 0.*) echo "pre=true" >> "$GITHUB_OUTPUT" ;; *) echo "pre=false" >> "$GITHUB_OUTPUT" ;; esac
+      # A published release is never overwritten. Raise the version in Cargo.toml instead.
+      - name: Refuse to touch a published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          if draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2> /dev/null)"; then
+            if [ "$draft" = "false" ]; then
+              echo "::error::$tag is already published. Raise the version in Cargo.toml and try again."
+              exit 1
+            fi
+          fi
       - uses: actions/download-artifact@v4
         with:
           path: dist

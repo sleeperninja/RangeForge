@@ -162,7 +162,7 @@ Also planned: `cargo deny` (licences, advisories), `criterion` benchmarks, and a
 
 ## Releases
 
-Installers are built by the **Release** workflow (`.github/workflows/release.yml`). It runs when something is merged into `main`, and puts the installers on a draft release (a pre-release while the version starts with 0) named after the version in `Cargo.toml` (so raise the version before merging). It also builds `RangeForge-Manual.pdf` (the manual, the FAQ and the third-party notices in one file) with `scripts/build-manual-pdf.sh`, in its own quick job, and attaches it to the release. The script needs pandoc and a Chrome or Edge, and warns if a `>>> ATTENTION` note is still in a document. Start the workflow by hand from the Actions tab to build without making a release. It makes:
+Installers are built by the **Release** workflow (`.github/workflows/release.yml`). It is started by hand and never by a push (D-55): from the Actions tab, or `gh workflow run release.yml --ref main -f publish=true`. With `publish` on, it puts the installers on a draft release (a pre-release while the version starts with 0) named after the version in `Cargo.toml` (so raise the version first), and refuses to touch a release that is already published. With `publish` off it only builds. It also builds `RangeForge-Manual.pdf` (the manual, the FAQ and the third-party notices in one file) with `scripts/build-manual-pdf.sh`, in its own quick job, and attaches it to the release. The script needs pandoc and a Chrome or Edge, and warns if a `>>> ATTENTION` note is still in a document. It makes:
 
 | Platform | What you get |
 | --- | --- |
