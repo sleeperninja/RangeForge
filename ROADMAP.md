@@ -35,7 +35,7 @@ These need a person with the window open:
    - Album & track names, song tags page and Add a tag
    - Clear completed / Clear all under the Run button, the About window and its links, the Last.fm key link in Settings
 2. **Run it on real music:** a CUE album, vinyl-download singles, a 5.1 FLAC, a DSD file. Play the results in two players, and check tags and track numbers.
-3. **Build the installers on GitHub** (set up, never run), and install on a clean Windows machine. macOS and Linux are untested.
+3. ~~Build the installers on GitHub~~ Done: Windows (x64 and ARM), macOS (both chips) and Linux all build, and the Manual PDF comes with them. **Still to do:** try the macOS build on a Mac and the Linux package on a Linux machine, and check that uninstalling leaves nothing surprising.
 4. ~~Add a licence file~~ Done: MIT, in [LICENSE](LICENSE).
 5. ~~Attach the manual as a PDF~~ Done: the release workflow builds one `RangeForge-Manual.pdf` (manual, FAQ and notices) and attaches it.
 
@@ -47,7 +47,6 @@ These need a person with the window open:
 - **Say more on an album's row** about where it came from, such as the source codec and channel count, or its folder. Today a stereo and a surround copy of one album look alike until you open them.
 - **A different preset per album in one run,** for processing a whole library for several targets in a single pass. Not before the single-preset run has had its bugs shaken out.
 - **Rename from the tags,** as a File Strategy choice next to *keep the original name*. To decide: it should warn rather than produce names worse than the originals when a name is only a guess.
-- **Remember hand edits between sessions.** Names and tags you edit are kept only until you close the program.
 - **A "will clip" mark** on songs that a whole-number format (16/24-bit, FLAC, ALAC) would clip when Peak Protection is off.
 - **An opt-in limiter** for songs peak protection holds below the target. Designed, not built.
 - **Say on a file's row when it cannot be mixed** (more than six channels, or already fewer).
@@ -56,7 +55,7 @@ These need a person with the window open:
 - **Benchmarks,** and a `--json` output and HTML report from the terminal tool.
 - **Multichannel loudness** (4 to 8 channels), and MLP input.
 - **A CPU limit** in Settings, so a big batch doesn't take over the machine.
-- **Signing the installers.** Windows says the publisher is unknown, and the Mac needs the right-click → Open step.
+- **Signing the installers.** Windows showed no publisher warning in testing. The Mac will probably still need the right-click → Open step, which is untried.
 - **Small window niceties:** right-click to copy table text, a highlight on an album heading when all its songs are picked.
 - **Read ahead while decoding,** to hide the network read time on a NAS.
 - **Keep the app's own data from growing forever:** cap the on-screen log and prune the cache.
@@ -81,6 +80,7 @@ So we don't repeat the experiments.
 - **Song tags from Last.fm's API.** It answers with nothing for songs, even famous ones.
 - **Reading Last.fm's song tags page automatically.** It has the good stuff, but sits behind a bot check. So the app opens the page in your browser and you paste the list into **Add a tag…**.
 - **MusicBrainz, Wikidata, Discogs, Spotify** for song-level genres. MusicBrainz is as empty as Last.fm for songs, Wikidata is coarse, Discogs tags the release and not the song, and Spotify only tags artists now.
+- **Remembering hand edits between sessions.** Names and tags you edit are kept until you close the program. That only matters when the same files are processed again and again, which is mostly a side effect of testing, so it is not worth the work.
 - **An Auto Mode** that runs by itself. With conversions and compression in the mix, a run that starts by itself does too much at once.
 - **A centre boost** in surround downmixes, and Dolby-style matrix encodings.
 
