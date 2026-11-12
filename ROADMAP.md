@@ -24,20 +24,28 @@ RangeForge does its main job today. Drop in an album or a pile of files, and it 
 
 ---
 
-## Before the first release
+## Still to check after 1.0
 
-These need a person with the window open:
+1. **Try it on a Mac** (Apple Silicon and Intel) **and on a Linux machine.** Both build, and neither has been run by hand yet.
+2. **Uninstall leaves nothing surprising.** Settings, presets and the measurement cache are kept on purpose; the saved Last.fm key stays until you press Forget.
 
-1. **Click through the newest build.** Everything below is covered by tests, but nobody has used it by hand yet:
-   - every codec in the Output Format panel: Bitrate, Compression, Bit Depth and Sample Rate go empty and dimmed when they do nothing; Opus shows 48 kHz; 32-bit float appears for WAV only, and Peak Protection dims with it (and with MP3)
-   - Channels and Downmix on a real 5.1 album; Quad refused for ALAC and MP3; MP3 with 5.1 refuses and says why
-   - File Strategy labels fit, the `_forged` default, and settings survive closing mid-edit
-   - Album & track names, song tags page and Add a tag
-   - Clear completed / Clear all under the Run button, the About window and its links, the Last.fm key link in Settings
-2. **Run it on real music:** a CUE album, vinyl-download singles, a 5.1 FLAC, a DSD file. Play the results in two players, and check tags and track numbers.
-3. ~~Build the installers on GitHub~~ Done: Windows (x64 and ARM), macOS (both chips) and Linux all build, and the Manual PDF comes with them. **Still to do:** try the macOS build on a Mac and the Linux package on a Linux machine, and check that uninstalling leaves nothing surprising.
-4. ~~Add a licence file~~ Done: MIT, in [LICENSE](LICENSE).
-5. ~~Attach the manual as a PDF~~ Done: the release workflow builds one `RangeForge-Manual.pdf` (manual, FAQ and notices) and attaches it.
+Everything else on the first-release list (every codec, 5.1 downmix, File Strategy, names and tags, a run on real music, the Windows installer, the licence and the Manual PDF) is done.
+
+---
+
+## Next, probably 1.0.1
+
+- **A CPU limit** in Settings, with the default being everything the machine has. Choose less when you want to keep working while a long run goes.
+
+---
+
+## On demand: built if people ask
+
+Things the author would not use, but other people might. They change the sound or the workflow beyond RangeForge's one-gain promise, so each would be a switch that is **off by default**, kept out of the normal path, and would say exactly which songs it touched. We think ahead about how, and build when there is demand.
+
+- **An opt-in limiter** for songs that Peak Protection holds below the target. The way to do it is the gentlest one: change the sound as little as possible, for as long as possible, easing into the peak instead of cutting at it. A choice of strategies is possible, but only a few, and each described in plain words.
+- **Loudness that reshapes the waveform** (the compress-to-a-target style of "normalizing"). RangeForge does not do this today, on purpose.
+- **A different preset per album in one run,** for processing a whole library for several targets in a single pass. Not before the single-preset run has had its bugs shaken out.
 
 ---
 
@@ -45,16 +53,13 @@ These need a person with the window open:
 
 - **A disc number in file names.** For albums on several discs, a `{disc}` variable that is empty on a one-disc album. Because a missing value already takes its neighbouring separator with it, `{disc:02}-{track:02} - {title}` would give `02-07 - Title` on a three-disc set and `07 - Title` on a single disc, with no IF syntax. It needs the disc number read from the file's tags (and from a CUE sheet or a folder called "Disc 2"), and the disc count from the tags or from the albums loaded together.
 - **Say more on an album's row** about where it came from, such as the source codec and channel count, or its folder. Today a stereo and a surround copy of one album look alike until you open them.
-- **A different preset per album in one run,** for processing a whole library for several targets in a single pass. Not before the single-preset run has had its bugs shaken out.
 - **Rename from the tags,** as a File Strategy choice next to *keep the original name*. To decide: it should warn rather than produce names worse than the originals when a name is only a guess.
 - **A "will clip" mark** on songs that a whole-number format (16/24-bit, FLAC, ALAC) would clip when Peak Protection is off.
-- **An opt-in limiter** for songs peak protection holds below the target. Designed, not built.
-- **Say on a file's row when it cannot be mixed** (more than six channels, or already fewer).
-- **A SoX-based resampler** option: a steeper filter and a faster DSD stage, at a gain no one can hear. Whether it is worth the bundling work is undecided.
+- **Mix 7.1 and bigger files down** to quad, stereo or mono, where there is no technical reason not to. Today anything above six channels is written as it is, so a big movie-style rip (say 9.1 LPCM) comes out unchanged. Until then, say on a file's row when it cannot be mixed.
+- **A SoX-quality resampler** option, using the libsoxr library (LGPL, the same terms as the rest of FFmpeg, and already inside the Windows FFmpeg we ship; the Mac and Linux builds would need it added), not the SoX program, which is GPL. A steeper filter, at a difference no one can hear. DSD conversion would take more time, which is fine. Worth looking at how audio is held in memory for savings at the same time.
 - **Use each song's length** when lining songs up with a track list.
 - **Benchmarks,** and a `--json` output and HTML report from the terminal tool.
 - **Multichannel loudness** (4 to 8 channels), and MLP input.
-- **A CPU limit** in Settings, so a big batch doesn't take over the machine.
 - **Signing the installers.** Windows showed no publisher warning in testing. The Mac will probably still need the right-click → Open step, which is untried.
 - **Small window niceties:** right-click to copy table text, a highlight on an album heading when all its songs are picked.
 - **Read ahead while decoding,** to hide the network read time on a NAS.

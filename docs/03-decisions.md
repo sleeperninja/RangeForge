@@ -80,6 +80,7 @@ Statuses: **Accepted**, **Rejected**, **Reopened** (under discussion), **Parked*
 | S-11 | Quality-assurance reports, batch export monitoring | Parked | Table plus log already cover it. A simple HTML report is planned instead. |
 | S-12 | Dolby Digital Plus output | Parked | Waiting for encoder support. |
 | S-13 | The name "RangeForge" | Parked | Previously worried it is too close to another audio product's name. Decide before any public release. |
+| S-14 | Features for other people's workflows (an opt-in limiter, waveform-reshaping loudness, a preset per album in one run) | Parked; 2026-11-11 | The author's own use is a clinical archive: one gain, no squashing (D-12). These stay off the normal path and are built only if people ask. If built, each is a switch that is off by default, touches only what it must, and names the songs it touched. For a limiter, prefer the gentlest curve: change as little as possible, for as long as possible, easing into the peak. libsoxr (LGPL) is acceptable for a resampler option, the SoX program (GPL) is not. |
 
 ## Naming and wording
 
