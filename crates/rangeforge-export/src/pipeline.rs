@@ -247,11 +247,16 @@ impl Run<'_> {
 
     /// Where a track is written while it is being encoded: next to its final home, so that
     /// moving it into place is a rename and not a copy.
+    ///
+    /// The name must not start with a dot. A Mac marks a dot-file as hidden, and on a network
+    /// share (SMB) it does so with the server's own "hidden" attribute, which a rename to the
+    /// final name does not clear: the finished file would stay hidden. The `.rangeforge-part`
+    /// ending is enough to keep it from being taken for audio.
     fn temp_path(&self, plan: &TrackPlan) -> PathBuf {
         self.options
             .strategy
             .directory(&self.options.directory)
-            .join(format!(".{}.rangeforge-part", plan.file_name))
+            .join(format!("{}.rangeforge-part", plan.file_name))
     }
 
     fn start_track(&mut self, index: usize) -> Result<(), ExportError> {

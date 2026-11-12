@@ -177,7 +177,7 @@ Everything online starts **off**. Turn on **Metadata API** (in Settings) to let 
 
 ## What happens when you press Run
 
-1. Each song is encoded to a hidden temporary file next to where it will end up.
+1. Each song is encoded to a temporary file (it ends in `.rangeforge-part`) next to where it will end up.
 2. Only after every song from a source has been written without a single error are the temporary files moved into place.
 3. If anything fails, the temporary files are deleted and your originals are exactly as they were.
 

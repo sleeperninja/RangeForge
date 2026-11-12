@@ -40,7 +40,7 @@ Temporary copies are deleted when the file finishes or fails.
 
 When you run, the app never changes an original until every new file has been written successfully.
 
-1. Each song is encoded to a hidden temporary file next to where it will end up.
+1. Each song is encoded to a temporary file (`<name>.rangeforge-part`, never starting with a dot: a Mac marks dot-files hidden, and on an SMB share that flag survives the rename) next to where it will end up.
 2. Only after the whole source has been read and every song has encoded without error are the temporary files moved into place, following your File Strategy.
 3. If anything fails along the way, the temporary files are deleted and your originals are exactly as they were.
 
