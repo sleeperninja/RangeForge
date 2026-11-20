@@ -1,6 +1,6 @@
 # RangeForge Roadmap
 
-*What works, what's next, and what we've set aside. Updated 11 Nov 2026, at version 1.0.0.*
+*What works, what's next, and what we've set aside. Updated 19 Nov 2026, at version 1.0.0.*
 
 How to use the program, and how it decides things, is in the [manual](MANUAL.md). Common questions are in the [FAQ](FAQ.md).
 
@@ -36,6 +36,8 @@ Everything else on the first-release list (every codec, 5.1 downmix, File Strate
 ## Next, probably 1.0.1
 
 - **A CPU limit** in Settings, with the default being everything the machine has. Choose less when you want to keep working while a long run goes.
+- **Pull: tags *and* Radio together.** The pull that brings in Last.fm tags should also check the Billboard Hot 100 list and offer the **Radio** tag when a song charted (S-10). The name says "Last.fm", but it is really a pull, so it should do both. When the pull finds tags, it should offer to **replace** the artist, album, track and Radio values already on a song, not just fill in what is missing — the existing tags may be wrong.
+- **A tags-only run.** When a song is already at the target level and nothing else needs converting, write its tags into the file in place instead of re-encoding it.
 
 ---
 
